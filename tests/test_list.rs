@@ -26,12 +26,12 @@ fn snapshot_list(test_name: &str, repo: &TestRepo) {
     settings.add_filter(r"\\", "/");
 
     settings.bind(|| {
-        assert_cmd_snapshot!(
-            test_name,
-            Command::new(get_cargo_bin("arbor"))
-                .arg("list")
-                .current_dir(repo.root_path())
-        );
+        let mut cmd = Command::new(get_cargo_bin("arbor"));
+        // Clean environment to avoid interference from global git config
+        repo.clean_cli_env(&mut cmd);
+        cmd.arg("list").current_dir(repo.root_path());
+
+        assert_cmd_snapshot!(test_name, cmd);
     });
 }
 

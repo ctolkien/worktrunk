@@ -1,10 +1,46 @@
+//! # Test Utilities for arbor
+//!
+//! This module provides test harnesses for testing the arbor CLI tool.
+//!
+//! ## TestRepo
+//!
+//! The `TestRepo` struct creates isolated git repositories in temporary directories
+//! with deterministic timestamps and configuration. Each test gets a fresh repo
+//! that is automatically cleaned up when the test ends.
+//!
+//! ## Environment Isolation
+//!
+//! Git commands are run with isolated environments using `Command::env()` to ensure:
+//! - No interference from global git config
+//! - Deterministic commit timestamps
+//! - Consistent locale settings
+//! - No cross-test contamination
+//! - Thread-safe execution (no global state mutation)
+//!
+//! ## Path Canonicalization
+//!
+//! Paths are canonicalized to handle platform differences (especially macOS symlinks
+//! like /var -> /private/var). This ensures snapshot filters work correctly.
+//!
+//! ## Builder Pattern
+//!
+//! Use `TestRepoBuilder` for declarative test setup:
+//!
+//! ```rust,ignore
+//! let repo = TestRepoBuilder::new()
+//!     .with_initial_commit("Initial commit")
+//!     .with_worktree("feature-a", "feature-a")
+//!     .with_locked_worktree("feature-b", Some("Work in progress"))
+//!     .build();
+//! ```
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
 pub struct TestRepo {
-    temp_dir: TempDir, // Keep temp_dir accessible
+    temp_dir: TempDir,
     root: PathBuf,
     pub worktrees: HashMap<String, PathBuf>,
 }
@@ -21,42 +57,65 @@ impl TestRepo {
             .canonicalize()
             .expect("Failed to canonicalize temp path");
 
-        // Set up isolated git environment
-        unsafe {
-            std::env::set_var("GIT_CONFIG_GLOBAL", "/dev/null");
-            std::env::set_var("GIT_CONFIG_SYSTEM", "/dev/null");
-            std::env::set_var("GIT_AUTHOR_DATE", "2025-01-01T00:00:00Z");
-            std::env::set_var("GIT_COMMITTER_DATE", "2025-01-01T00:00:00Z");
-            std::env::set_var("LC_ALL", "C");
-            std::env::set_var("LANG", "C");
-            std::env::set_var("SOURCE_DATE_EPOCH", "1704067200");
-        }
+        let repo = Self {
+            temp_dir,
+            root,
+            worktrees: HashMap::new(),
+        };
 
-        // Initialize git repo
-        Command::new("git")
-            .args(["init", "-b", "main"])
-            .current_dir(&root)
+        // Initialize git repo with isolated environment
+        let mut cmd = Command::new("git");
+        repo.configure_git_cmd(&mut cmd);
+        cmd.args(["init", "-b", "main"])
+            .current_dir(&repo.root)
             .output()
             .expect("Failed to init git repo");
 
         // Configure git user
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&root)
+        let mut cmd = Command::new("git");
+        repo.configure_git_cmd(&mut cmd);
+        cmd.args(["config", "user.name", "Test User"])
+            .current_dir(&repo.root)
             .output()
             .expect("Failed to set user.name");
 
-        Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&root)
+        let mut cmd = Command::new("git");
+        repo.configure_git_cmd(&mut cmd);
+        cmd.args(["config", "user.email", "test@example.com"])
+            .current_dir(&repo.root)
             .output()
             .expect("Failed to set user.email");
 
-        Self {
-            temp_dir,
-            root,
-            worktrees: HashMap::new(),
+        repo
+    }
+
+    /// Configure a git command with isolated environment
+    ///
+    /// This sets environment variables only for the specific command,
+    /// ensuring thread-safety and test isolation.
+    pub fn configure_git_cmd(&self, cmd: &mut Command) {
+        cmd.env("GIT_CONFIG_GLOBAL", "/dev/null");
+        cmd.env("GIT_CONFIG_SYSTEM", "/dev/null");
+        cmd.env("GIT_AUTHOR_DATE", "2025-01-01T00:00:00Z");
+        cmd.env("GIT_COMMITTER_DATE", "2025-01-01T00:00:00Z");
+        cmd.env("LC_ALL", "C");
+        cmd.env("LANG", "C");
+        cmd.env("SOURCE_DATE_EPOCH", "1704067200");
+    }
+
+    /// Clean environment for arbor CLI commands
+    ///
+    /// Removes potentially interfering environment variables and sets
+    /// deterministic git environment for CLI tests.
+    pub fn clean_cli_env(&self, cmd: &mut Command) {
+        // Remove git-related env vars that might interfere
+        for (key, _) in std::env::vars() {
+            if key.starts_with("GIT_") || key.starts_with("ARBOR_") {
+                cmd.env_remove(&key);
+            }
         }
+        // Set deterministic environment for git
+        self.configure_git_cmd(cmd);
     }
 
     /// Get the root path of the repository
@@ -71,20 +130,64 @@ impl TestRepo {
             .unwrap_or_else(|| panic!("Worktree '{}' not found", name))
     }
 
+    /// Read a file from the repo root
+    #[allow(dead_code)]
+    pub fn read_file(&self, path: &str) -> String {
+        std::fs::read_to_string(self.root.join(path))
+            .unwrap_or_else(|_| panic!("Failed to read {}", path))
+    }
+
+    /// List all files in the repository (excluding .git)
+    #[allow(dead_code)]
+    pub fn file_tree(&self) -> Vec<String> {
+        let mut files = Vec::new();
+        self.collect_files(&self.root, "", &mut files);
+        files.sort();
+        files
+    }
+
+    fn collect_files(&self, dir: &Path, prefix: &str, files: &mut Vec<String>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = entry.file_name();
+
+                // Skip .git directory
+                if name == ".git" {
+                    continue;
+                }
+
+                let display_name = if prefix.is_empty() {
+                    name.to_string_lossy().to_string()
+                } else {
+                    format!("{}/{}", prefix, name.to_string_lossy())
+                };
+
+                if path.is_dir() {
+                    self.collect_files(&path, &display_name, files);
+                } else {
+                    files.push(display_name);
+                }
+            }
+        }
+    }
+
     /// Create a commit with the given message
     pub fn commit(&self, message: &str) {
         // Create a file to ensure there's something to commit
         let file_path = self.root.join("file.txt");
         std::fs::write(&file_path, message).expect("Failed to write file");
 
-        Command::new("git")
-            .args(["add", "."])
+        let mut cmd = Command::new("git");
+        self.configure_git_cmd(&mut cmd);
+        cmd.args(["add", "."])
             .current_dir(&self.root)
             .output()
             .expect("Failed to git add");
 
-        Command::new("git")
-            .args(["commit", "-m", message])
+        let mut cmd = Command::new("git");
+        self.configure_git_cmd(&mut cmd);
+        cmd.args(["commit", "-m", message])
             .current_dir(&self.root)
             .output()
             .expect("Failed to git commit");
@@ -95,7 +198,9 @@ impl TestRepo {
         // Create worktree inside temp directory to ensure cleanup
         let worktree_path = self.temp_dir.path().join(name);
 
-        let output = Command::new("git")
+        let mut cmd = Command::new("git");
+        self.configure_git_cmd(&mut cmd);
+        let output = cmd
             .args([
                 "worktree",
                 "add",
@@ -127,7 +232,9 @@ impl TestRepo {
     /// Detach HEAD in the repository
     pub fn detach_head(&self) {
         // Get current commit SHA
-        let output = Command::new("git")
+        let mut cmd = Command::new("git");
+        self.configure_git_cmd(&mut cmd);
+        let output = cmd
             .args(["rev-parse", "HEAD"])
             .current_dir(&self.root)
             .output()
@@ -135,8 +242,9 @@ impl TestRepo {
 
         let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-        Command::new("git")
-            .args(["checkout", "--detach", &sha])
+        let mut cmd = Command::new("git");
+        self.configure_git_cmd(&mut cmd);
+        cmd.args(["checkout", "--detach", &sha])
             .current_dir(&self.root)
             .output()
             .expect("Failed to detach HEAD");
@@ -153,10 +261,97 @@ impl TestRepo {
         }
         args.push(worktree_path.to_str().unwrap());
 
-        Command::new("git")
-            .args(&args)
+        let mut cmd = Command::new("git");
+        self.configure_git_cmd(&mut cmd);
+        cmd.args(&args)
             .current_dir(&self.root)
             .output()
             .expect("Failed to lock worktree");
+    }
+}
+
+/// Builder for creating TestRepo instances with declarative setup
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let repo = TestRepoBuilder::new()
+///     .with_initial_commit("Initial commit")
+///     .with_worktree("feature-a", "feature-a")
+///     .with_locked_worktree("feature-b", Some("Work in progress"))
+///     .build();
+/// ```
+#[allow(dead_code)]
+pub struct TestRepoBuilder {
+    initial_commit: Option<String>,
+    worktrees: Vec<(String, String)>,
+    locked_worktrees: Vec<(String, Option<String>)>,
+    detached: bool,
+}
+
+#[allow(dead_code)]
+impl TestRepoBuilder {
+    /// Create a new builder
+    pub fn new() -> Self {
+        Self {
+            initial_commit: None,
+            worktrees: Vec::new(),
+            locked_worktrees: Vec::new(),
+            detached: false,
+        }
+    }
+
+    /// Add an initial commit with the given message
+    pub fn with_initial_commit(mut self, message: &str) -> Self {
+        self.initial_commit = Some(message.to_string());
+        self
+    }
+
+    /// Add a worktree with the given name and branch
+    pub fn with_worktree(mut self, name: &str, branch: &str) -> Self {
+        self.worktrees.push((name.to_string(), branch.to_string()));
+        self
+    }
+
+    /// Add a locked worktree
+    pub fn with_locked_worktree(mut self, name: &str, reason: Option<&str>) -> Self {
+        self.locked_worktrees
+            .push((name.to_string(), reason.map(String::from)));
+        self
+    }
+
+    /// Detach HEAD after setup
+    pub fn with_detached_head(mut self) -> Self {
+        self.detached = true;
+        self
+    }
+
+    /// Build the TestRepo with the configured state
+    pub fn build(self) -> TestRepo {
+        let mut repo = TestRepo::new();
+
+        if let Some(msg) = self.initial_commit {
+            repo.commit(&msg);
+        }
+
+        for (name, branch) in self.worktrees {
+            repo.add_worktree(&name, &branch);
+        }
+
+        if self.detached {
+            repo.detach_head();
+        }
+
+        for (name, reason) in self.locked_worktrees {
+            repo.lock_worktree(&name, reason.as_deref());
+        }
+
+        repo
+    }
+}
+
+impl Default for TestRepoBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
