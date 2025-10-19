@@ -6,6 +6,7 @@ use worktrunk::shell;
 #[derive(Parser)]
 #[command(name = "wt")]
 #[command(about = "Git worktree management", long_about = None)]
+#[command(version = env!("VERGEN_GIT_DESCRIBE"))]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
