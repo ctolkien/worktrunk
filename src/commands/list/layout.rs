@@ -1,5 +1,5 @@
 use crate::display::{find_common_prefix, get_terminal_width};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use unicode_width::UnicodeWidthStr;
 
 use super::WorktreeInfo;
@@ -120,7 +120,7 @@ pub fn calculate_column_widths(infos: &[WorktreeInfo]) -> ColumnWidths {
 /// Calculate responsive layout based on terminal width
 pub fn calculate_responsive_layout(infos: &[WorktreeInfo]) -> LayoutConfig {
     let terminal_width = get_terminal_width();
-    let paths: Vec<PathBuf> = infos.iter().map(|info| info.path.clone()).collect();
+    let paths: Vec<&Path> = infos.iter().map(|info| info.path.as_path()).collect();
     let common_prefix = find_common_prefix(&paths);
 
     // Count how many rows have each sparse column

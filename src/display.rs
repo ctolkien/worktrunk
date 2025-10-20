@@ -127,17 +127,17 @@ pub fn format_relative_time(timestamp: i64) -> String {
 }
 
 /// Find the common prefix among all paths
-pub fn find_common_prefix(paths: &[PathBuf]) -> PathBuf {
+pub fn find_common_prefix<P: AsRef<Path>>(paths: &[P]) -> PathBuf {
     if paths.is_empty() {
         return PathBuf::new();
     }
 
-    let first = &paths[0];
+    let first = paths[0].as_ref();
     let mut prefix = PathBuf::new();
 
     for component in first.components() {
         let candidate = prefix.join(component);
-        if paths.iter().all(|p| p.starts_with(&candidate)) {
+        if paths.iter().all(|p| p.as_ref().starts_with(&candidate)) {
             prefix = candidate;
         } else {
             break;
