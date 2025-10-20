@@ -1,6 +1,7 @@
 use crate::common::TestRepo;
 use insta::Settings;
 use insta_cmd::{assert_cmd_snapshot, get_cargo_bin};
+use rstest::rstest;
 use std::process::Command;
 
 /// Helper to create snapshot for init command
@@ -24,19 +25,12 @@ fn snapshot_init(test_name: &str, shell: &str, extra_args: &[&str]) {
     });
 }
 
-#[test]
-fn test_init_bash() {
-    snapshot_init("init_bash", "bash", &[]);
-}
-
-#[test]
-fn test_init_fish() {
-    snapshot_init("init_fish", "fish", &[]);
-}
-
-#[test]
-fn test_init_zsh() {
-    snapshot_init("init_zsh", "zsh", &[]);
+#[rstest]
+#[case("bash")]
+#[case("fish")]
+#[case("zsh")]
+fn test_init(#[case] shell: &str) {
+    snapshot_init(&format!("init_{}", shell), shell, &[]);
 }
 
 #[test]
@@ -44,14 +38,15 @@ fn test_init_bash_custom_prefix() {
     snapshot_init("init_bash_custom_prefix", "bash", &["--cmd", "wt"]);
 }
 
-#[test]
-fn test_init_bash_prompt_hook() {
-    snapshot_init("init_bash_prompt_hook", "bash", &["--hook", "prompt"]);
-}
-
-#[test]
-fn test_init_fish_prompt_hook() {
-    snapshot_init("init_fish_prompt_hook", "fish", &["--hook", "prompt"]);
+#[rstest]
+#[case("bash")]
+#[case("fish")]
+fn test_init_prompt_hook(#[case] shell: &str) {
+    snapshot_init(
+        &format!("init_{}_prompt_hook", shell),
+        shell,
+        &["--hook", "prompt"],
+    );
 }
 
 #[test]
