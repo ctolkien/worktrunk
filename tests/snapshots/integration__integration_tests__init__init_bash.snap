@@ -58,8 +58,6 @@ wt() {
     esac
 }
 
-
-
 # Dynamic completion function
 _wt_complete() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
@@ -94,8 +92,8 @@ _wt() {
             wt,complete)
                 cmd="wt__complete"
                 ;;
-            wt,hook)
-                cmd="wt__hook"
+            wt,completion)
+                cmd="wt__completion"
                 ;;
             wt,init)
                 cmd="wt__init"
@@ -122,7 +120,7 @@ _wt() {
 
     case "${cmd}" in
         wt)
-            opts="-h -V --help --version init list switch remove push merge hook complete"
+            opts="-h -V --help --version init list switch remove push merge completion complete"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -149,8 +147,8 @@ _wt() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        wt__hook)
-            opts="-h --help <HOOK_TYPE>"
+        wt__completion)
+            opts="-h --help bash fish zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -164,17 +162,13 @@ _wt() {
             return 0
             ;;
         wt__init)
-            opts="-h --cmd --hook --help <SHELL>"
+            opts="-h --cmd --help <SHELL>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --cmd)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --hook)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;

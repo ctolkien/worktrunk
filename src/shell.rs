@@ -47,50 +47,15 @@ impl fmt::Display for Shell {
     }
 }
 
-/// Hook mode for tracking worktree changes
-#[derive(Debug, Clone, Copy)]
-pub enum Hook {
-    /// Don't hook into shell - user calls commands manually
-    None,
-    /// Hook into shell prompt - update tracking on every prompt
-    Prompt,
-}
-
-impl std::str::FromStr for Hook {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "none" => Ok(Hook::None),
-            "prompt" => Ok(Hook::Prompt),
-            _ => Err(format!("Invalid hook mode: {}", s)),
-        }
-    }
-}
-
-impl fmt::Display for Hook {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Hook::None => write!(f, "none"),
-            Hook::Prompt => write!(f, "prompt"),
-        }
-    }
-}
-
 /// Shell integration configuration
 pub struct ShellInit {
     pub shell: Shell,
     pub cmd_prefix: String,
-    pub hook: Hook,
 }
 
 impl ShellInit {
-    pub fn new(shell: Shell, cmd_prefix: String, hook: Hook) -> Self {
-        Self {
-            shell,
-            cmd_prefix,
-            hook,
-        }
+    pub fn new(shell: Shell, cmd_prefix: String) -> Self {
+        Self { shell, cmd_prefix }
     }
 
     /// Generate shell integration code
@@ -100,42 +65,36 @@ impl ShellInit {
                 let template = BashTemplate {
                     shell_name: self.shell.to_string(),
                     cmd_prefix: &self.cmd_prefix,
-                    hook: self.hook,
                 };
                 template.render()
             }
             Shell::Fish => {
                 let template = FishTemplate {
                     cmd_prefix: &self.cmd_prefix,
-                    hook: self.hook,
                 };
                 template.render()
             }
             Shell::Nushell => {
                 let template = NushellTemplate {
                     cmd_prefix: &self.cmd_prefix,
-                    hook: self.hook,
                 };
                 template.render()
             }
             Shell::Powershell => {
                 let template = PowershellTemplate {
                     cmd_prefix: &self.cmd_prefix,
-                    hook: self.hook,
                 };
                 template.render()
             }
             Shell::Elvish => {
                 let template = ElvishTemplate {
                     cmd_prefix: &self.cmd_prefix,
-                    hook: self.hook,
                 };
                 template.render()
             }
             Shell::Xonsh => {
                 let template = XonshTemplate {
                     cmd_prefix: &self.cmd_prefix,
-                    hook: self.hook,
                 };
                 template.render()
             }
@@ -149,7 +108,6 @@ impl ShellInit {
 struct BashTemplate<'a> {
     shell_name: String,
     cmd_prefix: &'a str,
-    hook: Hook,
 }
 
 /// Fish shell template
@@ -157,7 +115,6 @@ struct BashTemplate<'a> {
 #[template(path = "fish.fish", escape = "none")]
 struct FishTemplate<'a> {
     cmd_prefix: &'a str,
-    hook: Hook,
 }
 
 /// Nushell shell template
@@ -165,7 +122,6 @@ struct FishTemplate<'a> {
 #[template(path = "nushell.nu", escape = "none")]
 struct NushellTemplate<'a> {
     cmd_prefix: &'a str,
-    hook: Hook,
 }
 
 /// PowerShell template
@@ -173,7 +129,6 @@ struct NushellTemplate<'a> {
 #[template(path = "powershell.ps1", escape = "none")]
 struct PowershellTemplate<'a> {
     cmd_prefix: &'a str,
-    hook: Hook,
 }
 
 /// Elvish shell template
@@ -181,7 +136,6 @@ struct PowershellTemplate<'a> {
 #[template(path = "elvish.elv", escape = "none")]
 struct ElvishTemplate<'a> {
     cmd_prefix: &'a str,
-    hook: Hook,
 }
 
 /// Xonsh shell template
@@ -189,7 +143,6 @@ struct ElvishTemplate<'a> {
 #[template(path = "xonsh.xsh", escape = "none")]
 struct XonshTemplate<'a> {
     cmd_prefix: &'a str,
-    hook: Hook,
 }
 
 #[cfg(test)]
@@ -203,12 +156,5 @@ mod tests {
         assert!(matches!("fish".parse::<Shell>(), Ok(Shell::Fish)));
         assert!(matches!("zsh".parse::<Shell>(), Ok(Shell::Zsh)));
         assert!("invalid".parse::<Shell>().is_err());
-    }
-
-    #[test]
-    fn test_hook_from_str() {
-        assert!(matches!("none".parse::<Hook>(), Ok(Hook::None)));
-        assert!(matches!("prompt".parse::<Hook>(), Ok(Hook::Prompt)));
-        assert!("invalid".parse::<Hook>().is_err());
     }
 }

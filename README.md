@@ -6,7 +6,7 @@ A Rust-based CLI tool for managing git worktrees with seamless shell integration
 
 - **Shell Integration**: Automatically `cd` to worktrees when switching
 - **Multiple Shells**: Supports Bash, Fish, Zsh, Nushell, PowerShell, Elvish, Xonsh, and Oil Shell
-- **Customizable**: Configure command prefix and hook behavior
+- **Customizable**: Configure command prefix
 - **Fast**: Built in Rust for performance
 - **Clean Design**: Uses the proven "eval init" pattern from tools like zoxide and starship
 
@@ -115,12 +115,6 @@ eval "$(wt init bash --cmd myprefix)"
 # Now use: myprefix switch, myprefix remove, etc.
 ```
 
-**Enable prompt hook:**
-```bash
-# Track worktree changes in your prompt
-eval "$(wt init bash --hook prompt)"
-```
-
 ## How It Works
 
 Worktrunk uses a **directive protocol** to communicate with shell wrappers:
@@ -191,8 +185,7 @@ wt (Rust binary)
 │   └── wt merge
 ├── Internal commands (for shell wrapper)
 │   ├── wt switch --internal → outputs __WORKTRUNK_CD__ directives
-│   ├── wt remove --internal → outputs __WORKTRUNK_CD__ directives
-│   └── wt hook prompt → for prompt integration
+│   └── wt remove --internal → outputs __WORKTRUNK_CD__ directives
 └── Shell integration
     └── wt init <shell> → outputs shell wrapper function
 ```

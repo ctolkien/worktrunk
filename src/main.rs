@@ -2,6 +2,7 @@ use anstyle::{AnsiColor, Color, Style};
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell as CompletionShell, generate};
 use rayon::prelude::*;
+use std::io;
 use std::path::Path;
 use std::process;
 use worktrunk::config::{format_worktree_path, load_config};
@@ -36,10 +37,6 @@ enum Commands {
         /// Command prefix (default: wt)
         #[arg(long, default_value = "wt")]
         cmd: String,
-
-        /// Hook mode (none, prompt)
-        #[arg(long, default_value = "none")]
-        hook: String,
     },
 
     /// List all worktrees
@@ -94,11 +91,12 @@ enum Commands {
         keep: bool,
     },
 
-    /// Hook commands (for shell integration)
+    /// Generate shell completion script (deprecated - use init instead)
     #[command(hide = true)]
-    Hook {
-        /// Hook type
-        hook_type: String,
+    Completion {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: Shell,
     },
 
     /// Internal completion helper (hidden)
@@ -110,13 +108,18 @@ enum Commands {
     },
 }
 
+#[derive(clap::ValueEnum, Clone, Copy)]
+enum Shell {
+    Bash,
+    Fish,
+    Zsh,
+}
+
 fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Init { shell, cmd, hook } => {
-            handle_init(&shell, &cmd, &hook).map_err(GitError::CommandFailed)
-        }
+        Commands::Init { shell, cmd } => handle_init(&shell, &cmd).map_err(GitError::CommandFailed),
         Commands::List => handle_list(),
         Commands::Switch {
             branch,
@@ -144,7 +147,10 @@ fn main() {
             squash,
             keep,
         } => handle_merge(target.as_deref(), squash, keep),
-        Commands::Hook { hook_type } => handle_hook(&hook_type).map_err(GitError::CommandFailed),
+        Commands::Completion { shell } => {
+            handle_completion(shell);
+            Ok(())
+        }
         Commands::Complete { args } => handle_complete(args),
     };
 
@@ -155,11 +161,10 @@ fn main() {
     }
 }
 
-fn handle_init(shell_name: &str, cmd: &str, hook_str: &str) -> Result<(), String> {
+fn handle_init(shell_name: &str, cmd: &str) -> Result<(), String> {
     let shell = shell_name.parse::<shell::Shell>()?;
-    let hook = hook_str.parse::<shell::Hook>()?;
 
-    let init = shell::ShellInit::new(shell, cmd.to_string(), hook);
+    let init = shell::ShellInit::new(shell, cmd.to_string());
 
     // Generate shell integration code
     let integration_output = init
@@ -192,16 +197,14 @@ fn handle_init(shell_name: &str, cmd: &str, hook_str: &str) -> Result<(), String
     };
     generate(completion_shell, &mut cmd, "wt", &mut completion_output);
 
-    // Filter out lines for hidden commands (hook, completion, complete)
+    // Filter out lines for hidden commands (completion, complete)
     let completion_str = String::from_utf8_lossy(&completion_output);
     let filtered: Vec<&str> = completion_str
         .lines()
         .filter(|line| {
             // Remove lines that complete the hidden commands
-            !(line.contains("\"hook\"")
-                || line.contains("\"completion\"")
+            !(line.contains("\"completion\"")
                 || line.contains("\"complete\"")
-                || line.contains("-a \"hook\"")
                 || line.contains("-a \"completion\"")
                 || line.contains("-a \"complete\""))
         })
@@ -1030,15 +1033,14 @@ fn handle_merge(target: Option<&str>, squash: bool, keep: bool) -> Result<(), Gi
     Ok(())
 }
 
-fn handle_hook(hook_type: &str) -> Result<(), String> {
-    match hook_type {
-        "prompt" => {
-            // TODO: Implement prompt hook logic
-            // This would update tracking, show current worktree, etc.
-            Ok(())
-        }
-        _ => Err(format!("Unknown hook type: {}", hook_type)),
-    }
+fn handle_completion(shell: Shell) {
+    let mut cmd = Cli::command();
+    let completion_shell = match shell {
+        Shell::Bash => CompletionShell::Bash,
+        Shell::Fish => CompletionShell::Fish,
+        Shell::Zsh => CompletionShell::Zsh,
+    };
+    generate(completion_shell, &mut cmd, "wt", &mut io::stdout());
 }
 
 #[derive(Debug, PartialEq)]

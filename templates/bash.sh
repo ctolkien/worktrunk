@@ -37,21 +37,6 @@ _wt_exec() {
     esac
 }
 
-{% if hook.to_string() == "prompt" %}
-# Prompt hook for tracking current worktree
-_wt_prompt_hook() {
-    # Call wt to update tracking
-    command wt hook prompt 2>/dev/null || true
-}
-
-# Add to PROMPT_COMMAND
-if [[ -z "${PROMPT_COMMAND}" ]]; then
-    PROMPT_COMMAND="_wt_prompt_hook"
-else
-    PROMPT_COMMAND="${PROMPT_COMMAND}; _wt_prompt_hook"
-fi
-{% endif %}
-
 # Dynamic completion function
 _{{ cmd_prefix }}_complete() {
     local cur="${COMP_WORDS[COMP_CWORD]}"

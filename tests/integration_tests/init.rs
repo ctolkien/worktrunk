@@ -45,26 +45,6 @@ fn test_init_bash_custom_prefix() {
     snapshot_init("init_bash_custom_prefix", "bash", &["--cmd", "wt"]);
 }
 
-#[rstest]
-#[case("bash")]
-#[case("fish")]
-fn test_init_prompt_hook(#[case] shell: &str) {
-    snapshot_init(
-        &format!("init_{}_prompt_hook", shell),
-        shell,
-        &["--hook", "prompt"],
-    );
-}
-
-#[test]
-fn test_init_bash_all_options() {
-    snapshot_init(
-        "init_bash_all_options",
-        "bash",
-        &["--cmd", "wt", "--hook", "prompt"],
-    );
-}
-
 #[test]
 fn test_init_invalid_shell() {
     let repo = TestRepo::new();
@@ -79,24 +59,5 @@ fn test_init_invalid_shell() {
             .current_dir(repo.root_path());
 
         assert_cmd_snapshot!("init_invalid_shell", cmd);
-    });
-}
-
-#[test]
-fn test_init_invalid_hook() {
-    let repo = TestRepo::new();
-    let mut settings = Settings::clone_current();
-    settings.set_snapshot_path("../snapshots");
-
-    settings.bind(|| {
-        let mut cmd = Command::new(get_cargo_bin("wt"));
-        repo.clean_cli_env(&mut cmd);
-        cmd.arg("init")
-            .arg("bash")
-            .arg("--hook")
-            .arg("invalid")
-            .current_dir(repo.root_path());
-
-        assert_cmd_snapshot!("init_invalid_hook", cmd);
     });
 }

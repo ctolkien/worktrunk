@@ -58,8 +58,6 @@ wt() {
     esac
 }
 
-
-
 # Dynamic completion function
 _wt_complete() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
@@ -106,7 +104,6 @@ _wt() {
             (init)
 _arguments "${_arguments_options[@]}" : \
 '--cmd=[Command prefix (default\: wt)]:CMD:_default' \
-'--hook=[Hook mode (none, prompt)]:HOOK:_default' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':shell -- Shell to generate code for (bash, fish, zsh):_default' \
@@ -156,11 +153,11 @@ _arguments "${_arguments_options[@]}" : \
 '::target -- Target branch to merge into (defaults to default branch):_default' \
 && ret=0
 ;;
-(hook)
+(completion)
 _arguments "${_arguments_options[@]}" : \
 '-h[Print help]' \
 '--help[Print help]' \
-':hook_type -- Hook type:_default' \
+':shell -- Shell to generate completions for:(bash fish zsh)' \
 && ret=0
 ;;
 (complete)
@@ -184,7 +181,7 @@ _wt_commands() {
 'remove:Finish current worktree, returning to primary if current' \
 'push:Push changes between worktrees' \
 'merge:Merge worktree into target branch' \
-'hook:Hook commands (for shell integration)' \
+'completion:Generate shell completion script (deprecated - use init instead)' \
 'complete:Internal completion helper (hidden)' \
     )
     _describe -t commands 'wt commands' commands "$@"
@@ -194,10 +191,10 @@ _wt__complete_commands() {
     local commands; commands=()
     _describe -t commands 'wt complete commands' commands "$@"
 }
-(( $+functions[_wt__hook_commands] )) ||
-_wt__hook_commands() {
+(( $+functions[_wt__completion_commands] )) ||
+_wt__completion_commands() {
     local commands; commands=()
-    _describe -t commands 'wt hook commands' commands "$@"
+    _describe -t commands 'wt completion commands' commands "$@"
 }
 (( $+functions[_wt__init_commands] )) ||
 _wt__init_commands() {

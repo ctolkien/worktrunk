@@ -33,14 +33,6 @@ function {{ cmd_prefix }}
     end
 end
 
-{% if hook.to_string() == "prompt" %}
-# Prompt hook for tracking current worktree
-function _wt_prompt_hook --on-event fish_prompt
-    # Call wt to update tracking
-    command wt hook prompt 2>/dev/null; or true
-end
-{% endif %}
-
 # Dynamic completion function
 function __{{ cmd_prefix }}_complete
     # Call wt complete with current command line

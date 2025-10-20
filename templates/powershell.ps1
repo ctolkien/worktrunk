@@ -54,17 +54,3 @@ function {{ cmd_prefix }} {
         }
     }
 }
-
-{% if hook.to_string() == "prompt" %}
-# Prompt hook for tracking current worktree
-# Note: PowerShell prompt hooks work by overriding the prompt function
-$global:_wt_previous_prompt = $function:prompt
-
-function global:prompt {
-    # Call original prompt
-    & $global:_wt_previous_prompt
-
-    # Call wt to update tracking (suppress errors)
-    & wt hook prompt 2>$null | Out-Null
-}
-{% endif %}

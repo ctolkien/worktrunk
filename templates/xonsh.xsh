@@ -39,18 +39,3 @@ def _{{ cmd_prefix }}_wrapper(args):
 
 # Register the alias
 aliases['{{ cmd_prefix }}'] = _{{ cmd_prefix }}_wrapper
-
-{% if hook.to_string() == "prompt" %}
-# Prompt hook for tracking current worktree
-# Note: Xonsh uses events.on_chdir for directory change tracking
-import xonsh.events as events
-
-@events.on_chdir
-def _wt_prompt_hook(olddir, newdir, **kwargs):
-    """Call wt to update tracking on directory change"""
-    try:
-        !(wt hook prompt > /dev/null 2>&1)
-    except Exception:
-        # Ignore errors
-        pass
-{% endif %}

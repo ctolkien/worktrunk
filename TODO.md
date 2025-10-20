@@ -78,7 +78,6 @@ Interface with shell and external tools.
 - Execute shell commands (git-commit-llm, claude, task)
 - Background process management (disown equivalent)
 - Shell function generation (for `cd` integration)
-- Hook system for custom commands
 
 **Dependencies:** Workstream 1
 
@@ -130,8 +129,7 @@ wt (Rust binary)
 │   └── wt status
 ├── Internal commands (for shell wrapper)
 │   ├── wt switch --internal → outputs __WORKTRUNK_CD__ directives
-│   ├── wt finish --internal → outputs __WORKTRUNK_CD__ directives
-│   └── wt hook prompt → for prompt integration
+│   └── wt finish --internal → outputs __WORKTRUNK_CD__ directives
 └── Shell integration
     └── wt init <shell> → outputs shell wrapper functions
 ```
@@ -183,14 +181,10 @@ Another output line
 2. **Shell Support**: Start with Bash and Fish, extend to Zsh later
 3. **Customization Flags**:
    - `--cmd <prefix>`: Customize command prefix (default: "wt")
-   - `--hook <mode>`: Control tracking updates (none, prompt)
-   - `--no-alias`: Skip creating convenience aliases
 
 4. **Progressive Enhancement Levels**:
    - Level 0: Just the binary - works but requires manual `cd`
    - Level 1: Shell wrapper - auto-`cd` on switch
-   - Level 2: Prompt hooks - track current worktree in prompt
-   - Level 3: Auto-switching - detect worktree markers
 
 ### Implementation Phases
 
@@ -210,7 +204,6 @@ Another output line
 
 **Phase 3: Enhancement**
 - [ ] Add `--cmd` flag for command prefix customization
-- [ ] Add `--hook prompt` for prompt integration
 - [ ] Implement shell completion generation
 - [ ] Add Zsh support
 
@@ -219,7 +212,6 @@ Another output line
 - **Keep execution fast** (<500ms) - don't block the shell (direnv)
 - **Use Askama** for type-safe templates (zoxide)
 - **Support customizable command prefixes** (zoxide `--cmd`)
-- **Provide hook modes** for different tracking strategies (zoxide `--hook`)
 - **Keep binary stateless** (starship)
 - **Make shell integration minimal** (starship)
 

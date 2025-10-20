@@ -114,23 +114,6 @@ $ myprefix finish
 $ myprefix list
 ```
 
-### Enable Prompt Hook
-
-```bash
-# Track worktree in every prompt
-$ eval "$(wt init bash --hook prompt)"
-
-# Now wt hook prompt runs before each prompt
-# (useful for showing current worktree in PS1)
-```
-
-### Multiple Options Combined
-
-```bash
-# Custom prefix + prompt hook
-$ eval "$(wt init fish --cmd myprefix --hook prompt)"
-```
-
 ## Implementation Architecture
 
 ```
@@ -180,13 +163,10 @@ chmod +x .tmp/test_integration.sh
 # Test 3: Test custom command prefix
 # ✓ Custom command prefix works
 #
-# Test 4: Test prompt hook
-# ✓ Prompt hook generated successfully
-#
-# Test 5: Test directive output
+# Test 4: Test directive output
 # ✓ Directive output works
 #
-# Test 6: Simulate shell wrapper behavior
+# Test 5: Simulate shell wrapper behavior
 # ✓ Shell wrapper functions work
 #
 # All tests passed! ✓

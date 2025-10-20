@@ -40,17 +40,3 @@ export def --env --wrapped {{ cmd_prefix }} [...rest] {
         }
     }
 }
-
-{% if hook.to_string() == "prompt" %}
-# Prompt hook for tracking current worktree
-$env.config = ($env.config | upsert hooks {
-    env_change: {
-        PWD: [
-            {|before, after|
-                # Call wt to update tracking
-                do { ^wt hook prompt } | complete | ignore
-            }
-        ]
-    }
-})
-{% endif %}

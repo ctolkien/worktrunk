@@ -54,8 +54,6 @@ function wt
     end
 end
 
-
-
 # Dynamic completion function
 function __wt_complete
     # Call wt complete with current command line
@@ -105,7 +103,6 @@ complete -c wt -n "__fish_wt_needs_command" -f -a "remove" -d 'Finish current wo
 complete -c wt -n "__fish_wt_needs_command" -f -a "push" -d 'Push changes between worktrees'
 complete -c wt -n "__fish_wt_needs_command" -f -a "merge" -d 'Merge worktree into target branch'
 complete -c wt -n "__fish_wt_using_subcommand init" -l cmd -d 'Command prefix (default: wt)' -r
-complete -c wt -n "__fish_wt_using_subcommand init" -l hook -d 'Hook mode (none, prompt)' -r
 complete -c wt -n "__fish_wt_using_subcommand init" -s h -l help -d 'Print help'
 complete -c wt -n "__fish_wt_using_subcommand list" -s h -l help -d 'Print help'
 complete -c wt -n "__fish_wt_using_subcommand switch" -s b -l base -d 'Base branch to create from (only with --create)' -r
@@ -119,7 +116,7 @@ complete -c wt -n "__fish_wt_using_subcommand push" -s h -l help -d 'Print help'
 complete -c wt -n "__fish_wt_using_subcommand merge" -s s -l squash -d 'Squash all commits into one before merging'
 complete -c wt -n "__fish_wt_using_subcommand merge" -s k -l keep -d 'Keep worktree after merging (don\'t remove)'
 complete -c wt -n "__fish_wt_using_subcommand merge" -s h -l help -d 'Print help'
-complete -c wt -n "__fish_wt_using_subcommand hook" -s h -l help -d 'Print help'
+complete -c wt -n "__fish_wt_using_subcommand completion" -s h -l help -d 'Print help'
 complete -c wt -n "__fish_wt_using_subcommand complete" -s h -l help -d 'Print help'
 
 ----- stderr -----

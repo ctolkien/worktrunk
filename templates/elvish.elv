@@ -50,15 +50,3 @@ fn {{ cmd_prefix }} {|@args|
         e:wt $@args
     }
 }
-
-{% if hook.to_string() == "prompt" %}
-# Prompt hook for tracking current worktree
-set after-chdir = [$@after-chdir {|_|
-    # Call wt to update tracking (suppress errors)
-    try {
-        e:wt hook prompt > /dev/null 2>&1
-    } catch {
-        # Ignore errors
-    }
-}]
-{% endif %}
