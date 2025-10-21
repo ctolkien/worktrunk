@@ -23,7 +23,8 @@ exit_code: 0
 First
 Second
 Created new branch and worktree for 'feature' at [REPO].feature
-Note: Use 'wt switch' (with shell integration) for automatic cd
+
+To enable automatic cd, run: wt configure-shell
 
 ----- stderr -----
 Executing: echo 'First'

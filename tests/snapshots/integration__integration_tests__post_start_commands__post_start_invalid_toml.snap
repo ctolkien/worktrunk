@@ -21,7 +21,8 @@ success: true
 exit_code: 0
 ----- stdout -----
 Created new branch and worktree for 'feature' at [REPO].feature
-Note: Use 'wt switch' (with shell integration) for automatic cd
+
+To enable automatic cd, run: wt configure-shell
 
 ----- stderr -----
 Warning: Failed to load project config from [REPO]/.config/wt.toml
