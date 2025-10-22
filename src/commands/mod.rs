@@ -6,7 +6,7 @@ pub mod merge;
 pub mod worktree;
 
 pub use completion::{handle_complete, handle_completion};
-pub use configure_shell::handle_configure_shell;
+pub use configure_shell::{ConfigAction, handle_configure_shell};
 pub use init::handle_init;
 pub use list::handle_list;
 pub use merge::handle_merge;

@@ -155,7 +155,24 @@ fn main() {
         Commands::ConfigureShell { shell, cmd, yes } => {
             handle_configure_shell(shell, &cmd, yes)
                 .map(|results| {
-                    for result in results {
+                    use anstyle::{AnsiColor, Color};
+
+                    // Count actual changes (not AlreadyExists)
+                    let changes_count = results
+                        .iter()
+                        .filter(|r| !matches!(r.action, crate::ConfigAction::AlreadyExists))
+                        .count();
+
+                    if changes_count == 0 {
+                        // All shells already configured
+                        let green = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
+                        let green_bold = green.bold();
+                        println!("✅ {green}All shells already configured{green:#}");
+                        return;
+                    }
+
+                    // Show what was done
+                    for result in &results {
                         let bold = Style::new().bold();
                         let shell = result.shell;
                         let path = result.path.display();
@@ -169,6 +186,19 @@ fn main() {
                             println!("  {dim}{line}{dim:#}");
                         }
                     }
+
+                    // Success summary
+                    println!();
+                    let green = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
+                    let plural = if changes_count == 1 { "" } else { "s" };
+                    println!("✅ {green}Configured {changes_count} shell{plural}{green:#}");
+
+                    // Show hint about restarting shell
+                    println!();
+                    use worktrunk::styling::{HINT, HINT_EMOJI};
+                    println!(
+                        "{HINT_EMOJI} {HINT}Restart your shell or run: source <config-file>{HINT:#}"
+                    );
                 })
                 .map_err(GitError::CommandFailed)
         }

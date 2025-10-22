@@ -6,7 +6,7 @@ mod spacing_test;
 
 use rayon::prelude::*;
 use worktrunk::git::{GitError, Repository};
-use worktrunk::styling::{WARNING, WARNING_EMOJI, eprintln};
+use worktrunk::styling::{HINT, HINT_EMOJI, WARNING, WARNING_EMOJI, eprintln};
 
 use layout::calculate_responsive_layout;
 use render::{format_header_line, format_list_item_line};
@@ -272,7 +272,10 @@ pub fn handle_list(format: crate::OutputFormat, show_branches: bool) -> Result<(
                 Err(e) => {
                     let warning_bold = WARNING.bold();
                     eprintln!(
-                        "{WARNING_EMOJI} Failed to enrich branch {warning_bold}{branch}{warning_bold:#}: {e}"
+                        "{WARNING_EMOJI} {WARNING}Failed to enrich branch {warning_bold}{branch}{warning_bold:#}: {e}{WARNING:#}"
+                    );
+                    eprintln!(
+                        "{HINT_EMOJI} {HINT}This branch will be shown with limited information{HINT:#}"
                     );
                 }
             }
@@ -307,8 +310,72 @@ pub fn handle_list(format: crate::OutputFormat, show_branches: bool) -> Result<(
             for item in &items {
                 format_list_item_line(item, &layout, current_worktree_path.as_ref());
             }
+
+            // Display summary line
+            display_summary(&items, show_branches);
         }
     }
 
     Ok(())
+}
+
+fn display_summary(items: &[ListItem], include_branches: bool) {
+    use anstyle::Style;
+    use worktrunk::styling::println;
+
+    if items.is_empty() {
+        println!();
+        use worktrunk::styling::{HINT, HINT_EMOJI};
+        println!("{HINT_EMOJI} {HINT}No worktrees found{HINT:#}");
+        println!("{HINT_EMOJI} {HINT}Create one with: wt switch --create <branch>{HINT:#}");
+        return;
+    }
+
+    let worktree_count = items.iter().filter(|i| i.worktree_info().is_some()).count();
+    let branch_count = items.len() - worktree_count;
+
+    // Count worktrees with changes
+    let dirty_count = items
+        .iter()
+        .filter_map(|i| i.worktree_info())
+        .filter(|wt| {
+            let (added, deleted) = wt.working_tree_diff;
+            added > 0 || deleted > 0
+        })
+        .count();
+
+    // Count items ahead/behind
+    let ahead_count = items.iter().filter(|i| i.ahead() > 0).count();
+    let behind_count = items.iter().filter(|i| i.behind() > 0).count();
+
+    println!();
+    let dim = Style::new().dimmed();
+
+    // Build summary parts
+    let mut parts = Vec::new();
+
+    if include_branches {
+        parts.push(format!("{} worktrees", worktree_count));
+        if branch_count > 0 {
+            parts.push(format!("{} branches", branch_count));
+        }
+    } else {
+        let plural = if worktree_count == 1 { "" } else { "s" };
+        parts.push(format!("{} worktree{}", worktree_count, plural));
+    }
+
+    if dirty_count > 0 {
+        parts.push(format!("{} with changes", dirty_count));
+    }
+
+    if ahead_count > 0 {
+        parts.push(format!("{} ahead", ahead_count));
+    }
+
+    if behind_count > 0 {
+        parts.push(format!("{} behind", behind_count));
+    }
+
+    let summary = parts.join(", ");
+    println!("{dim}Showing {summary}{dim:#}");
 }

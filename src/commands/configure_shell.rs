@@ -333,10 +333,13 @@ fn configure_fish_file(
 }
 
 fn prompt_for_confirmation(results: &[ConfigureResult]) -> Result<bool, String> {
-    use anstyle::Style;
+    use anstyle::{AnsiColor, Color, Style};
+
+    let cyan = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Cyan)));
+    let cyan_bold = cyan.bold();
 
     eprintln!();
-    eprintln!("The following changes will be made:");
+    eprintln!("🔧 {cyan_bold}Configuration changes:{cyan_bold:#}");
     eprintln!();
 
     for result in results {
@@ -362,7 +365,7 @@ fn prompt_for_confirmation(results: &[ConfigureResult]) -> Result<bool, String> 
     }
 
     eprintln!();
-    eprint!("Proceed? [y/N] ");
+    eprint!("💡 Proceed? [y/N] ");
     io::stderr().flush().map_err(|e| e.to_string())?;
 
     let mut input = String::new();
