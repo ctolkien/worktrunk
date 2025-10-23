@@ -118,46 +118,92 @@ pub fn handle_merge(
 
         // Print comprehensive summary
         println!();
-        print_merge_summary(&current_branch, &target_branch, squashed_count, true);
+        handle_merge_summary_output(
+            &current_branch,
+            &target_branch,
+            squashed_count,
+            true,
+            internal,
+        )?;
     } else {
         // Print comprehensive summary (worktree preserved)
         println!();
-        print_merge_summary(&current_branch, &target_branch, squashed_count, false);
+        handle_merge_summary_output(
+            &current_branch,
+            &target_branch,
+            squashed_count,
+            false,
+            internal,
+        )?;
     }
 
     Ok(())
 }
 
-/// Print a comprehensive summary of the merge operation
-fn print_merge_summary(
+/// Format the merge summary message
+fn format_merge_summary(
     from_branch: &str,
     to_branch: &str,
     squashed_count: Option<usize>,
     cleaned_up: bool,
-) {
+) -> String {
     let green = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
     let green_bold = green.bold();
     let dim = AnstyleStyle::new().dimmed();
 
-    println!("✅ {green}Merge complete{green:#}");
-    println!();
+    let mut output = format!("✅ {green}Merge complete{green:#}\n\n");
 
     // Show what was merged
-    println!(
-        "  {dim}Merged: {green_bold}{from_branch}{green_bold:#} → {green_bold}{to_branch}{green_bold:#}{dim:#}"
-    );
+    output.push_str(&format!(
+        "  {dim}Merged: {green_bold}{from_branch}{green_bold:#} → {green_bold}{to_branch}{green_bold:#}{dim:#}\n"
+    ));
 
     // Show squash info if applicable
     if let Some(count) = squashed_count {
-        println!("  {dim}Squashed: {count} commits into 1{dim:#}");
+        output.push_str(&format!("  {dim}Squashed: {count} commits into 1{dim:#}\n"));
     }
 
     // Show worktree status
     if cleaned_up {
-        println!("  {dim}Worktree: Removed{dim:#}");
+        output.push_str(&format!("  {dim}Worktree: Removed{dim:#}"));
     } else {
-        println!("  {dim}Worktree: Kept (use 'wt remove' to clean up){dim:#}");
+        output.push_str(&format!(
+            "  {dim}Worktree: Kept (use 'wt remove' to clean up){dim:#}"
+        ));
     }
+
+    output
+}
+
+/// Handle output for merge summary
+///
+/// In internal mode: outputs directives for shell wrapper
+/// In non-internal mode: prints message directly
+fn handle_merge_summary_output(
+    from_branch: &str,
+    to_branch: &str,
+    squashed_count: Option<usize>,
+    cleaned_up: bool,
+    internal: bool,
+) -> Result<(), GitError> {
+    use crate::output::{Directive, DirectiveOutput};
+
+    let message = format_merge_summary(from_branch, to_branch, squashed_count, cleaned_up);
+
+    if internal {
+        // Internal mode: output directives for shell wrapper
+        let mut output = DirectiveOutput::new();
+        output.add(Directive::Message(message));
+
+        output
+            .write_to_stdout()
+            .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    } else {
+        // Non-internal mode: print directly
+        println!("{}", message);
+    }
+
+    Ok(())
 }
 
 /// Commit uncommitted changes with LLM-generated message

@@ -87,3 +87,56 @@ fn test_remove_without_internal() {
         assert_cmd_snapshot!("remove_without_internal", cmd);
     });
 }
+
+/// Test merge command with internal flag and --keep
+#[test]
+fn test_merge_internal_keep() {
+    let mut repo = TestRepo::new();
+    repo.commit("Initial commit");
+    repo.setup_remote("main");
+
+    // Create a worktree for main
+    let main_wt = repo.root_path().parent().unwrap().join("test-repo.main-wt");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["worktree", "add", main_wt.to_str().unwrap(), "main"])
+        .current_dir(repo.root_path())
+        .output()
+        .expect("Failed to add worktree");
+
+    // Create a feature worktree and make a commit
+    let feature_wt = repo.add_worktree("feature", "feature");
+    std::fs::write(feature_wt.join("feature.txt"), "feature content")
+        .expect("Failed to write file");
+
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["add", "feature.txt"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to add file");
+
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["commit", "-m", "Add feature file"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to commit");
+
+    let mut settings = Settings::clone_current();
+    settings.set_snapshot_path("../snapshots");
+    // Normalize SHA in output
+    settings.add_filter(r"@ [a-f0-9]{7}", "@ [SHA]");
+
+    settings.bind(|| {
+        let mut cmd = Command::new(get_cargo_bin("wt"));
+        repo.clean_cli_env(&mut cmd);
+        cmd.arg("merge")
+            .arg("main")
+            .arg("--keep")
+            .arg("--internal")
+            .current_dir(&feature_wt);
+
+        assert_cmd_snapshot!("merge_internal_keep", cmd);
+    });
+}
