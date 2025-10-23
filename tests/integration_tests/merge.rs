@@ -365,17 +365,18 @@ fn test_merge_squash_with_llm() {
         .expect("Failed to commit");
 
     // Configure mock LLM command via environment variable
-    // Use echo to return a fixed message
+    // Use sh to consume stdin and return a fixed message
     snapshot_merge_with_env(
         "merge_squash_with_llm",
         &repo,
         &["main", "--squash"],
         Some(&feature_wt),
         &[
-            ("WORKTRUNK_LLM__COMMAND", "echo"),
+            ("WORKTRUNK_LLM__COMMAND", "sh"),
+            ("WORKTRUNK_LLM__ARGS__0", "-c"),
             (
-                "WORKTRUNK_LLM__ARGS",
-                "feat: implement user authentication system",
+                "WORKTRUNK_LLM__ARGS__1",
+                "cat >/dev/null && echo 'feat: implement user authentication system'",
             ),
         ],
     );

@@ -36,6 +36,9 @@ fn try_generate_llm_message(
     command: &str,
     args: &[String],
 ) -> Result<String, Box<dyn std::error::Error>> {
+    use std::io::Write;
+    use std::process::Stdio;
+
     // Build context prompt
     let mut context = format!(
         "Squashing commits on current branch since branching from {}\n\n",
@@ -49,11 +52,21 @@ fn try_generate_llm_message(
     let prompt = "Generate a conventional commit message (feat/fix/docs/style/refactor) that combines these changes into one cohesive message. Output only the commit message without any explanation.";
     let full_prompt = format!("{}\n\n{}", context, prompt);
 
-    // Execute LLM command
-    let output = process::Command::new(command)
+    // Execute LLM command with prompt via stdin
+    let mut child = process::Command::new(command)
         .args(args)
-        .arg(&full_prompt)
-        .output()?;
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    // Write prompt to stdin
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(full_prompt.as_bytes())?;
+        // stdin is dropped here, closing the pipe
+    }
+
+    let output = child.wait_with_output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
