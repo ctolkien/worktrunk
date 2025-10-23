@@ -71,20 +71,22 @@ pub fn handle_merge(
 
     // Squash commits if requested
     if squash {
-        squashed_count = handle_squash(&target_branch)?;
+        squashed_count = handle_squash(&target_branch, internal)?;
     }
 
     // Rebase onto target
-    let cyan = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Cyan)));
-    let cyan_bold = cyan.bold();
-    println!("🔄 {cyan}Rebasing onto {cyan_bold}{target_branch}{cyan_bold:#}...{cyan:#}");
+    if !internal {
+        let cyan = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Cyan)));
+        let cyan_bold = cyan.bold();
+        println!("🔄 {cyan}Rebasing onto {cyan_bold}{target_branch}{cyan_bold:#}...{cyan:#}");
+    }
 
     repo.run_command(&["rebase", &target_branch]).map_err(|e| {
         GitError::CommandFailed(format!("Failed to rebase onto '{}': {}", target_branch, e))
     })?;
 
     // Fast-forward push to target branch (reuse handle_push logic)
-    handle_push(Some(&target_branch), false)?;
+    handle_push(Some(&target_branch), false, internal)?;
 
     // Finish worktree unless --keep was specified
     if !keep {
@@ -242,7 +244,7 @@ fn handle_commit_changes(
     Ok(())
 }
 
-fn handle_squash(target_branch: &str) -> Result<Option<usize>, GitError> {
+fn handle_squash(target_branch: &str, internal: bool) -> Result<Option<usize>, GitError> {
     let repo = Repository::current();
 
     // Get merge base with target branch
@@ -257,8 +259,10 @@ fn handle_squash(target_branch: &str) -> Result<Option<usize>, GitError> {
     // Handle different scenarios
     if commit_count == 0 && !has_staged {
         // No commits and no staged changes - nothing to squash
-        let dim = AnstyleStyle::new().dimmed();
-        println!("{dim}No commits to squash - already at merge base{dim:#}");
+        if !internal {
+            let dim = AnstyleStyle::new().dimmed();
+            println!("{dim}No commits to squash - already at merge base{dim:#}");
+        }
         return Ok(None);
     }
 
@@ -272,19 +276,23 @@ fn handle_squash(target_branch: &str) -> Result<Option<usize>, GitError> {
 
     if commit_count == 1 && !has_staged {
         // Single commit, no staged changes - nothing to do
-        let cyan_bold = AnstyleStyle::new()
-            .fg_color(Some(Color::Ansi(AnsiColor::Cyan)))
-            .bold();
-        let dim = AnstyleStyle::new().dimmed();
-        println!(
-            "{dim}Only 1 commit since {cyan_bold}{target_branch}{cyan_bold:#} - no squashing needed{dim:#}"
-        );
+        if !internal {
+            let cyan_bold = AnstyleStyle::new()
+                .fg_color(Some(Color::Ansi(AnsiColor::Cyan)))
+                .bold();
+            let dim = AnstyleStyle::new().dimmed();
+            println!(
+                "{dim}Only 1 commit since {cyan_bold}{target_branch}{cyan_bold:#} - no squashing needed{dim:#}"
+            );
+        }
         return Ok(None);
     }
 
     // One or more commits (possibly with staged changes) - squash them
-    let cyan = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Cyan)));
-    println!("🔄 {cyan}Squashing {commit_count} commits into one...{cyan:#}");
+    if !internal {
+        let cyan = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Cyan)));
+        println!("🔄 {cyan}Squashing {commit_count} commits into one...{cyan:#}");
+    }
 
     // Get commit subjects for the squash message
     let range = format!("{}..HEAD", merge_base);
@@ -303,8 +311,10 @@ fn handle_squash(target_branch: &str) -> Result<Option<usize>, GitError> {
     repo.run_command(&["commit", "-m", &commit_message])
         .map_err(|e| GitError::CommandFailed(format!("Failed to create squash commit: {}", e)))?;
 
-    let green = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
-    println!("✅ {green}Squashed {commit_count} commits into one{green:#}");
+    if !internal {
+        let green = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
+        println!("✅ {green}Squashed {commit_count} commits into one{green:#}");
+    }
     Ok(Some(commit_count))
 }
 

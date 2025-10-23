@@ -46,24 +46,51 @@ if type -q wt
             return 1
         end
 
+        # Debug mode: set WORKTRUNK_DEBUG=1 to see what's happening
+        set -l debug_mode 0
+        if set -q WORKTRUNK_DEBUG
+            set debug_mode 1
+            echo "[DEBUG] Starting _wt_exec with args: $argv" >&2
+        end
+
         # Use psub (process substitution) to preserve NUL bytes
         # Command substitution $(...)  strips NUL bytes, but psub preserves them
         # Redirect directly from psub output, and save exit code to temp file
+        set -l chunk_count 0
         while read -z chunk
+            set chunk_count (math $chunk_count + 1)
+            if test $debug_mode -eq 1
+                echo "[DEBUG] Chunk $chunk_count length: "(string length -- $chunk) >&2
+                echo "[DEBUG] Chunk $chunk_count first 50 chars: "(string sub -l 50 -- $chunk) >&2
+            end
+
             if string match -q '__WORKTRUNK_CD__*' -- $chunk
                 # CD directive - extract path and change directory
                 set -l path (string replace '__WORKTRUNK_CD__' '' -- $chunk)
+                if test $debug_mode -eq 1
+                    echo "[DEBUG] CD directive: $path" >&2
+                end
                 if not cd $path
                     echo "Error: Failed to change directory to $path" >&2
                 end
             else if string match -q '__WORKTRUNK_EXEC__*' -- $chunk
                 # EXEC directive - extract command (may contain newlines)
                 set exec_cmd (string replace '__WORKTRUNK_EXEC__' '' -- $chunk)
+                if test $debug_mode -eq 1
+                    echo "[DEBUG] EXEC directive: $exec_cmd" >&2
+                end
             else if test -n "$chunk"
                 # Regular output - print it (preserving newlines)
+                if test $debug_mode -eq 1
+                    echo "[DEBUG] Message chunk" >&2
+                end
                 printf '%s' $chunk
             end
         end < (begin; command $_WORKTRUNK_CMD $argv 2>&1; echo $status > $exit_code_file; end | psub)
+
+        if test $debug_mode -eq 1
+            echo "[DEBUG] Finished reading, total chunks: $chunk_count" >&2
+        end
 
         # Read exit code from temp file
         set -l exit_code (cat $exit_code_file 2>/dev/null; or echo 0)

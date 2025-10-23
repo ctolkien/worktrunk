@@ -508,7 +508,11 @@ fn spawn_post_start_commands(
     Ok(())
 }
 
-pub fn handle_push(target: Option<&str>, allow_merge_commits: bool) -> Result<(), GitError> {
+pub fn handle_push(
+    target: Option<&str>,
+    allow_merge_commits: bool,
+    internal: bool,
+) -> Result<(), GitError> {
     use anstyle::{AnsiColor, Color};
 
     let repo = Repository::current();
@@ -560,7 +564,7 @@ pub fn handle_push(target: Option<&str>, allow_merge_commits: bool) -> Result<()
         String::new()
     };
 
-    if commit_count > 0 {
+    if commit_count > 0 && !internal {
         let commit_text = if commit_count == 1 {
             "commit"
         } else {
@@ -615,42 +619,44 @@ pub fn handle_push(target: Option<&str>, allow_merge_commits: bool) -> Result<()
         })?;
 
     // Build success message with statistics
-    let green = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
-    let green_bold = green.bold();
+    if !internal {
+        let green = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
+        let green_bold = green.bold();
 
-    if commit_count > 0 {
-        // Parse shortstat to extract files/insertions/deletions
-        // Example: " 3 files changed, 45 insertions(+), 12 deletions(-)"
-        let stats = parse_diff_shortstat(&diff_shortstat);
+        if commit_count > 0 {
+            // Parse shortstat to extract files/insertions/deletions
+            // Example: " 3 files changed, 45 insertions(+), 12 deletions(-)"
+            let stats = parse_diff_shortstat(&diff_shortstat);
 
-        let mut summary_parts = vec![format!(
-            "{} commit{}",
-            commit_count,
-            if commit_count == 1 { "" } else { "s" }
-        )];
+            let mut summary_parts = vec![format!(
+                "{} commit{}",
+                commit_count,
+                if commit_count == 1 { "" } else { "s" }
+            )];
 
-        if let Some(files) = stats.files {
-            summary_parts.push(format!(
-                "{} file{}",
-                files,
-                if files == 1 { "" } else { "s" }
-            ));
+            if let Some(files) = stats.files {
+                summary_parts.push(format!(
+                    "{} file{}",
+                    files,
+                    if files == 1 { "" } else { "s" }
+                ));
+            }
+            if let Some(insertions) = stats.insertions {
+                let addition = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
+                summary_parts.push(format!("{addition}+{insertions}{addition:#}"));
+            }
+            if let Some(deletions) = stats.deletions {
+                let deletion = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Red)));
+                summary_parts.push(format!("{deletion}-{deletions}{deletion:#}"));
+            }
+
+            println!(
+                "✅ {green}Pushed to {green_bold}{target_branch}{green_bold:#} ({})  {green:#}",
+                summary_parts.join(", ")
+            );
+        } else {
+            println!("✅ {green}Pushed to {green_bold}{target_branch}{green_bold:#}{green:#}");
         }
-        if let Some(insertions) = stats.insertions {
-            let addition = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
-            summary_parts.push(format!("{addition}+{insertions}{addition:#}"));
-        }
-        if let Some(deletions) = stats.deletions {
-            let deletion = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Red)));
-            summary_parts.push(format!("{deletion}-{deletions}{deletion:#}"));
-        }
-
-        println!(
-            "✅ {green}Pushed to {green_bold}{target_branch}{green_bold:#} ({})  {green:#}",
-            summary_parts.join(", ")
-        );
-    } else {
-        println!("✅ {green}Pushed to {green_bold}{target_branch}{green_bold:#}{green:#}");
     }
 
     Ok(())

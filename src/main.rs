@@ -332,7 +332,7 @@ fn main() {
         Commands::Push {
             target,
             allow_merge_commits,
-        } => handle_push(target.as_deref(), allow_merge_commits),
+        } => handle_push(target.as_deref(), allow_merge_commits, false),
         Commands::Merge {
             target,
             squash,
