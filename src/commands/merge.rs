@@ -63,6 +63,7 @@ pub fn handle_merge(
             &repo,
             &config,
             force,
+            internal,
         )?;
     }
 
@@ -90,8 +91,10 @@ pub fn handle_merge(
 
     // Finish worktree unless --keep was specified
     if !keep {
-        let cyan = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Cyan)));
-        println!("🔄 {cyan}Cleaning up worktree...{cyan:#}");
+        if !internal {
+            let cyan = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Cyan)));
+            println!("🔄 {cyan}Cleaning up worktree...{cyan:#}");
+        }
 
         // Get primary worktree path before finishing (while we can still run git commands)
         let primary_worktree_dir = repo.main_worktree_root()?;
@@ -105,9 +108,13 @@ pub fn handle_merge(
         let primary_repo = Repository::at(&primary_worktree_dir);
         let new_branch = primary_repo.current_branch()?;
         if new_branch.as_deref() != Some(&target_branch) {
-            let cyan = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Cyan)));
-            let cyan_bold = cyan.bold();
-            println!("🔄 {cyan}Switching to {cyan_bold}{target_branch}{cyan_bold:#}...{cyan:#}");
+            if !internal {
+                let cyan = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Cyan)));
+                let cyan_bold = cyan.bold();
+                println!(
+                    "🔄 {cyan}Switching to {cyan_bold}{target_branch}{cyan_bold:#}...{cyan:#}"
+                );
+            }
             primary_repo
                 .run_command(&["switch", &target_branch])
                 .map_err(|e| {
@@ -327,6 +334,7 @@ fn run_pre_merge_checks(
     repo: &Repository,
     config: &WorktrunkConfig,
     force: bool,
+    internal: bool,
 ) -> Result<(), GitError> {
     let Some(pre_merge_config) = &project_config.pre_merge_check else {
         return Ok(());
@@ -346,7 +354,8 @@ fn run_pre_merge_checks(
 
     // Execute each command sequentially, fail-fast on errors
     for (name, command) in commands {
-        if !check_and_approve_command(&project_id, &command, config, force)? {
+        // Project config commands are automatically trusted (from .config/wt.toml)
+        if !check_and_approve_command(&project_id, &command, config, force, true)? {
             let dim = AnstyleStyle::new().dimmed();
             eprintln!("{dim}Skipping pre-merge check: {command}{dim:#}");
             continue;
@@ -361,10 +370,12 @@ fn run_pre_merge_checks(
             &repo_root,
         );
 
-        use std::io::Write;
-        let cyan = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Cyan)));
-        println!("🔄 {cyan}Running pre-merge check '{name}'...{cyan:#}");
-        let _ = std::io::stdout().flush();
+        if !internal {
+            use std::io::Write;
+            let cyan = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Cyan)));
+            println!("🔄 {cyan}Running pre-merge check '{name}'...{cyan:#}");
+            let _ = std::io::stdout().flush();
+        }
 
         if let Err(e) = execute_command_in_worktree(worktree_path, &expanded_command) {
             eprintln!();
