@@ -309,7 +309,7 @@ _wt() {
             return 0
             ;;
         wt__merge)
-            opts="-s -k -m -h --squash --keep --message --help [TARGET]"
+            opts="-s -k -m -f -h --squash --keep --message --no-verify --force --help [TARGET]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

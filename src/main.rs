@@ -151,6 +151,14 @@ enum Commands {
         #[arg(short = 'm', long)]
         message: Option<String>,
 
+        /// Skip pre-merge checks
+        #[arg(long)]
+        no_verify: bool,
+
+        /// Skip approval prompts for commands
+        #[arg(short, long)]
+        force: bool,
+
         /// Use internal mode (outputs directives for shell wrapper)
         #[arg(long, hide = true)]
         internal: bool,
@@ -270,12 +278,16 @@ fn main() {
             squash,
             keep,
             message,
+            no_verify,
+            force,
             internal,
         } => handle_merge(
             target.as_deref(),
             squash,
             keep,
             message.as_deref(),
+            no_verify,
+            force,
             internal,
         ),
         Commands::Completion { shell } => {

@@ -180,6 +180,8 @@ complete -c wt -n "__fish_wt_using_subcommand push" -s h -l help -d 'Print help'
 complete -c wt -n "__fish_wt_using_subcommand merge" -s m -l message -d 'Custom instruction for commit message generation' -r
 complete -c wt -n "__fish_wt_using_subcommand merge" -s s -l squash -d 'Squash all commits into one before merging'
 complete -c wt -n "__fish_wt_using_subcommand merge" -s k -l keep -d 'Keep worktree after merging (don\'t remove)'
+complete -c wt -n "__fish_wt_using_subcommand merge" -l no-verify -d 'Skip pre-merge checks'
+complete -c wt -n "__fish_wt_using_subcommand merge" -s f -l force -d 'Skip approval prompts for commands'
 complete -c wt -n "__fish_wt_using_subcommand merge" -s h -l help -d 'Print help'
 complete -c wt -n "__fish_wt_using_subcommand completion" -s h -l help -d 'Print help'
 complete -c wt -n "__fish_wt_using_subcommand complete" -s h -l help -d 'Print help'

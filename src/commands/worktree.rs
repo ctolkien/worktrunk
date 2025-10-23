@@ -101,7 +101,6 @@
 //! See also: DEMO.md for detailed architecture explanation.
 
 use std::collections::HashMap;
-use std::io;
 use std::path::PathBuf;
 use worktrunk::config::{ProjectConfig, WorktrunkConfig, expand_template};
 use worktrunk::git::{GitError, Repository};
@@ -109,6 +108,7 @@ use worktrunk::styling::{
     AnstyleStyle, ERROR, ERROR_EMOJI, HINT, HINT_EMOJI, WARNING, WARNING_EMOJI, eprintln, println,
 };
 
+use crate::commands::command_approval::{check_and_approve_command, command_config_to_vec};
 use crate::commands::process::spawn_detached;
 use crate::output::execute_command_in_worktree;
 
@@ -360,35 +360,6 @@ fn expand_command_template(
     expand_template(command, repo_name, branch, &extra)
 }
 
-/// Prompt the user to approve a command for execution
-fn prompt_for_approval(command: &str, project_id: &str) -> io::Result<bool> {
-    use anstyle::Style;
-    use std::io::Write;
-    use worktrunk::styling::{HINT_EMOJI, eprint};
-
-    // Extract project name from project_id (e.g., "worktrunk" from "github.com/max-sixty/worktrunk")
-    let project_name = project_id.split('/').next_back().unwrap_or(project_id);
-    let bold = Style::new().bold();
-    let dim = Style::new().dimmed();
-
-    eprintln!();
-    eprintln!("{WARNING_EMOJI} {WARNING}Permission required to execute in worktree{WARNING:#}");
-    eprintln!();
-    eprintln!("{bold}{project_name}{bold:#} ({project_id}) wants to execute:");
-    eprintln!();
-    eprintln!("    {dim}{command}{dim:#}");
-    eprintln!();
-    eprint!("{HINT_EMOJI} Allow and remember? {bold}[y/N]{bold:#} ");
-    anstream::stderr().flush()?;
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    eprintln!(); // Move to next line after user input
-
-    let response = input.trim().to_lowercase();
-    Ok(response == "y" || response == "yes")
-}
-
 /// Helper to load project config with error handling
 fn load_project_config(repo: &Repository) -> Result<Option<ProjectConfig>, GitError> {
     let repo_root = repo.worktree_root()?;
@@ -405,25 +376,6 @@ fn load_project_config(repo: &Repository) -> Result<Option<ProjectConfig>, GitEr
                 "{HINT_EMOJI} {HINT}Skipping commands. Check TOML syntax if file exists.{HINT:#}"
             );
             Ok(None)
-        }
-    }
-}
-
-/// Convert CommandConfig to a vector of (name, command) pairs
-fn command_config_to_vec(config: &worktrunk::config::CommandConfig) -> Vec<(String, String)> {
-    use worktrunk::config::CommandConfig;
-    match config {
-        CommandConfig::Single(cmd) => vec![("default".to_string(), cmd.clone())],
-        CommandConfig::Multiple(cmds) => cmds
-            .iter()
-            .enumerate()
-            .map(|(i, cmd)| (format!("cmd-{}", i), cmd.clone()))
-            .collect(),
-        CommandConfig::Named(map) => {
-            let mut pairs: Vec<_> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-            // Sort by name for deterministic iteration order
-            pairs.sort_by(|a, b| a.0.cmp(&b.0));
-            pairs
         }
     }
 }
@@ -446,7 +398,7 @@ fn execute_post_create_commands(
         return Ok(());
     };
 
-    let commands = command_config_to_vec(post_create_config);
+    let commands = command_config_to_vec(post_create_config, "cmd");
     if commands.is_empty() {
         return Ok(());
     }
@@ -472,7 +424,10 @@ fn execute_post_create_commands(
         let _ = std::io::stderr().flush();
 
         if let Err(e) = execute_command_in_worktree(worktree_path, &expanded_command) {
-            eprintln!("{WARNING_EMOJI} {WARNING}Command '{name}' failed: {e}{WARNING:#}");
+            let warning_bold = WARNING.bold();
+            eprintln!(
+                "{WARNING_EMOJI} {WARNING}Command {warning_bold}{name}{warning_bold:#} failed: {e}{WARNING:#}"
+            );
             // Continue with other commands even if one fails
         }
     }
@@ -502,7 +457,7 @@ fn spawn_post_start_commands(
         return Ok(());
     };
 
-    let commands = command_config_to_vec(post_start_config);
+    let commands = command_config_to_vec(post_start_config, "cmd");
     if commands.is_empty() {
         return Ok(());
     }
@@ -549,48 +504,6 @@ fn spawn_post_start_commands(
     let _ = std::io::stderr().flush();
 
     Ok(())
-}
-
-/// Check if command is approved and prompt if needed
-fn check_and_approve_command(
-    project_id: &str,
-    command: &str,
-    config: &WorktrunkConfig,
-    force: bool,
-) -> Result<bool, GitError> {
-    if force || config.is_command_approved(project_id, command) {
-        return Ok(true);
-    }
-
-    match prompt_for_approval(command, project_id) {
-        Ok(true) => {
-            // Reload config and save approval
-            match WorktrunkConfig::load() {
-                Ok(mut fresh_config) => {
-                    if let Err(e) =
-                        fresh_config.approve_command(project_id.to_string(), command.to_string())
-                    {
-                        eprintln!(
-                            "{WARNING_EMOJI} {WARNING}Failed to save command approval: {e}{WARNING:#}"
-                        );
-                        eprintln!("You will be prompted again next time.");
-                    }
-                }
-                Err(e) => {
-                    eprintln!(
-                        "{WARNING_EMOJI} {WARNING}Failed to reload config for saving approval: {e}{WARNING:#}"
-                    );
-                    eprintln!("You will be prompted again next time.");
-                }
-            }
-            Ok(true)
-        }
-        Ok(false) => Ok(false),
-        Err(e) => {
-            eprintln!("{WARNING_EMOJI} {WARNING}Failed to read user input: {e}{WARNING:#}");
-            Ok(false)
-        }
-    }
 }
 
 pub fn handle_push(target: Option<&str>, allow_merge_commits: bool) -> Result<(), GitError> {

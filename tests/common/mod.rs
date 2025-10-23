@@ -373,6 +373,13 @@ pub fn setup_snapshot_settings(repo: &TestRepo) -> insta::Settings {
     settings.add_filter(r"\b[0-9a-f]{7,40}\b", "[SHA]");
     settings.add_filter(r"\\", "/");
 
+    // Normalize temp directory paths in project identifiers (approval prompts)
+    // Example: /private/var/folders/wf/.../T/.tmpABC123/origin -> [PROJECT_ID]
+    settings.add_filter(
+        r"/private/var/folders/[^/]+/[^/]+/T/\.[^/]+/[^)]+",
+        "[PROJECT_ID]",
+    );
+
     // Normalize timestamps in log filenames (format: YYYYMMDD-HHMMSS)
     // The SHA filter runs first, so we match: post-start-NAME-[SHA]-HHMMSS.log
     settings.add_filter(

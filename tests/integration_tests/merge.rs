@@ -1,5 +1,6 @@
 use crate::common::{TestRepo, make_snapshot_cmd, setup_snapshot_settings};
 use insta_cmd::assert_cmd_snapshot;
+use std::fs;
 use std::process::Command;
 
 /// Helper to create snapshot with normalized paths
@@ -690,5 +691,213 @@ fn test_merge_auto_commit_and_squash() {
             // First message is for auto-commit
             ("WORKTRUNK_LLM__ARGS", "fix: update file 1 content"),
         ],
+    );
+}
+
+#[test]
+fn test_merge_pre_merge_check_success() {
+    let mut repo = TestRepo::new();
+    repo.commit("Initial commit");
+    repo.setup_remote("main");
+
+    // Create project config with pre-merge check
+    let config_dir = repo.root_path().join(".config");
+    fs::create_dir_all(&config_dir).expect("Failed to create config dir");
+    fs::write(config_dir.join("wt.toml"), r#"pre-merge-check = "exit 0""#)
+        .expect("Failed to write config");
+
+    repo.commit("Add config");
+
+    // Create a worktree for main
+    let main_wt = repo.root_path().parent().unwrap().join("test-repo.main-wt");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["worktree", "add", main_wt.to_str().unwrap(), "main"])
+        .current_dir(repo.root_path())
+        .output()
+        .expect("Failed to add worktree");
+
+    // Create a feature worktree and make a commit
+    let feature_wt = repo.add_worktree("feature", "feature");
+    fs::write(feature_wt.join("feature.txt"), "feature content").expect("Failed to write file");
+
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["add", "feature.txt"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to add file");
+
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["commit", "-m", "Add feature file"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to commit");
+
+    // Merge with --force to skip approval prompts
+    snapshot_merge(
+        "merge_pre_merge_check_success",
+        &repo,
+        &["main", "--force"],
+        Some(&feature_wt),
+    );
+}
+
+#[test]
+fn test_merge_pre_merge_check_failure() {
+    let mut repo = TestRepo::new();
+    repo.commit("Initial commit");
+    repo.setup_remote("main");
+
+    // Create project config with failing pre-merge check
+    let config_dir = repo.root_path().join(".config");
+    fs::create_dir_all(&config_dir).expect("Failed to create config dir");
+    fs::write(config_dir.join("wt.toml"), r#"pre-merge-check = "exit 1""#)
+        .expect("Failed to write config");
+
+    repo.commit("Add config");
+
+    // Create a worktree for main
+    let main_wt = repo.root_path().parent().unwrap().join("test-repo.main-wt");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["worktree", "add", main_wt.to_str().unwrap(), "main"])
+        .current_dir(repo.root_path())
+        .output()
+        .expect("Failed to add worktree");
+
+    // Create a feature worktree and make a commit
+    let feature_wt = repo.add_worktree("feature", "feature");
+    fs::write(feature_wt.join("feature.txt"), "feature content").expect("Failed to write file");
+
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["add", "feature.txt"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to add file");
+
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["commit", "-m", "Add feature file"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to commit");
+
+    // Merge with --force - pre-merge check should fail and block merge
+    snapshot_merge(
+        "merge_pre_merge_check_failure",
+        &repo,
+        &["main", "--force"],
+        Some(&feature_wt),
+    );
+}
+
+#[test]
+fn test_merge_pre_merge_check_no_verify() {
+    let mut repo = TestRepo::new();
+    repo.commit("Initial commit");
+    repo.setup_remote("main");
+
+    // Create project config with failing pre-merge check
+    let config_dir = repo.root_path().join(".config");
+    fs::create_dir_all(&config_dir).expect("Failed to create config dir");
+    fs::write(config_dir.join("wt.toml"), r#"pre-merge-check = "exit 1""#)
+        .expect("Failed to write config");
+
+    repo.commit("Add config");
+
+    // Create a worktree for main
+    let main_wt = repo.root_path().parent().unwrap().join("test-repo.main-wt");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["worktree", "add", main_wt.to_str().unwrap(), "main"])
+        .current_dir(repo.root_path())
+        .output()
+        .expect("Failed to add worktree");
+
+    // Create a feature worktree and make a commit
+    let feature_wt = repo.add_worktree("feature", "feature");
+    fs::write(feature_wt.join("feature.txt"), "feature content").expect("Failed to write file");
+
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["add", "feature.txt"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to add file");
+
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["commit", "-m", "Add feature file"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to commit");
+
+    // Merge with --no-verify - should skip pre-merge checks and succeed
+    snapshot_merge(
+        "merge_pre_merge_check_no_verify",
+        &repo,
+        &["main", "--no-verify"],
+        Some(&feature_wt),
+    );
+}
+
+#[test]
+fn test_merge_pre_merge_check_named() {
+    let mut repo = TestRepo::new();
+    repo.commit("Initial commit");
+    repo.setup_remote("main");
+
+    // Create project config with named pre-merge checks
+    let config_dir = repo.root_path().join(".config");
+    fs::create_dir_all(&config_dir).expect("Failed to create config dir");
+    fs::write(
+        config_dir.join("wt.toml"),
+        r#"
+[pre-merge-check]
+format = "exit 0"
+lint = "exit 0"
+test = "exit 0"
+"#,
+    )
+    .expect("Failed to write config");
+
+    repo.commit("Add config");
+
+    // Create a worktree for main
+    let main_wt = repo.root_path().parent().unwrap().join("test-repo.main-wt");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["worktree", "add", main_wt.to_str().unwrap(), "main"])
+        .current_dir(repo.root_path())
+        .output()
+        .expect("Failed to add worktree");
+
+    // Create a feature worktree and make a commit
+    let feature_wt = repo.add_worktree("feature", "feature");
+    fs::write(feature_wt.join("feature.txt"), "feature content").expect("Failed to write file");
+
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["add", "feature.txt"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to add file");
+
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["commit", "-m", "Add feature file"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to commit");
+
+    // Merge with --force - all pre-merge checks should pass
+    snapshot_merge(
+        "merge_pre_merge_check_named",
+        &repo,
+        &["main", "--force"],
+        Some(&feature_wt),
     );
 }

@@ -1,17 +1,21 @@
 use anstyle::{AnsiColor, Color};
-use worktrunk::config::WorktrunkConfig;
+use std::collections::HashMap;
+use worktrunk::config::{ProjectConfig, WorktrunkConfig, expand_template};
 use worktrunk::git::{GitError, Repository};
 use worktrunk::styling::{AnstyleStyle, ERROR, ERROR_EMOJI, HINT, HINT_EMOJI, eprintln, println};
 
+use super::command_approval::{check_and_approve_command, command_config_to_vec};
 use super::worktree::handle_push;
 use super::worktree::handle_remove;
-use crate::output::handle_remove_output;
+use crate::output::{execute_command_in_worktree, handle_remove_output};
 
 pub fn handle_merge(
     target: Option<&str>,
     squash: bool,
     keep: bool,
     message: Option<&str>,
+    no_verify: bool,
+    force: bool,
     internal: bool,
 ) -> Result<(), GitError> {
     let repo = Repository::current();
@@ -44,6 +48,22 @@ pub fn handle_merge(
     // Auto-commit uncommitted changes if they exist
     if repo.is_dirty()? {
         handle_commit_changes(message, &config.llm)?;
+    }
+
+    // Run pre-merge checks unless --no-verify was specified
+    if !no_verify && let Ok(Some(project_config)) = ProjectConfig::load(&repo.worktree_root()?) {
+        let worktree_path = std::env::current_dir().map_err(|e| {
+            GitError::CommandFailed(format!("Failed to get current directory: {}", e))
+        })?;
+        run_pre_merge_checks(
+            &project_config,
+            &current_branch,
+            &target_branch,
+            &worktree_path,
+            &repo,
+            &config,
+            force,
+        )?;
     }
 
     // Track operations for summary
@@ -220,4 +240,86 @@ fn handle_squash(target_branch: &str) -> Result<Option<usize>, GitError> {
     let green = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
     println!("✅ {green}Squashed {commit_count} commits into one{green:#}");
     Ok(Some(commit_count))
+}
+
+/// Run pre-merge checks sequentially (blocking, fail-fast)
+fn run_pre_merge_checks(
+    project_config: &ProjectConfig,
+    current_branch: &str,
+    target_branch: &str,
+    worktree_path: &std::path::Path,
+    repo: &Repository,
+    config: &WorktrunkConfig,
+    force: bool,
+) -> Result<(), GitError> {
+    let Some(pre_merge_config) = &project_config.pre_merge_check else {
+        return Ok(());
+    };
+
+    let commands = command_config_to_vec(pre_merge_config, "cmd");
+    if commands.is_empty() {
+        return Ok(());
+    }
+
+    let project_id = repo.project_identifier()?;
+    let repo_root = repo.main_worktree_root()?;
+    let repo_name = repo_root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown");
+
+    // Execute each command sequentially, fail-fast on errors
+    for (name, command) in commands {
+        if !check_and_approve_command(&project_id, &command, config, force)? {
+            let dim = AnstyleStyle::new().dimmed();
+            eprintln!("{dim}Skipping pre-merge check: {command}{dim:#}");
+            continue;
+        }
+
+        let expanded_command = expand_command_template(
+            &command,
+            repo_name,
+            current_branch,
+            target_branch,
+            worktree_path,
+            &repo_root,
+        );
+
+        use std::io::Write;
+        let cyan = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Cyan)));
+        println!("🔄 {cyan}Running pre-merge check '{name}'...{cyan:#}");
+        let _ = std::io::stdout().flush();
+
+        if let Err(e) = execute_command_in_worktree(worktree_path, &expanded_command) {
+            eprintln!();
+            let error_bold = ERROR.bold();
+            eprintln!(
+                "{ERROR_EMOJI} {ERROR}Pre-merge check failed: {error_bold}{name}{error_bold:#}{ERROR:#}"
+            );
+            eprintln!();
+            eprintln!("  {e}");
+            eprintln!();
+            eprintln!("{HINT_EMOJI} {HINT}Use --no-verify to skip pre-merge checks{HINT:#}");
+            return Err(GitError::CommandFailed(String::new()));
+        }
+    }
+
+    Ok(())
+}
+
+/// Expand template variables in a command, including {target}
+fn expand_command_template(
+    command: &str,
+    repo_name: &str,
+    branch: &str,
+    target_branch: &str,
+    worktree_path: &std::path::Path,
+    repo_root: &std::path::Path,
+) -> String {
+    let mut extra = HashMap::new();
+    extra.insert("worktree", worktree_path.to_str().unwrap_or(""));
+    extra.insert("repo_root", repo_root.to_str().unwrap_or(""));
+    extra.insert("target", target_branch);
+
+    expand_template(command, repo_name, branch, &extra)
 }

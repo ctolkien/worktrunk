@@ -63,17 +63,40 @@ pub struct LlmConfig {
 }
 
 /// Project-specific configuration (stored in .config/wt.toml within the project)
+///
+/// # Template Variables
+///
+/// Commands support template variable expansion:
+/// - `{repo}` - Repository name (e.g., "my-project")
+/// - `{branch}` - Branch name (e.g., "feature-foo")
+/// - `{worktree}` - Absolute path to the worktree
+/// - `{repo_root}` - Absolute path to the repository root
+///
+/// Additionally, `pre-merge-check` commands support:
+/// - `{target}` - Target branch for the merge (e.g., "main")
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct ProjectConfig {
     /// Commands to execute sequentially before worktree is ready (blocking)
     /// Supports string (single command), array (sequential), or table (named, sequential)
+    ///
+    /// Available template variables: `{repo}`, `{branch}`, `{worktree}`, `{repo_root}`
     #[serde(default, rename = "post-create-command")]
     pub post_create_command: Option<CommandConfig>,
 
     /// Commands to execute in parallel as background processes (non-blocking)
     /// Supports string (single), array (parallel), or table (named, parallel)
+    ///
+    /// Available template variables: `{repo}`, `{branch}`, `{worktree}`, `{repo_root}`
     #[serde(default, rename = "post-start-command")]
     pub post_start_command: Option<CommandConfig>,
+
+    /// Commands to execute before merging (blocking, fail-fast validation)
+    /// Supports string (single command), array (sequential), or table (named, sequential)
+    /// All commands must exit with code 0 for merge to proceed
+    ///
+    /// Available template variables: `{repo}`, `{branch}`, `{worktree}`, `{repo_root}`, `{target}`
+    #[serde(default, rename = "pre-merge-check")]
+    pub pre_merge_check: Option<CommandConfig>,
 }
 
 /// Configuration for commands - supports multiple formats
@@ -420,6 +443,7 @@ mod tests {
         let config = ProjectConfig::default();
         assert!(config.post_create_command.is_none());
         assert!(config.post_start_command.is_none());
+        assert!(config.pre_merge_check.is_none());
     }
 
     #[test]
@@ -475,6 +499,53 @@ mod tests {
         let config: ProjectConfig = toml::from_str(toml).unwrap();
         assert!(config.post_create_command.is_some());
         assert!(config.post_start_command.is_some());
+    }
+
+    #[test]
+    fn test_pre_merge_check_single() {
+        let toml = r#"pre-merge-check = "cargo test""#;
+        let config: ProjectConfig = toml::from_str(toml).unwrap();
+        assert!(matches!(
+            config.pre_merge_check,
+            Some(CommandConfig::Single(_))
+        ));
+    }
+
+    #[test]
+    fn test_pre_merge_check_multiple() {
+        let toml = r#"pre-merge-check = ["cargo fmt -- --check", "cargo test"]"#;
+        let config: ProjectConfig = toml::from_str(toml).unwrap();
+        match config.pre_merge_check {
+            Some(CommandConfig::Multiple(cmds)) => {
+                assert_eq!(cmds.len(), 2);
+                assert_eq!(cmds[0], "cargo fmt -- --check");
+                assert_eq!(cmds[1], "cargo test");
+            }
+            _ => panic!("Expected Multiple variant"),
+        }
+    }
+
+    #[test]
+    fn test_pre_merge_check_named() {
+        let toml = r#"
+            [pre-merge-check]
+            format = "cargo fmt -- --check"
+            lint = "cargo clippy"
+            test = "cargo test"
+        "#;
+        let config: ProjectConfig = toml::from_str(toml).unwrap();
+        match config.pre_merge_check {
+            Some(CommandConfig::Named(cmds)) => {
+                assert_eq!(cmds.len(), 3);
+                assert_eq!(
+                    cmds.get("format"),
+                    Some(&"cargo fmt -- --check".to_string())
+                );
+                assert_eq!(cmds.get("lint"), Some(&"cargo clippy".to_string()));
+                assert_eq!(cmds.get("test"), Some(&"cargo test".to_string()));
+            }
+            _ => panic!("Expected Named variant"),
+        }
     }
 
     #[test]
