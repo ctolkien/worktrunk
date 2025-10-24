@@ -3,9 +3,11 @@
 //! This module provides shared functionality for approving and executing commands
 //! across different worktrunk operations (post-create, post-start, pre-merge).
 
-use worktrunk::config::{CommandConfig, WorktrunkConfig};
+use worktrunk::config::{ApprovedCommand, CommandConfig, WorktrunkConfig};
 use worktrunk::git::GitError;
-use worktrunk::styling::{AnstyleStyle, HINT_EMOJI, WARNING, WARNING_EMOJI, format_with_gutter};
+use worktrunk::styling::{
+    AnstyleStyle, HINT_EMOJI, WARNING, WARNING_EMOJI, eprintln, format_with_gutter,
+};
 
 /// Convert CommandConfig to a vector of (name, command) pairs
 ///
@@ -41,73 +43,81 @@ pub fn command_config_to_vec(
     }
 }
 
-/// Check if command is approved and prompt if needed
+/// Check if commands need approval and handle the approval flow
 ///
-/// Returns `Ok(true)` if the command is approved (either already approved or user approved it),
-/// `Ok(false)` if the user declined, or `Err` if there was a system error.
-pub fn check_and_approve_command(
+/// Returns `Ok(true)` if all commands are approved (or force-approved),
+/// `Ok(false)` if user declined approval.
+/// Automatically saves approvals when granted.
+pub fn approve_command_batch(
+    commands: &[(String, String)],
     project_id: &str,
-    command: &str,
     config: &WorktrunkConfig,
     force: bool,
+    context: &str,
 ) -> Result<bool, GitError> {
-    // If already approved in user config, no need to prompt or save again
-    if config.is_command_approved(project_id, command) {
+    // Find commands that need approval
+    let needs_approval: Vec<(&str, &str)> = commands
+        .iter()
+        .filter(|(_, cmd)| !config.is_command_approved(project_id, cmd))
+        .map(|(name, cmd)| (name.as_str(), cmd.as_str()))
+        .collect();
+
+    if needs_approval.is_empty() {
         return Ok(true);
     }
 
-    // Determine if we should approve (and save for future use)
+    // Prompt or force-approve
     let should_approve = if force {
-        // Force flag means auto-approve and save
         true
     } else {
-        // Otherwise, prompt the user
-        match prompt_for_approval(command, project_id) {
-            Ok(approved) => approved,
-            Err(e) => {
-                log_approval_warning("Failed to read user input", e);
-                return Ok(false);
-            }
-        }
+        prompt_for_batch_approval(&needs_approval, project_id)
+            .map_err(|e| GitError::CommandFailed(format!("Failed to read user input: {}", e)))?
     };
 
-    if should_approve {
-        // Reload config and save approval for future use
-        match WorktrunkConfig::load() {
-            Ok(mut fresh_config) => {
-                if let Err(e) =
-                    fresh_config.approve_command(project_id.to_string(), command.to_string())
-                {
-                    use worktrunk::styling::eprintln;
-                    log_approval_warning("Failed to save command approval", e);
-                    eprintln!("You will be prompted again next time.");
-                }
-            }
-            Err(e) => {
-                use worktrunk::styling::eprintln;
-                log_approval_warning("Failed to reload config for saving approval", e);
-                eprintln!("You will be prompted again next time.");
-            }
-        }
-        Ok(true)
-    } else {
-        Ok(false)
+    if !should_approve {
+        let dim = AnstyleStyle::new().dimmed();
+        eprintln!("{dim}{context} declined{dim:#}");
+        return Ok(false);
     }
+
+    // Save all approvals to config
+    let mut fresh_config = WorktrunkConfig::load()
+        .map_err(|e| GitError::CommandFailed(format!("Failed to reload config: {}", e)))?;
+
+    // Add each command to approved list
+    for (_, command) in &needs_approval {
+        if !fresh_config.is_command_approved(project_id, command) {
+            fresh_config.approved_commands.push(ApprovedCommand {
+                project: project_id.to_string(),
+                command: command.to_string(),
+            });
+        }
+    }
+
+    // Save all approvals at once
+    if let Err(e) = fresh_config.save() {
+        eprintln!("{WARNING_EMOJI} {WARNING}Failed to save command approvals: {e}{WARNING:#}");
+        eprintln!("You will be prompted again next time.");
+    }
+
+    Ok(true)
 }
 
-/// Log a warning message for command approval failures
-fn log_approval_warning(message: &str, error: impl std::fmt::Display) {
-    use worktrunk::styling::eprintln;
-    eprintln!("{WARNING_EMOJI} {WARNING}{message}: {error}{WARNING:#}");
-}
-
-/// Prompt the user to approve a command for execution
+/// Prompt the user to approve multiple commands for execution
 ///
-/// Displays a formatted prompt asking the user to approve a command,
-/// showing both the project and the command being requested.
-fn prompt_for_approval(command: &str, project_id: &str) -> std::io::Result<bool> {
+/// Displays a formatted prompt asking the user to approve a batch of commands,
+/// showing both the project and all commands being requested.
+pub fn prompt_for_batch_approval(
+    commands: &[(&str, &str)],
+    project_id: &str,
+) -> std::io::Result<bool> {
     use std::io::{self, Write};
     use worktrunk::styling::eprintln;
+
+    debug_assert!(
+        !commands.is_empty(),
+        "prompt_for_batch_approval called with empty commands list"
+    );
 
     // Extract just the project name for cleaner display
     let project_name = project_id.split('/').next_back().unwrap_or(project_id);
@@ -119,8 +129,15 @@ fn prompt_for_approval(command: &str, project_id: &str) -> std::io::Result<bool>
     eprintln!("{WARNING_EMOJI} {WARNING}Permission required to execute in worktree{WARNING:#}");
     eprintln!();
     eprintln!("{bold}{project_name}{bold:#} ({dim}{project_id}{dim:#}) wants to execute:");
-    eprint!("{}", format_with_gutter(command));
     eprintln!();
+
+    // Show each command with its name
+    for (name, command) in commands {
+        eprintln!("{bold}{name}:{bold:#}");
+        eprint!("{}", format_with_gutter(command));
+        eprintln!();
+    }
+
     eprint!("{HINT_EMOJI} Allow and remember? {bold}[y/N]{bold:#} ");
     io::stderr().flush()?;
 

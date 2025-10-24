@@ -343,7 +343,7 @@ impl WorktrunkConfig {
     }
 
     /// Save the current configuration to the default config file location
-    fn save(&self) -> Result<(), ConfigError> {
+    pub fn save(&self) -> Result<(), ConfigError> {
         let config_path = get_config_path()
             .ok_or_else(|| ConfigError::Message("Could not determine config path".to_string()))?;
         self.save_to(&config_path)

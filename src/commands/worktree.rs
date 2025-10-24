@@ -108,7 +108,7 @@ use worktrunk::styling::{
     format_with_gutter, println,
 };
 
-use crate::commands::command_approval::{check_and_approve_command, command_config_to_vec};
+use crate::commands::command_approval::{approve_command_batch, command_config_to_vec};
 use crate::commands::process::spawn_detached;
 use crate::output::execute_command_in_worktree;
 
@@ -356,14 +356,19 @@ fn execute_post_create_commands(
     let project_id = repo.project_identifier()?;
     let repo_root = repo.main_worktree_root()?;
 
+    // Approve commands (prompt if needed, save approvals)
+    if !approve_command_batch(
+        &commands,
+        &project_id,
+        config,
+        force,
+        "Post-create commands",
+    )? {
+        return Ok(());
+    }
+
     // Execute each command sequentially
     for (name, command) in commands {
-        if !check_and_approve_command(&project_id, &command, config, force)? {
-            let dim = AnstyleStyle::new().dimmed();
-            eprintln!("{dim}Skipping command: {command}{dim:#}");
-            continue;
-        }
-
         let expanded_command =
             expand_command_template(&command, repo_name, branch, worktree_path, &repo_root, None);
 
@@ -419,14 +424,13 @@ fn spawn_post_start_commands(
     let project_id = repo.project_identifier()?;
     let repo_root = repo.main_worktree_root()?;
 
+    // Approve commands (prompt if needed, save approvals)
+    if !approve_command_batch(&commands, &project_id, config, force, "Post-start commands")? {
+        return Ok(());
+    }
+
     // Spawn each command as a detached background process
     for (name, command) in commands {
-        if !check_and_approve_command(&project_id, &command, config, force)? {
-            let dim = AnstyleStyle::new().dimmed();
-            eprintln!("{dim}Skipping command: {command}{dim:#}");
-            continue;
-        }
-
         let expanded_command =
             expand_command_template(&command, repo_name, branch, worktree_path, &repo_root, None);
 

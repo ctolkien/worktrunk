@@ -3,7 +3,7 @@ use worktrunk::config::{ProjectConfig, WorktrunkConfig, expand_command_template}
 use worktrunk::git::{GitError, Repository};
 use worktrunk::styling::{AnstyleStyle, ERROR, ERROR_EMOJI, HINT, HINT_EMOJI, eprintln, println};
 
-use super::command_approval::{check_and_approve_command, command_config_to_vec};
+use super::command_approval::{approve_command_batch, command_config_to_vec};
 use super::worktree::handle_push;
 use super::worktree::handle_remove;
 use crate::output::{execute_command_in_worktree, handle_remove_output};
@@ -330,14 +330,13 @@ fn run_pre_merge_checks(
         .and_then(|n| n.to_str())
         .unwrap_or("unknown");
 
+    // Approve commands (prompt if needed, save approvals)
+    if !approve_command_batch(&commands, &project_id, config, force, "Pre-merge checks")? {
+        return Err(GitError::CommandFailed(String::new()));
+    }
+
     // Execute each command sequentially, fail-fast on errors
     for (name, command) in commands {
-        if !check_and_approve_command(&project_id, &command, config, force)? {
-            let dim = AnstyleStyle::new().dimmed();
-            eprintln!("{dim}Skipping pre-merge check: {command}{dim:#}");
-            continue;
-        }
-
         let expanded_command = expand_command_template(
             &command,
             repo_name,
