@@ -317,8 +317,21 @@ fn main() {
                         return;
                     }
 
-                    // Individual progress/success messages were already shown during configuration
-                    // Just show the final summary
+                    // Show what was done (instant operations, no progress needed)
+                    for result in &results {
+                        use worktrunk::styling::format_with_gutter;
+                        let bold = Style::new().bold();
+                        let shell = result.shell;
+                        let path = result.path.display();
+                        println!(
+                            "{} {bold}{shell}{bold:#} {path}",
+                            result.action.description(),
+                        );
+                        // Show config line with gutter
+                        print!("{}", format_with_gutter(&result.config_line, "", None));
+                    }
+
+                    // Success summary
                     println!();
                     let green = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
                     let plural = if changes_count == 1 { "" } else { "s" };

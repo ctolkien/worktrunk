@@ -119,33 +119,9 @@ fn scan_shell_configs(
         if should_configure {
             let path = target_path.or_else(|| paths.first());
             if let Some(path) = path {
-                // Show progress before configuring (only in real mode, not dry run)
-                if !dry_run {
-                    use anstyle::Style;
-                    use worktrunk::styling::CYAN;
-                    let bold = Style::new().bold();
-                    crate::output::progress(format!(
-                        "🔄 {CYAN}Configuring {bold}{shell}{bold:#}...{CYAN:#}"
-                    )).ok();
-                }
-
                 match configure_shell_file(shell, path, cmd_prefix, dry_run, shell_filter.is_some())
                 {
-                    Ok(Some(result)) => {
-                        // Show success immediately after configuring (only in real mode)
-                        if !dry_run && result.action != ConfigAction::AlreadyExists {
-                            use anstyle::Style;
-                            let bold = Style::new().bold();
-                            crate::output::success(format!(
-                                "{} {bold}{}{bold:#} at {}",
-                                result.action.description(),
-                                result.shell,
-                                result.path.display()
-                            )).ok();
-                            crate::output::progress(worktrunk::styling::format_with_gutter(&result.config_line, "", None)).ok();
-                        }
-                        results.push(result);
-                    }
+                    Ok(Some(result)) => results.push(result),
                     Ok(None) => {} // No action needed
                     Err(e) => {
                         // For non-critical errors, we could continue with other shells

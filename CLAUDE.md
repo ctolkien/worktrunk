@@ -94,6 +94,42 @@ Command::new("sh")
 
 Users experience commands as temporal sequences. Output that appears far from its triggering operation creates confusion and breaks the mental model of what's happening.
 
+**When to Show Progress Messages:**
+
+Progress messages (`🔄 Doing something...`) are only appropriate for operations that take perceptible time (>400ms). For fast operations like file checks or simple file writes, show only the result.
+
+- **Show progress for**: Operations that take noticeable time (>400ms)
+  - Git operations (rebase, push, commit, worktree operations)
+  - Network requests
+  - Building/compiling
+  - Operations on large files
+  - Batch operations that iterate multiple slow steps
+
+- **Don't show progress for**: Fast operations (<400ms)
+  - Checking if a line exists in a file
+  - Writing a single line to a config file
+  - Reading small files
+  - Simple validations
+
+**Examples:**
+
+```rust
+// ❌ Bad - progress for fast operation
+output::progress("🔄 Checking config file...")?;
+let exists = config_file.exists();  // <1ms - way too fast for progress
+output::success("Config file checked")?;
+
+// ✅ Good - just show the result for fast operations
+if config_file.exists() {
+    println!("Config file found at {}", path);
+}
+
+// ✅ Good - progress for slow operation
+output::progress("🔄 Removing worktree...")?;
+repo.remove_worktree(&path)?;  // Takes >400ms - worth showing progress
+output::success("Removed worktree")?;
+```
+
 **The Two Patterns:**
 
 1. **Progress → Operation → Success** (for sequential operations)
