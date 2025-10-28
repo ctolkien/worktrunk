@@ -16,24 +16,16 @@ info:
     LANG: C
     LC_ALL: C
     SOURCE_DATE_EPOCH: "1761609600"
-    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpnHxfp0/test-config.toml
+    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpmDxVtD/test-config.toml
 ---
 success: true
 exit_code: 0
 ----- stdout -----
 🔄 [36mValidating merge...[0m
-[check1] stdout line 1
-[check1] stdout line 2
-[check1] stdout line 3
-[check1] stdout complete
-[check2] stdout line 1
-[check2] stdout line 2
-[check2] stdout line 3
-[check2] stdout complete
 🔄 [36mRebasing onto [1m[36mmain[0m...[0m
 🔄 [36mPushing 1 commit to [1m[36mmain[0m @ [SHA][0m
 
-* [33m08f205e[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mfeature[m[33m)[m Add feature file
+* [33m9b57ee0[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mfeature[m[33m)[m Add feature file
 
  feature.txt | 1 [32m+[m
  1 file changed, 1 insertion(+)
@@ -51,14 +43,22 @@ exit_code: 0
 🔄 [36mRunning pre-merge check 'check1':[0m
 [40m [0m [PROJECT_ROOT]/tests/fixtures/mixed-output.sh
 [40m [0m check1 3
+[check1] stdout line 1
 [check1] stderr line 1
+[check1] stdout line 2
 [check1] stderr line 2
+[check1] stdout line 3
 [check1] stderr line 3
+[check1] stdout complete
 [check1] stderr complete
 🔄 [36mRunning pre-merge check 'check2':[0m
 [40m [0m [PROJECT_ROOT]/tests/fixtures/mixed-output.sh
 [40m [0m check2 3
+[check2] stdout line 1
 [check2] stderr line 1
+[check2] stdout line 2
 [check2] stderr line 2
+[check2] stdout line 3
 [check2] stderr line 3
+[check2] stdout complete
 [check2] stderr complete

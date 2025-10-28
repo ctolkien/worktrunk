@@ -111,6 +111,13 @@ pub fn handle_remove_output(result: &RemoveResult) -> Result<(), GitError> {
 /// Execute a command in a worktree directory
 ///
 /// Uses Stdio::inherit() for real-time streaming output in both modes.
+/// Redirects child stdout to stderr to ensure all output appears on a single file descriptor,
+/// preventing terminal reordering issues between stdout and stderr.
+///
+/// The redirect ensures that all child output and our progress messages go through the same FD
+/// (stderr), which guarantees deterministic ordering: bytes written later cannot appear before
+/// bytes written earlier to the same FD.
+///
 /// Calls terminate_output() after completion to handle mode-specific cleanup
 /// (NUL terminator in directive mode, no-op in interactive mode).
 pub fn execute_command_in_worktree(
@@ -119,9 +126,15 @@ pub fn execute_command_in_worktree(
 ) -> Result<(), GitError> {
     use std::process::{Command, Stdio};
 
+    // Redirect child's stdout to parent's stderr so all bytes go to a single FD.
+    // This prevents terminal reordering between stdout and stderr writes.
+    // Brace group ensures the redirection applies to the whole command (pipes, &&, etc.)
+    // TODO: Support Windows with appropriate redirect syntax for cmd.exe: ( command ) 1>&2
+    let wrapped = format!("{{ {}; }} 1>&2", command);
+
     let status = Command::new("sh")
         .arg("-c")
-        .arg(command)
+        .arg(&wrapped)
         .current_dir(worktree_path)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())

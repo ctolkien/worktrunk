@@ -376,12 +376,14 @@ fn run_pre_merge_checks(
     )?;
     for prepared in commands {
         use std::io::Write;
+        use worktrunk::styling;
+
         eprintln!(
             "🔄 {CYAN}Running pre-merge check '{name}':{CYAN:#}",
             name = prepared.name
         );
         eprint!("{}", format_with_gutter(&prepared.expanded, "", None)); // Gutter at column 0
-        let _ = std::io::stderr().flush();
+        let _ = styling::stderr().flush();
 
         if let Err(e) = execute_command_in_worktree(worktree_path, &prepared.expanded) {
             return Err(GitError::PreMergeCheckFailed {
@@ -390,9 +392,7 @@ fn run_pre_merge_checks(
             });
         }
 
-        // Flush both streams to ensure command output appears before next progress message
-        let _ = std::io::stdout().flush();
-        let _ = std::io::stderr().flush();
+        // No need to flush here - the redirect in execute_command_in_worktree ensures ordering
     }
 
     Ok(())

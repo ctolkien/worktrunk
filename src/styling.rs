@@ -25,6 +25,12 @@ pub use anstream::print;
 /// Auto-detecting eprint that respects NO_COLOR, CLICOLOR_FORCE, and terminal capabilities
 pub use anstream::eprint;
 
+/// Auto-detecting stderr stream that respects NO_COLOR, CLICOLOR_FORCE, and terminal capabilities
+pub use anstream::stderr;
+
+/// Auto-detecting stdout stream that respects NO_COLOR, CLICOLOR_FORCE, and terminal capabilities
+pub use anstream::stdout;
+
 // ============================================================================
 // Re-exports from anstyle (for composition)
 // ============================================================================
