@@ -1,4 +1,5 @@
 use crate::common::{TestRepo, make_snapshot_cmd, resolve_git_dir, setup_snapshot_settings};
+use insta::assert_snapshot;
 use insta_cmd::assert_cmd_snapshot;
 use std::fs;
 use std::thread;
@@ -524,16 +525,10 @@ command = "echo 'stdout output' && echo 'stderr output' >&2"
     let log_contents = fs::read_to_string(&log_files[0]).expect("Failed to read log file");
 
     // Verify both stdout and stderr were captured
-    assert!(
-        log_contents.contains("stdout output"),
-        "Log should contain stdout, got: {}",
-        log_contents
-    );
-    assert!(
-        log_contents.contains("stderr output"),
-        "Log should contain stderr, got: {}",
-        log_contents
-    );
+    assert_snapshot!(log_contents, @r"
+    stdout output
+    stderr output
+    ");
 }
 
 #[test]
@@ -777,14 +772,5 @@ command = "echo 'line1\nline2\nline3' | grep line2 > filtered.txt"
     );
 
     let contents = fs::read_to_string(&filtered_file).expect("Failed to read filtered.txt");
-    assert!(
-        contents.contains("line2"),
-        "Should contain filtered output, got: {}",
-        contents
-    );
-    assert!(
-        !contents.contains("line1") && !contents.contains("line3"),
-        "Should only contain line2, got: {}",
-        contents
-    );
+    assert_snapshot!(contents, @"line2");
 }

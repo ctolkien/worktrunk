@@ -17,6 +17,8 @@ info:
     LC_ALL: C
     SOURCE_DATE_EPOCH: "1761609600"
     WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpfXHSYJ/test-config.toml
+    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpcfsqxn/test-config.toml
+    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpcfsqxn/test-config.toml
 ---
 success: false
 exit_code: 1

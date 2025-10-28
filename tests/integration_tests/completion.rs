@@ -23,20 +23,23 @@ fn test_complete_switch_shows_branches() {
         .unwrap();
 
     // Test completion for switch command
-    let mut cmd = Command::cargo_bin("wt").unwrap();
-    let output = cmd
-        .current_dir(temp.root_path())
-        .args(["complete", "wt", "switch", ""])
-        .output()
-        .unwrap();
+    let mut settings = Settings::clone_current();
+    settings.set_snapshot_path("../snapshots");
+    settings.bind(|| {
+        let mut cmd = StdCommand::new(get_cargo_bin("wt"));
+        cmd.current_dir(temp.root_path())
+            .args(["complete", "wt", "switch", ""]);
+        assert_cmd_snapshot!(cmd, @r"
+        success: true
+        exit_code: 0
+        ----- stdout -----
+        feature/new
+        hotfix/bug
+        main
 
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let branches: Vec<&str> = stdout.lines().collect();
-
-    // Should include both branches (no worktrees created yet)
-    assert!(branches.iter().any(|b| b.contains("feature/new")));
-    assert!(branches.iter().any(|b| b.contains("hotfix/bug")));
+        ----- stderr -----
+        ");
+    });
 }
 
 #[test]
@@ -55,21 +58,23 @@ fn test_complete_switch_shows_all_branches_including_worktrees() {
         .unwrap();
 
     // Test completion - should show branches WITH worktrees and WITHOUT worktrees
-    let mut cmd = Command::cargo_bin("wt").unwrap();
-    let output = cmd
-        .current_dir(temp.root_path())
-        .args(["complete", "wt", "switch", ""])
-        .output()
-        .unwrap();
+    let mut settings = Settings::clone_current();
+    settings.set_snapshot_path("../snapshots");
+    settings.bind(|| {
+        let mut cmd = StdCommand::new(get_cargo_bin("wt"));
+        cmd.current_dir(temp.root_path())
+            .args(["complete", "wt", "switch", ""]);
+        assert_cmd_snapshot!(cmd, @r"
+        success: true
+        exit_code: 0
+        ----- stdout -----
+        feature/new
+        hotfix/bug
+        main
 
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let branches: Vec<&str> = stdout.lines().collect();
-
-    // Should include feature/new (even though it has worktree - can switch to it)
-    assert!(branches.iter().any(|b| b.contains("feature/new")));
-    // Should include hotfix/bug (no worktree)
-    assert!(branches.iter().any(|b| b.contains("hotfix/bug")));
+        ----- stderr -----
+        ");
+    });
 }
 
 #[test]
@@ -88,20 +93,23 @@ fn test_complete_push_shows_all_branches() {
         .unwrap();
 
     // Test completion for push (should show ALL branches, including those with worktrees)
-    let mut cmd = Command::cargo_bin("wt").unwrap();
-    let output = cmd
-        .current_dir(temp.root_path())
-        .args(["complete", "wt", "push", ""])
-        .output()
-        .unwrap();
+    let mut settings = Settings::clone_current();
+    settings.set_snapshot_path("../snapshots");
+    settings.bind(|| {
+        let mut cmd = StdCommand::new(get_cargo_bin("wt"));
+        cmd.current_dir(temp.root_path())
+            .args(["complete", "wt", "push", ""]);
+        assert_cmd_snapshot!(cmd, @r"
+        success: true
+        exit_code: 0
+        ----- stdout -----
+        feature/new
+        hotfix/bug
+        main
 
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let branches: Vec<&str> = stdout.lines().collect();
-
-    // Should include both branches (push shows all)
-    assert!(branches.iter().any(|b| b.contains("feature/new")));
-    assert!(branches.iter().any(|b| b.contains("hotfix/bug")));
+        ----- stderr -----
+        ");
+    });
 }
 
 #[test]
@@ -295,21 +303,24 @@ fn test_complete_with_partial_prefix() {
 
     // Complete with partial prefix - should return all branches
     // (shell completion framework handles the prefix filtering)
-    let mut cmd = Command::cargo_bin("wt").unwrap();
-    let output = cmd
-        .current_dir(temp.root_path())
-        .args(["complete", "wt", "switch", "feat"])
-        .output()
-        .unwrap();
+    let mut settings = Settings::clone_current();
+    settings.set_snapshot_path("../snapshots");
+    settings.bind(|| {
+        let mut cmd = StdCommand::new(get_cargo_bin("wt"));
+        cmd.current_dir(temp.root_path())
+            .args(["complete", "wt", "switch", "feat"]);
+        assert_cmd_snapshot!(cmd, @r"
+        success: true
+        exit_code: 0
+        ----- stdout -----
+        feature/one
+        feature/two
+        hotfix/bug
+        main
 
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    // Should return all branches, not just those matching "feat"
-    // The shell will filter based on user input
-    assert!(stdout.contains("feature/one"));
-    assert!(stdout.contains("feature/two"));
-    assert!(stdout.contains("hotfix/bug"));
+        ----- stderr -----
+        ");
+    });
 }
 
 #[test]
@@ -513,34 +524,52 @@ fn test_complete_stops_after_branch_provided() {
         .unwrap();
 
     // Test that switch stops completing after branch is provided
-    let mut cmd = Command::cargo_bin("wt").unwrap();
-    let output = cmd
-        .current_dir(temp.root_path())
-        .args(["complete", "wt", "switch", "feature/one", ""])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "");
+    let mut settings = Settings::clone_current();
+    settings.set_snapshot_path("../snapshots");
+    settings.bind(|| {
+        let mut cmd = StdCommand::new(get_cargo_bin("wt"));
+        cmd.current_dir(temp.root_path())
+            .args(["complete", "wt", "switch", "feature/one", ""]);
+        assert_cmd_snapshot!(cmd, @r"
+        success: true
+        exit_code: 0
+        ----- stdout -----
+
+        ----- stderr -----
+        ");
+    });
 
     // Test that push stops completing after branch is provided
-    let mut cmd = Command::cargo_bin("wt").unwrap();
-    let output = cmd
-        .current_dir(temp.root_path())
-        .args(["complete", "wt", "push", "feature/one", ""])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "");
+    let mut settings = Settings::clone_current();
+    settings.set_snapshot_path("../snapshots");
+    settings.bind(|| {
+        let mut cmd = StdCommand::new(get_cargo_bin("wt"));
+        cmd.current_dir(temp.root_path())
+            .args(["complete", "wt", "push", "feature/one", ""]);
+        assert_cmd_snapshot!(cmd, @r"
+        success: true
+        exit_code: 0
+        ----- stdout -----
+
+        ----- stderr -----
+        ");
+    });
 
     // Test that merge stops completing after branch is provided
-    let mut cmd = Command::cargo_bin("wt").unwrap();
-    let output = cmd
-        .current_dir(temp.root_path())
-        .args(["complete", "wt", "merge", "feature/one", ""])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "");
+    let mut settings = Settings::clone_current();
+    settings.set_snapshot_path("../snapshots");
+    settings.bind(|| {
+        let mut cmd = StdCommand::new(get_cargo_bin("wt"));
+        cmd.current_dir(temp.root_path())
+            .args(["complete", "wt", "merge", "feature/one", ""]);
+        assert_cmd_snapshot!(cmd, @r"
+        success: true
+        exit_code: 0
+        ----- stdout -----
+
+        ----- stderr -----
+        ");
+    });
 }
 
 #[test]
@@ -555,24 +584,36 @@ fn test_complete_switch_with_create_flag_no_completion() {
         .unwrap();
 
     // Test with --create flag (long form)
-    let mut cmd = Command::cargo_bin("wt").unwrap();
-    let output = cmd
-        .current_dir(temp.root_path())
-        .args(["complete", "wt", "switch", "--create", ""])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "");
+    let mut settings = Settings::clone_current();
+    settings.set_snapshot_path("../snapshots");
+    settings.bind(|| {
+        let mut cmd = StdCommand::new(get_cargo_bin("wt"));
+        cmd.current_dir(temp.root_path())
+            .args(["complete", "wt", "switch", "--create", ""]);
+        assert_cmd_snapshot!(cmd, @r"
+        success: true
+        exit_code: 0
+        ----- stdout -----
+
+        ----- stderr -----
+        ");
+    });
 
     // Test with -c flag (short form)
-    let mut cmd = Command::cargo_bin("wt").unwrap();
-    let output = cmd
-        .current_dir(temp.root_path())
-        .args(["complete", "wt", "switch", "-c", ""])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "");
+    let mut settings = Settings::clone_current();
+    settings.set_snapshot_path("../snapshots");
+    settings.bind(|| {
+        let mut cmd = StdCommand::new(get_cargo_bin("wt"));
+        cmd.current_dir(temp.root_path())
+            .args(["complete", "wt", "switch", "-c", ""]);
+        assert_cmd_snapshot!(cmd, @r"
+        success: true
+        exit_code: 0
+        ----- stdout -----
+
+        ----- stderr -----
+        ");
+    });
 }
 
 #[test]

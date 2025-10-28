@@ -1,3 +1,4 @@
+use insta::assert_snapshot;
 use std::fs;
 use tempfile::TempDir;
 use worktrunk::config::WorktrunkConfig;
@@ -31,9 +32,16 @@ fn test_approval_saves_to_disk() {
 
     // Verify TOML structure
     let toml_content = fs::read_to_string(&config_path).unwrap();
-    assert!(toml_content.contains("[[approved-commands]]"));
-    assert!(toml_content.contains("project = \"github.com/test/repo\""));
-    assert!(toml_content.contains("command = \"test command\""));
+    assert_snapshot!(toml_content, @r#"
+    worktree-path = "../{main-worktree}.{branch}"
+
+    [commit-generation]
+    args = []
+
+    [[approved-commands]]
+    project = "github.com/test/repo"
+    command = "test command"
+    "#);
 
     // Verify approval is in memory
     assert!(config.is_command_approved("github.com/test/repo", "test command"));
@@ -74,11 +82,16 @@ fn test_duplicate_approvals_not_saved_twice() {
 
     // Verify file contains only one entry
     let toml_content = fs::read_to_string(&config_path).unwrap();
-    let approval_count = toml_content.matches("[[approved-commands]]").count();
-    assert_eq!(
-        approval_count, 1,
-        "File contains duplicate approval entries"
-    );
+    assert_snapshot!(toml_content, @r#"
+    worktree-path = "../{main-worktree}.{branch}"
+
+    [commit-generation]
+    args = []
+
+    [[approved-commands]]
+    project = "github.com/test/repo"
+    command = "test"
+    "#);
 }
 
 /// Test that approvals from different projects don't conflict
@@ -120,8 +133,24 @@ fn test_multiple_project_approvals() {
 
     // Verify file structure
     let toml_content = fs::read_to_string(&config_path).unwrap();
-    let approval_count = toml_content.matches("[[approved-commands]]").count();
-    assert_eq!(approval_count, 3, "Wrong number of approval entries");
+    assert_snapshot!(toml_content, @r#"
+    worktree-path = "../{main-worktree}.{branch}"
+
+    [commit-generation]
+    args = []
+
+    [[approved-commands]]
+    project = "github.com/user1/repo1"
+    command = "npm install"
+
+    [[approved-commands]]
+    project = "github.com/user2/repo2"
+    command = "cargo build"
+
+    [[approved-commands]]
+    project = "github.com/user1/repo1"
+    command = "npm test"
+    "#);
 }
 
 /// Test that the isolated config NEVER writes to user's actual config
@@ -199,17 +228,16 @@ fn test_force_flag_saves_approval() {
 
     // Load the config and verify approval was saved
     let saved_config = fs::read_to_string(&config_path).unwrap();
-    assert!(
-        saved_config.contains("github.com/test/force-repo"),
-        "Project ID not saved"
-    );
-    assert!(
-        saved_config.contains("test --force command"),
-        "Command not saved"
-    );
+    assert_snapshot!(saved_config, @r#"
+    worktree-path = "../{main-worktree}.{branch}"
 
-    // Verify the approval works by checking file content
-    assert!(saved_config.contains("[[approved-commands]]"));
+    [commit-generation]
+    args = []
+
+    [[approved-commands]]
+    project = "github.com/test/force-repo"
+    command = "test --force command"
+    "#);
 }
 
 /// Test that approval saving logic handles missing config gracefully
@@ -238,6 +266,14 @@ fn test_force_flag_saves_to_new_config_file() {
 
     // Verify content
     let content = fs::read_to_string(&config_path).unwrap();
-    assert!(content.contains("github.com/test/nested"));
-    assert!(content.contains("test command"));
+    assert_snapshot!(content, @r#"
+    worktree-path = "../{main-worktree}.{branch}"
+
+    [commit-generation]
+    args = []
+
+    [[approved-commands]]
+    project = "github.com/test/nested"
+    command = "test command"
+    "#);
 }
