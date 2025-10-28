@@ -770,14 +770,49 @@ impl Repository {
     }
 }
 
+/// Read the branch name from rebase state files if a rebase is in progress.
+fn read_rebase_branch(worktree_path: &PathBuf) -> Option<String> {
+    // Create a Repository instance to get the correct git directory
+    let repo = Repository::at(worktree_path);
+    let git_dir = repo.git_dir().ok()?;
+
+    // Check both rebase-merge and rebase-apply
+    for rebase_dir in ["rebase-merge", "rebase-apply"] {
+        let head_name_path = git_dir.join(rebase_dir).join("head-name");
+        if let Ok(content) = std::fs::read_to_string(head_name_path) {
+            let branch_ref = content.trim();
+            // Strip refs/heads/ prefix if present
+            let branch = branch_ref
+                .strip_prefix("refs/heads/")
+                .unwrap_or(branch_ref)
+                .to_string();
+            return Some(branch);
+        }
+    }
+
+    None
+}
+
+/// Finalize a worktree after parsing, filling in branch name from rebase state if needed.
+fn finalize_worktree(mut wt: Worktree) -> Worktree {
+    // If detached but no branch, check if we're rebasing
+    if wt.detached
+        && wt.branch.is_none()
+        && let Some(branch) = read_rebase_branch(&wt.path)
+    {
+        wt.branch = Some(branch);
+    }
+    wt
+}
+
 fn parse_worktree_list(output: &str) -> Result<Vec<Worktree>, GitError> {
     let mut worktrees = Vec::new();
-    let mut current = None;
+    let mut current: Option<Worktree> = None;
 
     for line in output.lines() {
         if line.is_empty() {
             if let Some(wt) = current.take() {
-                worktrees.push(wt);
+                worktrees.push(finalize_worktree(wt));
             }
             continue;
         }
@@ -850,7 +885,7 @@ fn parse_worktree_list(output: &str) -> Result<Vec<Worktree>, GitError> {
 
     // Push the last worktree if the output doesn't end with a blank line
     if let Some(wt) = current {
-        worktrees.push(wt);
+        worktrees.push(finalize_worktree(wt));
     }
 
     Ok(worktrees)
@@ -966,6 +1001,62 @@ detached
         assert_eq!(worktrees.len(), 1);
         assert!(worktrees[0].detached);
         assert_eq!(worktrees[0].branch, None);
+    }
+
+    #[test]
+    fn test_finalize_worktree_with_branch() {
+        // Worktree with a branch should not be modified
+        let wt = Worktree {
+            path: PathBuf::from("/path/to/worktree"),
+            head: "abcd1234".to_string(),
+            branch: Some("feature".to_string()),
+            bare: false,
+            detached: false,
+            locked: None,
+            prunable: None,
+        };
+
+        let finalized = finalize_worktree(wt.clone());
+        assert_eq!(finalized.branch, Some("feature".to_string()));
+    }
+
+    #[test]
+    fn test_finalize_worktree_detached_with_branch() {
+        // Detached worktree with a branch (unusual but possible) should keep the branch
+        let wt = Worktree {
+            path: PathBuf::from("/path/to/worktree"),
+            head: "abcd1234".to_string(),
+            branch: Some("feature".to_string()),
+            bare: false,
+            detached: true,
+            locked: None,
+            prunable: None,
+        };
+
+        let finalized = finalize_worktree(wt.clone());
+        assert_eq!(finalized.branch, Some("feature".to_string()));
+    }
+
+    #[test]
+    fn test_finalize_worktree_detached_no_branch() {
+        // Detached worktree with no branch should attempt rebase detection
+        // Note: This test validates the logic flow but doesn't test actual file reading
+        // since that would require setting up git rebase state files.
+        // Actual rebase detection has been manually verified.
+        let wt = Worktree {
+            path: PathBuf::from("/nonexistent/path"),
+            head: "abcd1234".to_string(),
+            branch: None,
+            bare: false,
+            detached: true,
+            locked: None,
+            prunable: None,
+        };
+
+        let finalized = finalize_worktree(wt);
+        // With a nonexistent path, rebase detection should fail gracefully
+        // and branch should remain None
+        assert_eq!(finalized.branch, None);
     }
 
     #[test]

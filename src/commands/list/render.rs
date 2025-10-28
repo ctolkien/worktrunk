@@ -75,9 +75,6 @@ pub fn format_all_states(info: &WorktreeInfo) -> String {
         states.push(format!("[{}]", state));
     }
 
-    if info.worktree.detached && info.worktree.branch.is_some() {
-        states.push("(detached)".to_string());
-    }
     if info.worktree.bare {
         states.push("(bare)".to_string());
     }
