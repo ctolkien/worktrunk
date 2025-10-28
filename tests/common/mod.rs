@@ -399,6 +399,10 @@ pub fn setup_snapshot_settings(repo: &TestRepo) -> insta::Settings {
     }
 
     // Normalize git SHAs and backslashes
+    // First filter SHAs wrapped in ANSI color codes (more specific pattern)
+    // Match: ESC[COLORmSHAESC[m (e.g., \x1b[33m0b07a58\x1b[m)
+    settings.add_filter(r"\x1b\[[0-9;]*m[0-9a-f]{7,40}\x1b\[m", "[SHA]");
+    // Then filter plain SHAs (more general pattern)
     settings.add_filter(r"\b[0-9a-f]{7,40}\b", "[SHA]");
     settings.add_filter(r"\\", "/");
 
