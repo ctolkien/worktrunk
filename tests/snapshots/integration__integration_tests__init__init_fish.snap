@@ -86,7 +86,7 @@ if type -q wt
                 end
                 printf '%s' $chunk
             end
-        end < (begin; command $_WORKTRUNK_CMD $argv 2>&1; echo $status > $exit_code_file; end | psub)
+        end < (begin; command $_WORKTRUNK_CMD $argv; echo $status > $exit_code_file; end | psub)
 
         if test $debug_mode -eq 1
             echo "[DEBUG] Finished reading, total chunks: $chunk_count" >&2

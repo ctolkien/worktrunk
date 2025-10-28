@@ -13,8 +13,8 @@ if command -v wt >/dev/null 2>&1; then
         local exit_code_file
         exit_code_file=$(mktemp) || { echo "Failed to create temp file" >&2; return 1; }
 
-        # Parse output directly from wt (command substitution strips NUL bytes!)
-        # Use process substitution to preserve NUL bytes
+        # Parse stdout for directives (NUL-delimited)
+        # Let stderr pass through to terminal (preserves TTY for color detection)
         # Write exit code to temp file since it can't be captured from process substitution
         # The || [[ -n "$chunk" ]] handles non-NUL-terminated output (e.g., error messages)
         while IFS= read -r -d '' chunk || [[ -n "$chunk" ]]; do
@@ -29,7 +29,7 @@ if command -v wt >/dev/null 2>&1; then
                 # Regular output - print it (preserving newlines)
                 printf '%s' "$chunk"
             fi
-        done < <(command "$_WORKTRUNK_CMD" "$@" 2>&1; echo "$?" > "$exit_code_file")
+        done < <(command "$_WORKTRUNK_CMD" "$@"; echo "$?" > "$exit_code_file")
 
         # Read exit code from temp file
         exit_code=$(cat "$exit_code_file" 2>/dev/null || echo 0)

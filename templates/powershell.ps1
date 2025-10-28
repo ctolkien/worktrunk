@@ -14,8 +14,9 @@ if (Get-Command wt -ErrorAction SilentlyContinue) {
             [string[]]$Arguments
         )
 
-        # Capture output and exit code
-        $output = & $script:_WORKTRUNK_CMD @Arguments 2>&1 | Out-String
+        # Capture stdout for directives, let stderr pass through to terminal
+        # This preserves TTY for color detection
+        $output = & $script:_WORKTRUNK_CMD @Arguments | Out-String
         $exitCode = $LASTEXITCODE
         $execCmd = ""
 

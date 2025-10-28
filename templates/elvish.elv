@@ -16,10 +16,11 @@ if (has-external wt) {
         var output = ""
         var exec-cmd = ""
 
-        # Capture output and handle potential non-zero exit
+        # Capture stdout for directives, let stderr pass through to terminal
+        # This preserves TTY for color detection
         # TODO: Capture actual exit code from wt command, not just success/failure
         try {
-            set output = (e:$_WORKTRUNK_CMD $@args 2>&1 | slurp)
+            set output = (e:$_WORKTRUNK_CMD $@args | slurp)
         } catch e {
             set exit-code = 1
             set output = $e[reason][content]
