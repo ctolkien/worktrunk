@@ -204,6 +204,52 @@ impl std::fmt::Display for GitError {
 
 impl std::error::Error for GitError {}
 
+// Automatic conversion from io::Error to GitError
+// This eliminates the need for manual .map_err() on output functions
+impl From<std::io::Error> for GitError {
+    fn from(e: std::io::Error) -> Self {
+        GitError::CommandFailed(e.to_string())
+    }
+}
+
+/// Extension trait for Result types to simplify GitError conversions
+///
+/// This trait provides ergonomic methods to convert any Result into Result<T, GitError>.
+///
+/// # Examples
+///
+/// ```no_run
+/// use worktrunk::git::{GitError, GitResultExt};
+///
+/// fn load_config() -> Result<String, std::io::Error> {
+///     std::fs::read_to_string("config.toml")
+/// }
+///
+/// // Without context:
+/// let config = load_config().git_err()?;
+///
+/// // With context:
+/// let config = load_config().git_context("Failed to load config")?;
+/// # Ok::<(), GitError>(())
+/// ```
+pub trait GitResultExt<T> {
+    /// Convert the error to GitError with additional context
+    fn git_context(self, context: &str) -> Result<T, GitError>;
+
+    /// Convert the error to GitError using its Display implementation
+    fn git_err(self) -> Result<T, GitError>;
+}
+
+impl<T, E: std::fmt::Display> GitResultExt<T> for Result<T, E> {
+    fn git_context(self, context: &str) -> Result<T, GitError> {
+        self.map_err(|e| GitError::CommandFailed(format!("{}: {}", context, e)))
+    }
+
+    fn git_err(self) -> Result<T, GitError> {
+        self.map_err(|e| GitError::CommandFailed(e.to_string()))
+    }
+}
+
 /// Repository context for git operations.
 ///
 /// Provides a more ergonomic API than the `*_in(path, ...)` functions by

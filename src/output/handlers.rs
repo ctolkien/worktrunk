@@ -1,7 +1,7 @@
 //! Output handlers for worktree operations using the global output context
 
 use crate::commands::worktree::{RemoveResult, SwitchResult};
-use worktrunk::git::GitError;
+use worktrunk::git::{GitError, GitResultExt};
 use worktrunk::styling::AnstyleStyle;
 
 /// Format plain message for switch operation (no emoji - added by OutputContext)
@@ -69,23 +69,21 @@ pub fn handle_switch_output(
     execute: Option<&str>,
 ) -> Result<(), GitError> {
     // Set target directory for command execution
-    super::change_directory(result.path()).map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    super::change_directory(result.path())?;
 
     // Show success message (plain text - formatting added by OutputContext)
-    super::success(format_switch_message_plain(result, branch))
-        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    super::success(format_switch_message_plain(result, branch))?;
 
     // Execute command if provided
     if let Some(cmd) = execute {
-        super::execute(cmd).map_err(|e| GitError::CommandFailed(e.to_string()))?;
+        super::execute(cmd)?;
     } else {
         // No execute command: show shell integration hint (only in interactive mode)
-        super::progress(format!("\n{}", shell_integration_hint()))
-            .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+        super::progress(format!("\n{}", shell_integration_hint()))?;
     }
 
     // Flush output (important for directive mode)
-    super::flush().map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    super::flush()?;
 
     Ok(())
 }
@@ -94,16 +92,14 @@ pub fn handle_switch_output(
 pub fn handle_remove_output(result: &RemoveResult) -> Result<(), GitError> {
     // For removed worktree, set target directory for shell to cd to
     if let RemoveResult::RemovedWorktree { primary_path } = result {
-        super::change_directory(primary_path)
-            .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+        super::change_directory(primary_path)?;
     }
 
     // Show success message
-    super::success(format_remove_message_plain(result))
-        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    super::success(format_remove_message_plain(result))?;
 
     // Flush output
-    super::flush().map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    super::flush()?;
 
     Ok(())
 }
@@ -139,7 +135,7 @@ pub fn execute_command_in_worktree(
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
-        .map_err(|e| GitError::CommandFailed(format!("Failed to execute command: {}", e)))?;
+        .git_context("Failed to execute command")?;
 
     if !status.success() {
         return Err(GitError::CommandFailed(format!(
@@ -149,7 +145,7 @@ pub fn execute_command_in_worktree(
     }
 
     // Terminate output (adds NUL in directive mode, no-op in interactive)
-    super::terminate_output().map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    super::terminate_output()?;
 
     Ok(())
 }

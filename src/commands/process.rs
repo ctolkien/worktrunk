@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use worktrunk::git::GitError;
+use worktrunk::git::{GitError, GitResultExt};
 
 /// Spawn a detached background process with output redirected to a log file
 ///
@@ -26,8 +26,7 @@ pub fn spawn_detached(
     let git_path = worktree_path.join(".git");
     let git_dir = if git_path.is_file() {
         // Read the gitdir path from the file
-        let content = fs::read_to_string(&git_path)
-            .map_err(|e| GitError::CommandFailed(format!("Failed to read .git file: {}", e)))?;
+        let content = fs::read_to_string(&git_path).git_context("Failed to read .git file")?;
         // Format is "gitdir: /path/to/git/dir"
         let gitdir_path = content
             .trim()
@@ -40,15 +39,13 @@ pub fn spawn_detached(
 
     // Create log directory in the git directory
     let log_dir = git_dir.join("wt-logs");
-    fs::create_dir_all(&log_dir)
-        .map_err(|e| GitError::CommandFailed(format!("Failed to create log directory: {}", e)))?;
+    fs::create_dir_all(&log_dir).git_context("Failed to create log directory")?;
 
     // Generate log filename (no timestamp - overwrites on each run)
     let log_path = log_dir.join(format!("post-start-{}.log", name));
 
     // Create log file
-    let log_file = fs::File::create(&log_path)
-        .map_err(|e| GitError::CommandFailed(format!("Failed to create log file: {}", e)))?;
+    let log_file = fs::File::create(&log_path).git_context("Failed to create log file")?;
 
     #[cfg(unix)]
     {
@@ -88,7 +85,7 @@ fn spawn_detached_unix(
         })?))
         .stderr(Stdio::from(log_file))
         .spawn()
-        .map_err(|e| GitError::CommandFailed(format!("Failed to spawn detached process: {}", e)))?;
+        .git_context("Failed to spawn detached process")?;
 
     Ok(())
 }
@@ -116,7 +113,7 @@ fn spawn_detached_windows(
         .stderr(Stdio::from(log_file))
         .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS)
         .spawn()
-        .map_err(|e| GitError::CommandFailed(format!("Failed to spawn detached process: {}", e)))?;
+        .git_context("Failed to spawn detached process")?;
 
     Ok(())
 }

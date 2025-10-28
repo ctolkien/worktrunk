@@ -1,5 +1,5 @@
 use worktrunk::config::{ProjectConfig, WorktrunkConfig};
-use worktrunk::git::{GitError, Repository};
+use worktrunk::git::{GitError, GitResultExt, Repository};
 use worktrunk::styling::{AnstyleStyle, CYAN, CYAN_BOLD, format_with_gutter};
 
 use super::command_executor::{CommandContext, prepare_project_commands};
@@ -18,8 +18,7 @@ pub fn handle_merge(
     let repo = Repository::current();
 
     // Show progress for initial validation
-    crate::output::progress(format!("🔄 {CYAN}Validating merge...{CYAN:#}"))
-        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    crate::output::progress(format!("🔄 {CYAN}Validating merge...{CYAN:#}"))?;
 
     // Get current branch
     let current_branch = repo.current_branch()?.ok_or(GitError::DetachedHead)?;
@@ -32,21 +31,18 @@ pub fn handle_merge(
         let bold = AnstyleStyle::new().bold();
         crate::output::success(format!(
             "Already on {bold}{target_branch}{bold:#}, nothing to merge"
-        ))
-        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+        ))?;
         return Ok(());
     }
 
     // Load config for LLM integration
-    let config = WorktrunkConfig::load()
-        .map_err(|e| GitError::CommandFailed(format!("Failed to load config: {}", e)))?;
+    let config = WorktrunkConfig::load().git_context("Failed to load config")?;
 
     // Run pre-merge checks unless --no-hooks was specified
     // Do this BEFORE committing so we fail fast if checks won't pass
     if !no_hooks && let Ok(Some(project_config)) = ProjectConfig::load(&repo.worktree_root()?) {
-        let worktree_path = std::env::current_dir().map_err(|e| {
-            GitError::CommandFailed(format!("Failed to get current directory: {}", e))
-        })?;
+        let worktree_path =
+            std::env::current_dir().git_context("Failed to get current directory")?;
         run_pre_merge_commands(
             &project_config,
             &current_branch,
@@ -72,8 +68,7 @@ pub fn handle_merge(
     // Rebase onto target
     crate::output::progress(format!(
         "🔄 {CYAN}Rebasing onto {CYAN_BOLD}{target_branch}{CYAN_BOLD:#}...{CYAN:#}"
-    ))
-    .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    ))?;
 
     let rebase_result = repo.run_command(&["rebase", &target_branch]);
 
@@ -118,8 +113,7 @@ pub fn handle_merge(
 
     // Finish worktree unless --keep was specified
     if !keep {
-        crate::output::progress(format!("🔄 {CYAN}Cleaning up worktree...{CYAN:#}"))
-            .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+        crate::output::progress(format!("🔄 {CYAN}Cleaning up worktree...{CYAN:#}"))?;
 
         // Get primary worktree path before finishing (while we can still run git commands)
         let primary_worktree_dir = repo.main_worktree_root()?;
@@ -128,8 +122,7 @@ pub fn handle_merge(
 
         // Set directory for shell integration (but don't print separate success message)
         if let super::worktree::RemoveResult::RemovedWorktree { primary_path } = &result {
-            crate::output::change_directory(primary_path)
-                .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+            crate::output::change_directory(primary_path)?;
         }
 
         // Check if we need to switch to target branch
@@ -138,26 +131,18 @@ pub fn handle_merge(
         if new_branch.as_deref() != Some(&target_branch) {
             crate::output::progress(format!(
                 "🔄 {CYAN}Switching to {CYAN_BOLD}{target_branch}{CYAN_BOLD:#}...{CYAN:#}"
-            ))
-            .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+            ))?;
             primary_repo
                 .run_command(&["switch", &target_branch])
-                .map_err(|e| {
-                    GitError::CommandFailed(format!(
-                        "Failed to switch to '{}': {}",
-                        target_branch, e
-                    ))
-                })?;
+                .git_context(&format!("Failed to switch to '{}'", target_branch))?;
         }
 
         // Print comprehensive summary
-        crate::output::progress("")
-            .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+        crate::output::progress("")?;
         handle_merge_summary_output(Some(&primary_worktree_dir))?;
     } else {
         // Print comprehensive summary (worktree preserved)
-        crate::output::progress("")
-            .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+        crate::output::progress("")?;
         handle_merge_summary_output(None)?;
     }
 
@@ -179,10 +164,10 @@ fn handle_merge_summary_output(primary_path: Option<&std::path::Path>) -> Result
     let message = format_merge_summary(primary_path);
 
     // Show success message (formatting added by OutputContext)
-    crate::output::success(message).map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    crate::output::success(message)?;
 
     // Flush output
-    crate::output::flush().map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    crate::output::flush()?;
 
     Ok(())
 }
@@ -219,31 +204,27 @@ fn handle_commit_changes(
 
     crate::output::progress(format!(
         "🔄 {CYAN}Committing uncommitted changes...{CYAN:#}"
-    ))
-    .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    ))?;
 
     // Stage all changes including untracked files
     repo.run_command(&["add", "-A"])
-        .map_err(|e| GitError::CommandFailed(format!("Failed to stage changes: {}", e)))?;
+        .git_context("Failed to stage changes")?;
 
     // Generate commit message
-    crate::output::progress(format!("🔄 {CYAN}Generating commit message...{CYAN:#}"))
-        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    crate::output::progress(format!("🔄 {CYAN}Generating commit message...{CYAN:#}"))?;
 
     let commit_message =
         crate::llm::generate_commit_message(custom_instruction, commit_generation_config)?;
 
     // Display the generated commit message
     let formatted_message = format_commit_message_for_display(&commit_message);
-    crate::output::progress(format_with_gutter(&formatted_message, "", None))
-        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    crate::output::progress(format_with_gutter(&formatted_message, "", None))?;
 
     // Commit
     repo.run_command(&["commit", "-m", &commit_message])
-        .map_err(|e| GitError::CommandFailed(format!("Failed to commit: {}", e)))?;
+        .git_context("Failed to commit")?;
 
-    crate::output::success("Committed changes")
-        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    crate::output::success("Committed changes")?;
 
     Ok(())
 }
@@ -266,8 +247,7 @@ fn handle_squash(target_branch: &str) -> Result<Option<usize>, GitError> {
         let dim = AnstyleStyle::new().dimmed();
         crate::output::progress(format!(
             "{dim}No commits to squash - already at merge base{dim:#}"
-        ))
-        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+        ))?;
         return Ok(None);
     }
 
@@ -281,16 +261,14 @@ fn handle_squash(target_branch: &str) -> Result<Option<usize>, GitError> {
         let dim = AnstyleStyle::new().dimmed();
         crate::output::progress(format!(
             "{dim}Only 1 commit since {CYAN_BOLD}{target_branch}{CYAN_BOLD:#} - no squashing needed{dim:#}"
-        ))
-        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+        ))?;
         return Ok(None);
     }
 
     // One or more commits (possibly with staged changes) - squash them
     crate::output::progress(format!(
         "🔄 {CYAN}Squashing {commit_count} commits into one...{CYAN:#}"
-    ))
-    .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    ))?;
 
     // Get commit subjects for the squash message
     let range = format!("{}..HEAD", merge_base);
@@ -299,33 +277,27 @@ fn handle_squash(target_branch: &str) -> Result<Option<usize>, GitError> {
     // Load config and generate commit message
     crate::output::progress(format!(
         "🔄 {CYAN}Generating squash commit message...{CYAN:#}"
-    ))
-    .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    ))?;
 
-    let config = WorktrunkConfig::load()
-        .map_err(|e| GitError::CommandFailed(format!("Failed to load config: {}", e)))?;
+    let config = WorktrunkConfig::load().git_context("Failed to load config")?;
     let commit_message =
         crate::llm::generate_squash_message(target_branch, &subjects, &config.commit_generation)
-            .map_err(|e| {
-                GitError::CommandFailed(format!("Failed to generate commit message: {}", e))
-            })?;
+            .git_context("Failed to generate commit message")?;
 
     // Display the generated commit message
     let formatted_message = format_commit_message_for_display(&commit_message);
-    crate::output::progress(format_with_gutter(&formatted_message, "", None))
-        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    crate::output::progress(format_with_gutter(&formatted_message, "", None))?;
 
     // Reset to merge base (soft reset stages all changes)
     repo.run_command(&["reset", "--soft", &merge_base])
-        .map_err(|e| GitError::CommandFailed(format!("Failed to reset to merge base: {}", e)))?;
+        .git_context("Failed to reset to merge base")?;
 
     // Commit with the generated message
     repo.run_command(&["commit", "-m", &commit_message])
-        .map_err(|e| GitError::CommandFailed(format!("Failed to create squash commit: {}", e)))?;
+        .git_context("Failed to create squash commit")?;
 
     // Show success immediately after completing the squash
-    crate::output::success(format!("Squashed {commit_count} commits into one"))
-        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    crate::output::success(format!("Squashed {commit_count} commits into one"))?;
 
     Ok(Some(commit_count))
 }
@@ -362,10 +334,8 @@ fn run_pre_merge_commands(
         crate::output::progress(format!(
             "🔄 {CYAN}Running pre-merge command {CYAN_BOLD}{name}{CYAN_BOLD:#}:{CYAN:#}",
             name = prepared.name
-        ))
-        .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
-        crate::output::progress(format_with_gutter(&prepared.expanded, "", None))
-            .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+        ))?;
+        crate::output::progress(format_with_gutter(&prepared.expanded, "", None))?;
 
         if let Err(e) = execute_command_in_worktree(worktree_path, &prepared.expanded) {
             return Err(GitError::PreMergeCommandFailed {
@@ -383,8 +353,7 @@ fn run_pre_merge_commands(
 /// Load project configuration with proper error conversion
 fn load_project_config(repo: &Repository) -> Result<Option<ProjectConfig>, GitError> {
     let repo_root = repo.worktree_root()?;
-    ProjectConfig::load(&repo_root)
-        .map_err(|e| GitError::CommandFailed(format!("Failed to load project config: {}", e)))
+    ProjectConfig::load(&repo_root).git_context("Failed to load project config")
 }
 
 /// Execute post-merge commands sequentially in the main worktree (blocking)
@@ -430,10 +399,8 @@ fn execute_post_merge_commands(
         crate::output::progress(format!(
             "🔄 {CYAN}Running post-merge command {CYAN_BOLD}{name}{CYAN_BOLD:#}:{CYAN:#}",
             name = prepared.name
-        ))
-        .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
-        crate::output::progress(format_with_gutter(&prepared.expanded, "", None))
-            .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+        ))?;
+        crate::output::progress(format_with_gutter(&prepared.expanded, "", None))?;
 
         if let Err(e) = execute_command_in_worktree(main_worktree_path, &prepared.expanded) {
             use worktrunk::styling::WARNING_EMOJI;
@@ -441,13 +408,12 @@ fn execute_post_merge_commands(
             crate::output::progress(format!(
                 "{WARNING_EMOJI} {WARNING}Command {warning_bold}{name}{warning_bold:#} failed: {e}{WARNING:#}",
                 name = prepared.name,
-            ))
-            .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+            ))?;
             // Continue with other commands even if one fails
         }
     }
 
-    crate::output::flush().map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+    crate::output::flush()?;
 
     Ok(())
 }

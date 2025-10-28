@@ -2,7 +2,7 @@ use anstyle::Style;
 use clap::{CommandFactory, Parser, Subcommand};
 use std::process;
 use worktrunk::config::WorktrunkConfig;
-use worktrunk::git::{GitError, Repository};
+use worktrunk::git::{GitError, GitResultExt, Repository};
 use worktrunk::styling::{SUCCESS_EMOJI, println};
 
 mod commands;
@@ -297,7 +297,7 @@ fn main() {
     let result = match cli.command {
         Commands::Init { shell, cmd } => {
             let mut cli_cmd = Cli::command();
-            handle_init(&shell, &cmd, &mut cli_cmd).map_err(GitError::CommandFailed)
+            handle_init(&shell, &cmd, &mut cli_cmd).git_err()
         }
         Commands::ConfigureShell { shell, cmd, yes } => {
             handle_configure_shell(shell, &cmd, yes)
@@ -346,7 +346,7 @@ fn main() {
                         "{HINT_EMOJI} {HINT}Restart your shell or run: source <config-file>{HINT:#}"
                     );
                 })
-                .map_err(GitError::CommandFailed)
+                .git_err()
         }
         Commands::Config { action } => match action {
             ConfigCommand::Init => handle_config_init(),
@@ -361,7 +361,7 @@ fn main() {
             force,
             no_hooks,
         } => WorktrunkConfig::load()
-            .map_err(|e| GitError::CommandFailed(format!("Failed to load config: {}", e)))
+            .git_context("Failed to load config")
             .and_then(|config| {
                 handle_switch(&branch, create, base.as_deref(), force, no_hooks, &config)
                     .and_then(|result| handle_switch_output(&result, &branch, execute.as_deref()))

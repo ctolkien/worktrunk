@@ -1,6 +1,6 @@
 use etcetera::base_strategy::{BaseStrategy, choose_base_strategy};
 use std::path::PathBuf;
-use worktrunk::git::{GitError, Repository};
+use worktrunk::git::{GitError, GitResultExt, Repository};
 use worktrunk::styling::{
     AnstyleStyle, GREEN, HINT, HINT_EMOJI, SUCCESS_EMOJI, format_toml, print, println,
 };
@@ -34,8 +34,7 @@ pub fn handle_config_init() -> Result<(), GitError> {
     }
 
     // Write the example config
-    std::fs::write(&config_path, CONFIG_EXAMPLE)
-        .map_err(|e| GitError::CommandFailed(format!("Failed to write config file: {}", e)))?;
+    std::fs::write(&config_path, CONFIG_EXAMPLE).git_context("Failed to write config file")?;
 
     // Success message
     let bold = AnstyleStyle::new().bold();
@@ -83,8 +82,8 @@ fn display_global_config() -> Result<(), GitError> {
     }
 
     // Read and display the file contents
-    let contents = std::fs::read_to_string(&config_path)
-        .map_err(|e| GitError::CommandFailed(format!("Failed to read config file: {}", e)))?;
+    let contents =
+        std::fs::read_to_string(&config_path).git_context("Failed to read config file")?;
 
     if contents.trim().is_empty() {
         println!("{HINT_EMOJI} {HINT}Empty file (using defaults){HINT:#}");
@@ -121,8 +120,8 @@ fn display_project_config() -> Result<(), GitError> {
     }
 
     // Read and display the file contents
-    let contents = std::fs::read_to_string(&config_path)
-        .map_err(|e| GitError::CommandFailed(format!("Failed to read config file: {}", e)))?;
+    let contents =
+        std::fs::read_to_string(&config_path).git_context("Failed to read config file")?;
 
     if contents.trim().is_empty() {
         println!("{HINT_EMOJI} {HINT}Empty file{HINT:#}");

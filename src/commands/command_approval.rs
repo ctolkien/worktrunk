@@ -3,7 +3,7 @@
 //! Shared helpers for approving commands declared in project configuration.
 
 use worktrunk::config::{ApprovedCommand, CommandConfig, WorktrunkConfig};
-use worktrunk::git::GitError;
+use worktrunk::git::{GitError, GitResultExt};
 use worktrunk::styling::{
     AnstyleStyle, HINT_EMOJI, WARNING, WARNING_EMOJI, eprintln, format_with_gutter,
 };
@@ -56,8 +56,7 @@ pub fn approve_command_batch(
     let approved = if force {
         true
     } else {
-        prompt_for_batch_approval(&needs_approval, project_id)
-            .map_err(|e| GitError::CommandFailed(e.to_string()))?
+        prompt_for_batch_approval(&needs_approval, project_id)?
     };
 
     if !approved {
@@ -66,8 +65,7 @@ pub fn approve_command_batch(
         return Ok(false);
     }
 
-    let mut fresh_config = WorktrunkConfig::load()
-        .map_err(|e| GitError::CommandFailed(format!("Failed to reload config: {}", e)))?;
+    let mut fresh_config = WorktrunkConfig::load().git_context("Failed to reload config")?;
 
     let mut updated = false;
     for (_, command) in needs_approval {

@@ -102,7 +102,7 @@
 
 use std::path::PathBuf;
 use worktrunk::config::{ProjectConfig, WorktrunkConfig};
-use worktrunk::git::{GitError, Repository};
+use worktrunk::git::{GitError, GitResultExt, Repository};
 use worktrunk::styling::{
     ADDITION, AnstyleStyle, CYAN, CYAN_BOLD, DELETION, GREEN, GREEN_BOLD, SUCCESS_EMOJI, WARNING,
     WARNING_EMOJI, format_with_gutter,
@@ -163,8 +163,7 @@ pub fn handle_switch(
     if base.is_some() && !create {
         crate::output::progress(format!(
             "{WARNING_EMOJI} {WARNING}--base flag is only used with --create, ignoring{WARNING:#}"
-        ))
-        .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+        ))?;
     }
 
     // Check if worktree already exists for this branch
@@ -207,12 +206,12 @@ pub fn handle_switch(
     }
 
     repo.run_command(&args)
-        .map_err(|e| GitError::CommandFailed(format!("Failed to create worktree: {}", e)))?;
+        .git_context("Failed to create worktree")?;
 
     // Canonicalize the path to resolve any .. components
-    let worktree_path = worktree_path.canonicalize().map_err(|e| {
-        GitError::CommandFailed(format!("Failed to canonicalize worktree path: {}", e))
-    })?;
+    let worktree_path = worktree_path
+        .canonicalize()
+        .git_context("Failed to canonicalize worktree path")?;
 
     // Execute post-create commands (sequential, blocking)
     if !no_hooks {
@@ -264,13 +263,11 @@ fn remove_current_worktree(repo: &Repository) -> Result<RemoveResult, GitError> 
         if let Err(e) = repo.remove_worktree(&worktree_root) {
             crate::output::progress(format!(
                 "{WARNING_EMOJI} {WARNING}Failed to remove worktree: {e}{WARNING:#}"
-            ))
-            .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+            ))?;
             crate::output::progress(format!(
                 "You may need to run 'git worktree remove {}' manually",
                 worktree_root.display()
-            ))
-            .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+            ))?;
         }
 
         Ok(RemoveResult::RemovedWorktree {
@@ -279,9 +276,7 @@ fn remove_current_worktree(repo: &Repository) -> Result<RemoveResult, GitError> 
     } else {
         // In main repo but not on default branch: switch to default
         repo.run_command(&["switch", &default_branch])
-            .map_err(|e| {
-                GitError::CommandFailed(format!("Failed to switch to '{}': {}", default_branch, e))
-            })?;
+            .git_context(&format!("Failed to switch to '{}'", default_branch))?;
 
         Ok(RemoveResult::SwitchedToDefault(default_branch))
     }
@@ -327,13 +322,11 @@ fn remove_worktree_by_name(repo: &Repository, branch_name: &str) -> Result<Remov
     if let Err(e) = repo.remove_worktree(&worktree_path) {
         crate::output::progress(format!(
             "{WARNING_EMOJI} {WARNING}Failed to remove worktree: {e}{WARNING:#}"
-        ))
-        .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+        ))?;
         crate::output::progress(format!(
             "You may need to run 'git worktree remove {}' manually",
             worktree_path.display()
-        ))
-        .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+        ))?;
     }
 
     // If we removed the current worktree, return to primary
@@ -397,8 +390,7 @@ fn check_worktree_conflicts(
 /// Helper to load project config with error handling
 fn load_project_config(repo: &Repository) -> Result<Option<ProjectConfig>, GitError> {
     let repo_root = repo.worktree_root()?;
-    ProjectConfig::load(&repo_root)
-        .map_err(|e| GitError::CommandFailed(format!("Failed to load project config: {}", e)))
+    ProjectConfig::load(&repo_root).git_context("Failed to load project config")
 }
 
 /// Execute post-create commands sequentially (blocking)
@@ -438,23 +430,20 @@ fn execute_post_create_commands(
 
     // Execute each command sequentially
     for prepared in commands {
-        crate::output::progress(format!("🔄 {CYAN}Executing (post-create):{CYAN:#}"))
-            .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
-        crate::output::progress(format_with_gutter(&prepared.expanded, "", None))
-            .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+        crate::output::progress(format!("🔄 {CYAN}Executing (post-create):{CYAN:#}"))?;
+        crate::output::progress(format_with_gutter(&prepared.expanded, "", None))?;
 
         if let Err(e) = execute_command_in_worktree(worktree_path, &prepared.expanded) {
             let warning_bold = WARNING.bold();
             crate::output::progress(format!(
                 "{WARNING_EMOJI} {WARNING}Command {warning_bold}{name}{warning_bold:#} failed: {e}{WARNING:#}",
                 name = prepared.name,
-            ))
-            .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+            ))?;
             // Continue with other commands even if one fails
         }
     }
 
-    crate::output::flush().map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+    crate::output::flush()?;
 
     Ok(())
 }
@@ -496,10 +485,8 @@ fn spawn_post_start_commands(
 
     // Spawn each command as a detached background process
     for prepared in commands {
-        crate::output::progress(format!("🔄 {CYAN}Starting (background):{CYAN:#}"))
-            .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
-        crate::output::progress(format_with_gutter(&prepared.expanded, "", None))
-            .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+        crate::output::progress(format!("🔄 {CYAN}Starting (background):{CYAN:#}"))?;
+        crate::output::progress(format_with_gutter(&prepared.expanded, "", None))?;
 
         match spawn_detached(worktree_path, &prepared.expanded, &prepared.name) {
             Ok(_log_path) => {
@@ -510,13 +497,12 @@ fn spawn_post_start_commands(
                 crate::output::progress(format!(
                     "{WARNING_EMOJI} {WARNING}Failed to spawn '{name}': {e}{WARNING:#}",
                     name = prepared.name,
-                ))
-                .map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+                ))?;
             }
         }
     }
 
-    crate::output::flush().map_err(|e| GitError::CommandFailed(format!("Output error: {}", e)))?;
+    crate::output::flush()?;
 
     Ok(())
 }
@@ -570,8 +556,7 @@ pub fn handle_push(target: Option<&str>, allow_merge_commits: bool) -> Result<()
 
         crate::output::progress(format!(
             "🔄 {CYAN}Pushing {commit_count} {commit_text} to {CYAN_BOLD}{target_branch}{CYAN_BOLD:#} @ {head_sha}{CYAN:#}\n"
-        ))
-        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+        ))?;
 
         // Show the commit graph with color
         let log_output = repo.run_command(&[
@@ -582,8 +567,7 @@ pub fn handle_push(target: Option<&str>, allow_merge_commits: bool) -> Result<()
             "--decorate",
             &format!("{}..HEAD", target_branch),
         ])?;
-        crate::output::progress(format!("{}\n", log_output.trim()))
-            .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+        crate::output::progress(format!("{}\n", log_output.trim()))?;
 
         // Show diff statistics with color
         let diff_stat = repo.run_command(&[
@@ -595,8 +579,7 @@ pub fn handle_push(target: Option<&str>, allow_merge_commits: bool) -> Result<()
 
         let diff_stat = diff_stat.trim_end();
         if !diff_stat.is_empty() {
-            crate::output::progress(format!("{}\n", diff_stat))
-                .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+            crate::output::progress(format!("{}\n", diff_stat))?;
         }
     }
 
@@ -639,13 +622,11 @@ pub fn handle_push(target: Option<&str>, allow_merge_commits: bool) -> Result<()
         crate::output::progress(format!(
             "{SUCCESS_EMOJI} {GREEN}Pushed to {GREEN_BOLD}{target_branch}{GREEN_BOLD:#} ({})  {GREEN:#}",
             summary_parts.join(", ")
-        ))
-        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+        ))?;
     } else {
         crate::output::progress(format!(
             "{SUCCESS_EMOJI} {GREEN}Pushed to {GREEN_BOLD}{target_branch}{GREEN_BOLD:#}{GREEN:#}"
-        ))
-        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+        ))?;
     }
 
     Ok(())
