@@ -148,10 +148,20 @@ fn exec_through_wrapper(
     subcommand: &str,
     args: &[&str],
 ) -> ShellOutput {
+    exec_through_wrapper_from(shell, repo, subcommand, args, repo.root_path())
+}
+
+fn exec_through_wrapper_from(
+    shell: &str,
+    repo: &TestRepo,
+    subcommand: &str,
+    args: &[&str],
+    working_dir: &std::path::Path,
+) -> ShellOutput {
     let script = build_shell_script(shell, repo, subcommand, args);
 
     let mut cmd = Command::new(shell);
-    cmd.arg("-c").arg(&script).current_dir(repo.root_path());
+    cmd.arg("-c").arg(&script).current_dir(working_dir);
 
     // Configure git environment
     repo.clean_cli_env(&mut cmd);
@@ -326,6 +336,232 @@ mod tests {
         // Shell-specific snapshot
         assert_snapshot!(
             format!("switch_with_execute_{}", shell),
+            output.normalized().as_ref()
+        );
+    }
+
+    /// Test switch --create with post-create-command (blocking) and post-start-command (background)
+    #[rstest]
+    #[case("bash")]
+    #[case("fish")]
+    fn test_wrapper_switch_with_hooks(#[case] shell: &str) {
+        let repo = TestRepo::new();
+        repo.commit("Initial commit");
+
+        // Create project config with both post-create and post-start hooks
+        let config_dir = repo.root_path().join(".config");
+        fs::create_dir_all(&config_dir).expect("Failed to create .config dir");
+        fs::write(
+            config_dir.join("wt.toml"),
+            r#"# Blocking command that runs before worktree is ready
+post-create-command = [
+    "echo 'Installing dependencies...'",
+    "echo 'Building project...'"
+]
+
+# Background command that runs in parallel
+[post-start-command]
+server = "echo 'Starting dev server on port 3000'"
+watch = "echo 'Watching for file changes'"
+"#,
+        )
+        .expect("Failed to write project config");
+
+        repo.commit("Add hooks");
+
+        // Pre-approve the commands in user config
+        fs::write(
+            repo.test_config_path(),
+            r#"worktree-path = "../{main-worktree}.{branch}"
+
+[[approved-commands]]
+project = "test-repo"
+command = "echo 'Installing dependencies...'"
+
+[[approved-commands]]
+project = "test-repo"
+command = "echo 'Building project...'"
+
+[[approved-commands]]
+project = "test-repo"
+command = "echo 'Starting dev server on port 3000'"
+
+[[approved-commands]]
+project = "test-repo"
+command = "echo 'Watching for file changes'"
+"#,
+        )
+        .expect("Failed to write user config");
+
+        let output = exec_through_wrapper(shell, &repo, "switch", &["--create", "feature-hooks"]);
+
+        assert_eq!(output.exit_code, 0, "{}: Command should succeed", shell);
+        output.assert_no_directive_leaks();
+
+        assert_snapshot!(
+            format!("switch_with_hooks_{}", shell),
+            output.normalized().as_ref()
+        );
+    }
+
+    /// Test merge with successful pre-merge-command validation
+    #[rstest]
+    #[case("bash")]
+    #[case("fish")]
+    fn test_wrapper_merge_with_pre_merge_success(#[case] shell: &str) {
+        let mut repo = TestRepo::new();
+        repo.commit("Initial commit");
+        repo.setup_remote("main");
+
+        // Create project config with pre-merge validation
+        let config_dir = repo.root_path().join(".config");
+        fs::create_dir_all(&config_dir).expect("Failed to create .config dir");
+        fs::write(
+            config_dir.join("wt.toml"),
+            r#"[pre-merge-command]
+format = "echo '✓ Code formatting check passed'"
+lint = "echo '✓ Linting passed - no warnings'"
+test = "echo '✓ All 47 tests passed in 2.3s'"
+"#,
+        )
+        .expect("Failed to write config");
+
+        repo.commit("Add pre-merge validation");
+
+        // Create a main worktree
+        let main_wt = repo.root_path().parent().unwrap().join("test-repo.main-wt");
+        let mut cmd = Command::new("git");
+        repo.configure_git_cmd(&mut cmd);
+        cmd.args(["worktree", "add", main_wt.to_str().unwrap(), "main"])
+            .current_dir(repo.root_path())
+            .output()
+            .expect("Failed to add main worktree");
+
+        // Create feature worktree with a commit
+        let feature_wt = repo.add_worktree("feature", "feature");
+        fs::write(feature_wt.join("feature.txt"), "feature content").expect("Failed to write file");
+
+        let mut cmd = Command::new("git");
+        repo.configure_git_cmd(&mut cmd);
+        cmd.args(["add", "feature.txt"])
+            .current_dir(&feature_wt)
+            .output()
+            .expect("Failed to add file");
+
+        let mut cmd = Command::new("git");
+        repo.configure_git_cmd(&mut cmd);
+        cmd.args(["commit", "-m", "Add feature"])
+            .current_dir(&feature_wt)
+            .output()
+            .expect("Failed to commit");
+
+        // Pre-approve commands
+        fs::write(
+            repo.test_config_path(),
+            r#"worktree-path = "../{main-worktree}.{branch}"
+
+[[approved-commands]]
+project = "test-repo"
+command = "echo '✓ Code formatting check passed'"
+
+[[approved-commands]]
+project = "test-repo"
+command = "echo '✓ Linting passed - no warnings'"
+
+[[approved-commands]]
+project = "test-repo"
+command = "echo '✓ All 47 tests passed in 2.3s'"
+"#,
+        )
+        .expect("Failed to write user config");
+
+        // Run merge from the feature worktree
+        let output =
+            exec_through_wrapper_from(shell, &repo, "merge", &["main", "--force"], &feature_wt);
+
+        assert_eq!(output.exit_code, 0, "{}: Merge should succeed", shell);
+        output.assert_no_directive_leaks();
+
+        assert_snapshot!(
+            format!("merge_with_pre_merge_success_{}", shell),
+            output.normalized().as_ref()
+        );
+    }
+
+    /// Test merge with failing pre-merge-command that aborts the merge
+    #[rstest]
+    #[case("bash")]
+    #[case("fish")]
+    fn test_wrapper_merge_with_pre_merge_failure(#[case] shell: &str) {
+        let mut repo = TestRepo::new();
+        repo.commit("Initial commit");
+        repo.setup_remote("main");
+
+        // Create project config with failing pre-merge validation
+        let config_dir = repo.root_path().join(".config");
+        fs::create_dir_all(&config_dir).expect("Failed to create .config dir");
+        fs::write(
+            config_dir.join("wt.toml"),
+            r#"[pre-merge-command]
+format = "echo '✓ Code formatting check passed'"
+test = "echo '✗ Test suite failed: 3 tests failing' && exit 1"
+"#,
+        )
+        .expect("Failed to write config");
+
+        repo.commit("Add failing pre-merge validation");
+
+        // Create a main worktree
+        let main_wt = repo.root_path().parent().unwrap().join("test-repo.main-wt");
+        let mut cmd = Command::new("git");
+        repo.configure_git_cmd(&mut cmd);
+        cmd.args(["worktree", "add", main_wt.to_str().unwrap(), "main"])
+            .current_dir(repo.root_path())
+            .output()
+            .expect("Failed to add main worktree");
+
+        // Create feature worktree with a commit
+        let feature_wt = repo.add_worktree("feature-fail", "feature-fail");
+        fs::write(feature_wt.join("feature.txt"), "feature content").expect("Failed to write file");
+
+        let mut cmd = Command::new("git");
+        repo.configure_git_cmd(&mut cmd);
+        cmd.args(["add", "feature.txt"])
+            .current_dir(&feature_wt)
+            .output()
+            .expect("Failed to add file");
+
+        let mut cmd = Command::new("git");
+        repo.configure_git_cmd(&mut cmd);
+        cmd.args(["commit", "-m", "Add feature"])
+            .current_dir(&feature_wt)
+            .output()
+            .expect("Failed to commit");
+
+        // Pre-approve the commands
+        fs::write(
+            repo.test_config_path(),
+            r#"worktree-path = "../{main-worktree}.{branch}"
+
+[[approved-commands]]
+project = "test-repo"
+command = "echo '✓ Code formatting check passed'"
+
+[[approved-commands]]
+project = "test-repo"
+command = "echo '✗ Test suite failed: 3 tests failing' && exit 1"
+"#,
+        )
+        .expect("Failed to write user config");
+
+        // Run merge from the feature worktree
+        let output =
+            exec_through_wrapper_from(shell, &repo, "merge", &["main", "--force"], &feature_wt);
+
+        output.assert_no_directive_leaks();
+
+        assert_snapshot!(
+            format!("merge_with_pre_merge_failure_{}", shell),
             output.normalized().as_ref()
         );
     }
