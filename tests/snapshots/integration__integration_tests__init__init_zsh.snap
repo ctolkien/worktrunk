@@ -16,7 +16,7 @@ info:
     LANG: C
     LC_ALL: C
     SOURCE_DATE_EPOCH: "1761609600"
-    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpw2OXOa/test-config.toml
+    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpfnWawP/test-config.toml
 ---
 success: true
 exit_code: 0
@@ -382,9 +382,7 @@ _wt__switch_commands() {
 if [ "$funcstack[1]" = "_wt" ]; then
     _wt "$@"
 else
-    if (( $+functions[compdef] )); then
-        compdef _wt wt
-    fi
+    compdef _wt wt
 fi
 
 ----- stderr -----

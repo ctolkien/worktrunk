@@ -70,22 +70,7 @@ pub fn handle_init(shell_name: &str, cmd_name: &str, cli_cmd: &mut Command) -> R
             line.to_string()
         };
 
-        // For zsh, wrap the final compdef call in a guard to prevent errors in --no-rcs mode
-        // The clap-generated completions end with:
-        //   if [ "$funcstack[1]" = "_wt" ]; then
-        //       _wt "$@"
-        //   else
-        //       compdef _wt wt
-        //   fi
-        // We need to check if compdef exists before calling it in the else branch
-        if matches!(shell, shell::Shell::Zsh) && line.trim() == "compdef _wt wt" {
-            // Wrap the compdef call in a guard (preserve 4-space indentation from else block)
-            println!("    if (( $+functions[compdef] )); then");
-            println!("        compdef _wt wt");
-            println!("    fi");
-        } else {
-            println!("{}", line);
-        }
+        println!("{}", line);
     }
 
     Ok(())

@@ -106,8 +106,22 @@ fn build_shell_script(shell: &str, repo: &TestRepo, subcommand: &str, args: &[&s
             ));
             script.push_str("set -x CLICOLOR_FORCE 1\n");
         }
+        "zsh" => {
+            // For zsh, initialize the completion system first
+            // This allows static completions (which call compdef) to work in isolated mode
+            // We run with --no-rcs to prevent user rc files from touching /dev/tty,
+            // but compinit is safe since it only sets up completion functions
+            script.push_str("autoload -Uz compinit && compinit -i 2>/dev/null\n");
+
+            script.push_str(&format!("export WORKTRUNK_BIN='{}'\n", wt_bin.display()));
+            script.push_str(&format!(
+                "export WORKTRUNK_CONFIG_PATH='{}'\n",
+                repo.test_config_path().display()
+            ));
+            script.push_str("export CLICOLOR_FORCE=1\n");
+        }
         _ => {
-            // bash, zsh
+            // bash
             script.push_str(&format!("export WORKTRUNK_BIN='{}'\n", wt_bin.display()));
             script.push_str(&format!(
                 "export WORKTRUNK_CONFIG_PATH='{}'\n",
