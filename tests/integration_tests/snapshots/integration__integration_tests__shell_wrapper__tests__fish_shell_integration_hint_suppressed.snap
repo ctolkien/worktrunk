@@ -1,5 +1,0 @@
----
-source: tests/integration_tests/shell_wrapper.rs
-expression: normalized.as_ref()
----
-✅ [32mCreated new worktree for [1m[32mfish-test[0m at [TMPDIR]/test-repo.fish-test[0m

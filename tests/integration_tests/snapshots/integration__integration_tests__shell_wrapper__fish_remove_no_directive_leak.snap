@@ -1,5 +1,0 @@
----
-source: tests/integration_tests/shell_wrapper.rs
-expression: normalized.as_ref()
----
-Removed worktree for fish-to-remove

@@ -1,6 +1,0 @@
----
-source: tests/integration_tests/shell_wrapper.rs
-expression: normalized.as_ref()
----
-🔄 Validating merge...
-Already on main, nothing to merge
