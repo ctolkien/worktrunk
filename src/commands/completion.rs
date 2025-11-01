@@ -138,14 +138,8 @@ pub fn handle_complete(args: Vec<String>) -> Result<(), GitError> {
     let context = parse_completion_context(&args);
 
     match context {
-        CompletionContext::SwitchBranch => {
-            // Complete with all branches
-            let branches = get_branches_for_completion(|| Repository::current().all_branches());
-            for branch in branches {
-                println!("{}", branch);
-            }
-        }
-        CompletionContext::PushTarget
+        CompletionContext::SwitchBranch
+        | CompletionContext::PushTarget
         | CompletionContext::MergeTarget
         | CompletionContext::RemoveBranch
         | CompletionContext::BaseFlag => {

@@ -1,3 +1,4 @@
+use worktrunk::HookType;
 use worktrunk::config::{ProjectConfig, WorktrunkConfig};
 use worktrunk::git::{GitError, GitResultExt, Repository};
 use worktrunk::styling::{HINT, HINT_EMOJI, eprintln};
@@ -7,9 +8,6 @@ use super::merge::{
     run_pre_squash_commands,
 };
 use super::worktree::{execute_post_create_commands, execute_post_start_commands_sequential};
-
-// Re-export HookType from main
-pub use crate::HookType;
 
 /// Handle `wt dev run-hook` command
 pub fn handle_dev_run_hook(hook_type: HookType, force: bool) -> Result<(), GitError> {
@@ -116,12 +114,11 @@ fn load_project_config(repo: &Repository) -> Result<ProjectConfig, GitError> {
 
 fn check_hook_configured<T>(hook: &Option<T>, hook_type: HookType) -> Result<(), GitError> {
     if hook.is_none() {
-        let hook_name = hook_type.as_str();
         eprintln!(
-            "{HINT_EMOJI} {HINT}No {hook_name} commands configured in project config{HINT:#}"
+            "{HINT_EMOJI} {HINT}No {hook_type} commands configured in project config{HINT:#}"
         );
         return Err(GitError::CommandFailed(format!(
-            "No {hook_name} commands configured"
+            "No {hook_type} commands configured"
         )));
     }
     Ok(())

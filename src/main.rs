@@ -1,6 +1,7 @@
 use anstyle::Style;
-use clap::{ArgAction, CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, CommandFactory, Parser, Subcommand};
 use std::process;
+use worktrunk::HookType;
 use worktrunk::config::WorktrunkConfig;
 use worktrunk::git::{GitError, GitResultExt, Repository};
 use worktrunk::styling::{SUCCESS_EMOJI, println};
@@ -64,30 +65,6 @@ enum ConfigCommand {
         #[arg(short, long)]
         force: bool,
     },
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum HookType {
-    PostCreate,
-    PostStart,
-    PreCommit,
-    PreSquash,
-    PreMerge,
-    PostMerge,
-}
-
-impl HookType {
-    /// Returns the kebab-case name for display and error messages
-    pub fn as_str(self) -> &'static str {
-        match self {
-            HookType::PostCreate => "post-create",
-            HookType::PostStart => "post-start",
-            HookType::PreCommit => "pre-commit",
-            HookType::PreSquash => "pre-squash",
-            HookType::PreMerge => "pre-merge",
-            HookType::PostMerge => "post-merge",
-        }
-    }
 }
 
 #[derive(Subcommand)]

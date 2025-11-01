@@ -1,6 +1,17 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+#[derive(Debug, Clone, Copy, clap::ValueEnum, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
+pub enum HookType {
+    PostCreate,
+    PostStart,
+    PreCommit,
+    PreSquash,
+    PreMerge,
+    PostMerge,
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Worktree {
     pub path: PathBuf,
@@ -22,18 +33,9 @@ pub enum GitError {
     DetachedHead,
     /// Working tree has untracked files
     UntrackedFiles,
-    /// Pre-commit command failed
-    PreCommitCommandFailed {
-        command_name: Option<String>,
-        error: String,
-    },
-    /// Pre-squash command failed
-    PreSquashCommandFailed {
-        command_name: Option<String>,
-        error: String,
-    },
-    /// Pre-merge command failed
-    PreMergeCommandFailed {
+    /// Hook command failed
+    HookCommandFailed {
+        hook_type: HookType,
         command_name: Option<String>,
         error: String,
     },
@@ -98,8 +100,9 @@ impl std::fmt::Display for GitError {
                 )
             }
 
-            // Pre-commit command failed
-            GitError::PreCommitCommandFailed {
+            // Hook command failed
+            GitError::HookCommandFailed {
+                hook_type,
                 command_name,
                 error,
             } => {
@@ -107,47 +110,11 @@ impl std::fmt::Display for GitError {
                 match command_name {
                     Some(name) => write!(
                         f,
-                        "{ERROR_EMOJI} {ERROR}Pre-commit command failed: {ERROR:#}{error_bold}{name}{error_bold:#}\n\n{error}\n\n{HINT_EMOJI} {HINT}Use --no-hooks to skip pre-commit commands{HINT:#}"
+                        "{ERROR_EMOJI} {ERROR}{hook_type} command failed: {ERROR:#}{error_bold}{name}{error_bold:#}\n\n{error}\n\n{HINT_EMOJI} {HINT}Use --no-hooks to skip {hook_type} commands{HINT:#}"
                     ),
                     None => write!(
                         f,
-                        "{ERROR_EMOJI} {ERROR}Pre-commit command failed{ERROR:#}\n\n{error}\n\n{HINT_EMOJI} {HINT}Use --no-hooks to skip pre-commit commands{HINT:#}"
-                    ),
-                }
-            }
-
-            // Pre-squash command failed
-            GitError::PreSquashCommandFailed {
-                command_name,
-                error,
-            } => {
-                let error_bold = ERROR.bold();
-                match command_name {
-                    Some(name) => write!(
-                        f,
-                        "{ERROR_EMOJI} {ERROR}Pre-squash command failed: {ERROR:#}{error_bold}{name}{error_bold:#}\n\n{error}\n\n{HINT_EMOJI} {HINT}Use --no-hooks to skip pre-squash commands{HINT:#}"
-                    ),
-                    None => write!(
-                        f,
-                        "{ERROR_EMOJI} {ERROR}Pre-squash command failed{ERROR:#}\n\n{error}\n\n{HINT_EMOJI} {HINT}Use --no-hooks to skip pre-squash commands{HINT:#}"
-                    ),
-                }
-            }
-
-            // Pre-merge command failed
-            GitError::PreMergeCommandFailed {
-                command_name,
-                error,
-            } => {
-                let error_bold = ERROR.bold();
-                match command_name {
-                    Some(name) => write!(
-                        f,
-                        "{ERROR_EMOJI} {ERROR}Pre-merge command failed: {ERROR:#}{error_bold}{name}{error_bold:#}\n\n{error}\n\n{HINT_EMOJI} {HINT}Use --no-hooks to skip pre-merge commands{HINT:#}"
-                    ),
-                    None => write!(
-                        f,
-                        "{ERROR_EMOJI} {ERROR}Pre-merge command failed{ERROR:#}\n\n{error}\n\n{HINT_EMOJI} {HINT}Use --no-hooks to skip pre-merge commands{HINT:#}"
+                        "{ERROR_EMOJI} {ERROR}{hook_type} command failed{ERROR:#}\n\n{error}\n\n{HINT_EMOJI} {HINT}Use --no-hooks to skip {hook_type} commands{HINT:#}"
                     ),
                 }
             }

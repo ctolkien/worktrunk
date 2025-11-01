@@ -1,3 +1,4 @@
+use worktrunk::HookType;
 use worktrunk::config::{ProjectConfig, WorktrunkConfig};
 use worktrunk::git::{GitError, GitResultExt, Repository};
 use worktrunk::styling::{
@@ -560,7 +561,8 @@ pub fn run_pre_merge_commands(
         crate::output::progress(format_bash_with_gutter(&prepared.expanded, ""))?;
 
         if let Err(e) = execute_command_in_worktree(worktree_path, &prepared.expanded) {
-            return Err(GitError::PreMergeCommandFailed {
+            return Err(GitError::HookCommandFailed {
+                hook_type: HookType::PreMerge,
                 command_name: prepared.name.clone(),
                 error: e.to_string(),
             });
@@ -689,7 +691,8 @@ pub fn run_pre_commit_commands(
         crate::output::progress(format_bash_with_gutter(&prepared.expanded, ""))?;
 
         if let Err(e) = execute_command_in_worktree(worktree_path, &prepared.expanded) {
-            return Err(GitError::PreCommitCommandFailed {
+            return Err(GitError::HookCommandFailed {
+                hook_type: HookType::PreCommit,
                 command_name: prepared.name.clone(),
                 error: e.to_string(),
             });
@@ -747,7 +750,8 @@ pub fn run_pre_squash_commands(
         crate::output::progress(format_bash_with_gutter(&prepared.expanded, ""))?;
 
         if let Err(e) = execute_command_in_worktree(worktree_path, &prepared.expanded) {
-            return Err(GitError::PreSquashCommandFailed {
+            return Err(GitError::HookCommandFailed {
+                hook_type: HookType::PreSquash,
                 command_name: prepared.name.clone(),
                 error: e.to_string(),
             });
