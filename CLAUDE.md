@@ -204,24 +204,39 @@ let warning_bold = WARNING.bold();
 "{WARNING}Text with {warning_bold}composed{warning_bold:#} styles{WARNING:#}"
 ```
 
-### Information Hierarchy & Path Styling
+### Information Hierarchy & Styling
 
 **Principle: Bold what answers the user's question, dim what provides context.**
 
 Style based on **user intent**, not data type. In messages, branch names are always bold. When a path is part of an action phrase (e.g., "changed directory to {path}"), it's bold because it answers "where?". When shown as supplementary metadata on a separate line (e.g., "Path: ..."), it's dimmed. Commit hashes are always dimmed (reference info).
 
+Styled elements must maintain their surrounding color. Don't apply just `{bold}` or `{dim}` to elements in colored messages - compose the color with the style using `.bold()` or `.dimmed()` on the color style. Applying a style without color creates a color leak - the styled element loses its context color and appears in default terminal colors (black/white).
+
 ```rust
-// Path as primary answer (standalone)
+// WRONG - styled element loses surrounding color
+let green = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
+let bold = AnstyleStyle::new().bold();
+println!("✅ {green}Message {bold}{path}{bold:#}{green:#}");  // Path will be black/white!
+
+// RIGHT - styled element maintains surrounding color
+let green = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
+let green_bold = green.bold();
+println!("✅ {green}Message {green_bold}{path}{green_bold:#}");
+
+// Using semantic constants (preferred pattern)
+let green_bold = GREEN.bold();
+println!("✅ {GREEN}Created worktree, changed directory to {green_bold}{}{green_bold:#}", path.display());
+
+// Commit hash as reference info (outside colored context - OK to use HINT directly)
+println!("✅ {GREEN}Committed changes{GREEN:#} @ {HINT}{hash}{HINT:#}");  // OK - hash is outside green
+
+// Path as supplementary metadata (separate line) - dimmed in unstyled context
+let dim = AnstyleStyle::new().dimmed();
+println!("✅ {GREEN}Created worktree{GREEN:#}\n{dim}Path: {}{dim:#}", path.display());
+
+// Element in unstyled message - just bold
 let bold = AnstyleStyle::new().bold();
 println!("Global Config: {bold}{}{bold:#}", path.display());
-
-// Path embedded in action phrase (part of the message)
-let bold = AnstyleStyle::new().bold();
-println!("✅ Created {bold}{branch}{bold:#}, changed directory to {bold}{}{bold:#}", path.display());
-
-// Path as supplementary metadata (separate line)
-let dim = AnstyleStyle::new().dimmed();
-println!("✅ Created {bold}{branch}{bold:#}\n{dim}Path: {}{dim:#}", path.display());
 ```
 
 **Visual hierarchy patterns:**

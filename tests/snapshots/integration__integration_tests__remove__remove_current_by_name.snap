@@ -16,12 +16,12 @@ info:
     LANG: C
     LC_ALL: C
     SOURCE_DATE_EPOCH: "1761609600"
-    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmplmsOFq/test-config.toml
+    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmprULsWr/test-config.toml
 ---
 success: true
 exit_code: 0
 ----- stdout -----
 🔄 [36mRemoving worktree for [1m[36mfeature-current[0m...[0m
-✅ [32mRemoved worktree, returned to primary at [0m[2m[REPO][0m
+✅ [32mRemoved worktree, returned to primary at [1m[32m[REPO][0m
 
 ----- stderr -----
