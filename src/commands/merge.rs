@@ -1,12 +1,49 @@
 use worktrunk::config::{ProjectConfig, WorktrunkConfig};
 use worktrunk::git::{GitError, GitResultExt, Repository};
 use worktrunk::styling::{
-    AnstyleStyle, CYAN, CYAN_BOLD, HINT, HINT_EMOJI, format_bash_with_gutter, format_with_gutter,
+    AnstyleStyle, CYAN, CYAN_BOLD, HINT, HINT_EMOJI, WARNING, WARNING_EMOJI,
+    format_bash_with_gutter, format_with_gutter,
 };
 
 use super::command_executor::{CommandContext, prepare_project_commands};
 use super::worktree::{handle_push, handle_remove, parse_diff_shortstat};
 use crate::output::execute_command_in_worktree;
+
+/// Extract untracked files from git status --porcelain output
+fn get_untracked_files(status_output: &str) -> Vec<String> {
+    let mut untracked = Vec::new();
+
+    for line in status_output.lines() {
+        // Git status --porcelain format: XY filename
+        // Untracked files have "??" status
+        if let Some(filename) = line.strip_prefix("?? ") {
+            untracked.push(filename.to_string());
+        }
+    }
+
+    untracked
+}
+
+/// Warn about untracked files being auto-staged
+fn show_untracked_warning(repo: &Repository) -> Result<(), GitError> {
+    let status = repo
+        .run_command(&["status", "--porcelain"])
+        .git_context("Failed to get status")?;
+    let untracked = get_untracked_files(&status);
+
+    if untracked.is_empty() {
+        return Ok(());
+    }
+
+    // Format file list (comma-separated)
+    let file_list = untracked.join(", ");
+
+    crate::output::progress(format!(
+        "{WARNING_EMOJI} {WARNING}Auto-staging untracked files: {file_list}{WARNING:#}"
+    ))?;
+
+    Ok(())
+}
 
 pub fn handle_merge(
     target: Option<&str>,
@@ -14,6 +51,7 @@ pub fn handle_merge(
     keep: bool,
     no_hooks: bool,
     force: bool,
+    tracked_only: bool,
 ) -> Result<(), GitError> {
     let repo = Repository::current();
 
@@ -39,12 +77,27 @@ pub fn handle_merge(
     // Handle uncommitted changes depending on whether we're squashing
     if repo.is_dirty()? {
         if squash_enabled {
-            // Just stage - squash will handle committing
-            repo.run_command(&["add", "-A"])
-                .git_context("Failed to stage changes")?;
+            // Warn about untracked files before staging
+            if !tracked_only {
+                show_untracked_warning(&repo)?;
+            }
+
+            if tracked_only {
+                repo.run_command(&["add", "-u"])
+                    .git_context("Failed to stage tracked changes")?;
+            } else {
+                repo.run_command(&["add", "-A"])
+                    .git_context("Failed to stage changes")?;
+            }
         } else {
             // Commit immediately when not squashing
-            handle_commit_changes(&config.commit_generation, &current_branch, no_hooks, force)?;
+            handle_commit_changes(
+                &config.commit_generation,
+                &current_branch,
+                no_hooks,
+                force,
+                tracked_only,
+            )?;
         }
     }
 
@@ -291,6 +344,7 @@ fn handle_commit_changes(
     current_branch: &str,
     no_hooks: bool,
     force: bool,
+    tracked_only: bool,
 ) -> Result<(), GitError> {
     let repo = Repository::current();
     let config = WorktrunkConfig::load().git_context("Failed to load config")?;
@@ -309,9 +363,19 @@ fn handle_commit_changes(
         )?;
     }
 
-    // Stage all changes including untracked files
-    repo.run_command(&["add", "-A"])
-        .git_context("Failed to stage changes")?;
+    // Warn about untracked files before staging (only if using git add -A)
+    if !tracked_only {
+        show_untracked_warning(&repo)?;
+    }
+
+    // Stage changes
+    if tracked_only {
+        repo.run_command(&["add", "-u"])
+            .git_context("Failed to stage tracked changes")?;
+    } else {
+        repo.run_command(&["add", "-A"])
+            .git_context("Failed to stage changes")?;
+    }
 
     commit_with_generated_message("Committing changes...", commit_generation_config)
 }

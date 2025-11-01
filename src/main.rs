@@ -255,6 +255,10 @@ Skip pre-merge commands:
         /// Skip approval prompts for commands
         #[arg(short, long)]
         force: bool,
+
+        /// Only stage tracked files (git add -u) instead of all files (git add -A)
+        #[arg(long)]
+        tracked_only: bool,
     },
 
     /// Generate shell completion script (deprecated - use init instead)
@@ -509,7 +513,15 @@ fn main() {
             keep,
             no_hooks,
             force,
-        } => handle_merge(target.as_deref(), squash_enabled, keep, no_hooks, force),
+            tracked_only,
+        } => handle_merge(
+            target.as_deref(),
+            squash_enabled,
+            keep,
+            no_hooks,
+            force,
+            tracked_only,
+        ),
         Commands::Completion { shell } => {
             let mut cli_cmd = Cli::command();
             handle_completion(shell, &mut cli_cmd);

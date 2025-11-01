@@ -881,6 +881,56 @@ fn test_merge_auto_commit_and_squash() {
 }
 
 #[test]
+fn test_merge_with_untracked_files() {
+    let mut repo = TestRepo::new();
+    repo.commit("Initial commit");
+    repo.setup_remote("main");
+
+    // Create a worktree for main
+    let main_wt = repo.root_path().parent().unwrap().join("test-repo.main-wt");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["worktree", "add", main_wt.to_str().unwrap(), "main"])
+        .current_dir(repo.root_path())
+        .output()
+        .expect("Failed to add worktree");
+
+    // Create a feature worktree with one commit
+    let feature_wt = repo.add_worktree("feature", "feature");
+    std::fs::write(feature_wt.join("file1.txt"), "content 1").expect("Failed to write file");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["add", "file1.txt"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to add file");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["commit", "-m", "feat: add file 1"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to commit");
+
+    // Add untracked files
+    std::fs::write(feature_wt.join("untracked1.txt"), "untracked content 1")
+        .expect("Failed to write file");
+    std::fs::write(feature_wt.join("untracked2.txt"), "untracked content 2")
+        .expect("Failed to write file");
+
+    // Merge - should show warning about untracked files
+    snapshot_merge_with_env(
+        "merge_with_untracked_files",
+        &repo,
+        &["main"],
+        Some(&feature_wt),
+        &[
+            ("WORKTRUNK_COMMIT_GENERATION__COMMAND", "echo"),
+            ("WORKTRUNK_COMMIT_GENERATION__ARGS", "fix: commit changes"),
+        ],
+    );
+}
+
+#[test]
 fn test_merge_pre_merge_command_success() {
     let mut repo = TestRepo::new();
     repo.commit("Initial commit");

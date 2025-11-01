@@ -16,7 +16,7 @@ info:
     LANG: C
     LC_ALL: C
     SOURCE_DATE_EPOCH: "1761609600"
-    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmplCNLKR/test-config.toml
+    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpG3qBik/test-config.toml
 ---
 success: true
 exit_code: 0
@@ -312,6 +312,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-hooks[Skip all project hooks (pre-merge-command)]' \
 '-f[Skip approval prompts for commands]' \
 '--force[Skip approval prompts for commands]' \
+'--tracked-only[Only stage tracked files (git add -u) instead of all files (git add -A)]' \
 '-v[Enable verbose output (show git commands and debug info)]' \
 '--verbose[Enable verbose output (show git commands and debug info)]' \
 '-h[Print help (see more with '\''--help'\'')]' \
