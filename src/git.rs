@@ -356,13 +356,17 @@ impl Repository {
         Ok(first_remote.unwrap_or("origin").to_string())
     }
 
+    /// Check if a local git branch exists.
+    pub fn local_branch_exists(&self, branch: &str) -> Result<bool, GitError> {
+        Ok(self
+            .run_command(&["rev-parse", "--verify", &format!("refs/heads/{}", branch)])
+            .is_ok())
+    }
+
     /// Check if a git branch exists (local or remote).
     pub fn branch_exists(&self, branch: &str) -> Result<bool, GitError> {
         // Try local branch first
-        if self
-            .run_command(&["rev-parse", "--verify", &format!("refs/heads/{}", branch)])
-            .is_ok()
-        {
+        if self.local_branch_exists(branch)? {
             return Ok(true);
         }
 

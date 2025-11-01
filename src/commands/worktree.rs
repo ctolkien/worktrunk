@@ -153,7 +153,7 @@ pub fn handle_switch(
     let repo = Repository::current();
 
     // Check for conflicting conditions
-    if create && repo.branch_exists(branch)? {
+    if create && repo.local_branch_exists(branch)? {
         return Err(GitError::BranchAlreadyExists {
             branch: branch.to_string(),
         });

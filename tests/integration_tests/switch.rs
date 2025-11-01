@@ -60,6 +60,48 @@ fn test_switch_create_existing_branch_error() {
 }
 
 #[test]
+fn test_switch_create_with_remote_branch_only() {
+    use std::process::Command;
+
+    let mut repo = TestRepo::new();
+    repo.commit("Initial commit");
+
+    // Set up a remote
+    repo.setup_remote("main");
+
+    // Create a branch on the remote only (no local branch)
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["branch", "remote-feature"])
+        .current_dir(repo.root_path())
+        .output()
+        .expect("Failed to create branch");
+
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["push", "origin", "remote-feature"])
+        .current_dir(repo.root_path())
+        .output()
+        .expect("Failed to push to remote");
+
+    // Delete the local branch
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["branch", "-D", "remote-feature"])
+        .current_dir(repo.root_path())
+        .output()
+        .expect("Failed to delete local branch");
+
+    // Now we have origin/remote-feature but no local remote-feature
+    // This should succeed with --create (previously would fail)
+    snapshot_switch(
+        "switch_create_remote_only",
+        &repo,
+        &["--create", "remote-feature"],
+    );
+}
+
+#[test]
 fn test_switch_existing_branch() {
     let mut repo = TestRepo::new();
     repo.commit("Initial commit");
