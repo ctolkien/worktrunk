@@ -245,12 +245,17 @@ fn commit_with_generated_message(
     let stats_parts = stats.format_summary();
 
     // Format progress message with stats
+    // Don't nest styles - stats already contain ADDITION/DELETION colors
     let full_progress_msg = match stats_parts.is_empty() {
-        true => progress_msg.to_string(),
-        false => format!("{} ({})", progress_msg, stats_parts.join(", ")),
+        true => format!("🔄 {CYAN}{progress_msg}{CYAN:#}"),
+        false => format!(
+            "🔄 {CYAN}{}{CYAN:#} ({})",
+            progress_msg,
+            stats_parts.join(", ")
+        ),
     };
 
-    crate::output::progress(format!("🔄 {CYAN}{full_progress_msg}{CYAN:#}"))?;
+    crate::output::progress(full_progress_msg)?;
     crate::output::progress(format!("🔄 {CYAN}Generating commit message...{CYAN:#}"))?;
 
     show_llm_config_hint_if_needed(commit_generation_config)?;
