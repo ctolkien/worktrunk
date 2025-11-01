@@ -12,8 +12,9 @@ mod output;
 
 use commands::{
     ConfigAction, Shell, handle_complete, handle_completion, handle_config_help,
-    handle_config_init, handle_config_list, handle_configure_shell, handle_dev_run_hook,
-    handle_init, handle_list, handle_merge, handle_push, handle_remove, handle_switch,
+    handle_config_init, handle_config_list, handle_config_refresh_cache, handle_configure_shell,
+    handle_dev_run_hook, handle_init, handle_list, handle_merge, handle_push, handle_remove,
+    handle_switch,
 };
 use output::{handle_remove_output, handle_switch_output};
 
@@ -51,6 +52,8 @@ enum ConfigCommand {
     List,
     /// Show setup guide for AI-generated commit messages
     Help,
+    /// Refresh the cached default branch by querying the remote
+    RefreshCache,
     /// Configure shell by writing to config files
     Shell {
         /// Specific shell to configure (default: all shells with existing config files)
@@ -336,6 +339,7 @@ fn main() {
             ConfigCommand::Init => handle_config_init(),
             ConfigCommand::List => handle_config_list(),
             ConfigCommand::Help => handle_config_help(),
+            ConfigCommand::RefreshCache => handle_config_refresh_cache(),
             ConfigCommand::Shell { shell, force } => {
                 handle_configure_shell(shell, force)
                     .map(|results| {

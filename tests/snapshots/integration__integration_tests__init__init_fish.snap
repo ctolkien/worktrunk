@@ -12,10 +12,11 @@ info:
     GIT_COMMITTER_DATE: "2025-01-01T00:00:00Z"
     GIT_CONFIG_GLOBAL: /dev/null
     GIT_CONFIG_SYSTEM: /dev/null
+    GIT_EDITOR: ""
     LANG: C
     LC_ALL: C
     SOURCE_DATE_EPOCH: "1761609600"
-    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpjo4ARF/test-config.toml
+    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpDEGyoG/test-config.toml
 ---
 success: true
 exit_code: 0
@@ -216,18 +217,21 @@ complete -c wt -n "__fish_wt_needs_command" -f -a "push" -d 'Push changes betwee
 complete -c wt -n "__fish_wt_needs_command" -f -a "merge" -d 'Merge worktree into target branch'
 complete -c wt -n "__fish_wt_using_subcommand init" -s v -l verbose -d 'Enable verbose output (show git commands and debug info)'
 complete -c wt -n "__fish_wt_using_subcommand init" -s h -l help -d 'Print help'
-complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list help shell" -s v -l verbose -d 'Enable verbose output (show git commands and debug info)'
-complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list help shell" -s h -l help -d 'Print help'
-complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list help shell" -f -a "init" -d 'Initialize global configuration file with examples'
-complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list help shell" -f -a "list" -d 'List all configuration files and their locations'
-complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list help shell" -f -a "help" -d 'Show setup guide for AI-generated commit messages'
-complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list help shell" -f -a "shell" -d 'Configure shell by writing to config files'
+complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list help refresh-cache shell" -s v -l verbose -d 'Enable verbose output (show git commands and debug info)'
+complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list help refresh-cache shell" -s h -l help -d 'Print help'
+complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list help refresh-cache shell" -f -a "init" -d 'Initialize global configuration file with examples'
+complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list help refresh-cache shell" -f -a "list" -d 'List all configuration files and their locations'
+complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list help refresh-cache shell" -f -a "help" -d 'Show setup guide for AI-generated commit messages'
+complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list help refresh-cache shell" -f -a "refresh-cache" -d 'Refresh the cached default branch by querying the remote'
+complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list help refresh-cache shell" -f -a "shell" -d 'Configure shell by writing to config files'
 complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from init" -s v -l verbose -d 'Enable verbose output (show git commands and debug info)'
 complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from init" -s h -l help -d 'Print help'
 complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from list" -s v -l verbose -d 'Enable verbose output (show git commands and debug info)'
 complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from list" -s h -l help -d 'Print help'
 complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from help" -s v -l verbose -d 'Enable verbose output (show git commands and debug info)'
 complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from help" -s h -l help -d 'Print help'
+complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from refresh-cache" -s v -l verbose -d 'Enable verbose output (show git commands and debug info)'
+complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from refresh-cache" -s h -l help -d 'Print help'
 complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from shell" -l shell -d 'Specific shell to configure (default: all shells with existing config files)' -r -f -a "bash\t''
 elvish\t''
 fish\t''

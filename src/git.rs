@@ -391,9 +391,17 @@ impl Repository {
 
     /// Get the default branch name for the repository.
     ///
+    /// **Performance note:** This method may trigger a network call on first invocation
+    /// if the remote HEAD is not cached locally. The result is then cached in git's
+    /// config for subsequent calls. To minimize latency:
+    /// - Defer calling this until after fast, local checks (see e497f0f for example)
+    /// - Consider passing the result as a parameter if needed multiple times
+    /// - For optional operations, provide a fallback (e.g., `.unwrap_or("main")`)
+    ///
     /// Uses a hybrid approach:
-    /// 1. Try local cache (remote/HEAD) first for speed
-    /// 2. If not cached, query the remote and cache the result
+    /// 1. Try local cache (`git rev-parse origin/HEAD`) first - fast, no network
+    /// 2. If not cached, query remote (`git ls-remote`) - may take 100ms-2s depending on network
+    /// 3. Cache the result (`git remote set-head`) for future invocations
     pub fn default_branch(&self) -> Result<String, GitError> {
         let remote = self.primary_remote()?;
         // Try local cache first (fast path)
@@ -683,6 +691,21 @@ impl Repository {
             .ok_or_else(|| GitError::CommandFailed("Invalid UTF-8 in worktree path".to_string()))?;
         self.run_command(&["worktree", "remove", path_str])?;
         Ok(())
+    }
+
+    /// Refresh the default branch cache by querying the remote.
+    ///
+    /// This forces a network call to `git ls-remote` to fetch the current default
+    /// branch from the remote, then updates the local cache. Use this when you
+    /// suspect the cached default branch is stale (e.g., after a repository's
+    /// default branch has been changed on the remote).
+    ///
+    /// Returns the refreshed default branch name.
+    pub fn refresh_default_branch(&self) -> Result<String, GitError> {
+        let remote = self.primary_remote()?;
+        let branch = self.query_remote_default_branch(&remote)?;
+        self.cache_default_branch(&remote, &branch)?;
+        Ok(branch)
     }
 
     // Private helper methods for default_branch()

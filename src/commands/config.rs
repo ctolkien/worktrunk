@@ -156,6 +156,26 @@ fn get_global_config_path() -> Option<PathBuf> {
     Some(strategy.config_dir().join("worktrunk").join("config.toml"))
 }
 
+/// Handle the config refresh-cache command
+pub fn handle_config_refresh_cache() -> Result<(), GitError> {
+    use anstyle::{AnsiColor, Color};
+
+    let repo = Repository::current();
+
+    // Display progress message
+    let cyan = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Cyan)));
+    println!("🔄 {cyan}Querying remote for default branch...{cyan:#}");
+
+    // Refresh the cache (this will make a network call)
+    let branch = repo.refresh_default_branch()?;
+
+    // Display success message
+    let green_bold = GREEN.bold();
+    println!("{SUCCESS_EMOJI} {GREEN}Cache refreshed: {green_bold}{branch}{green_bold:#}{GREEN:#}");
+
+    Ok(())
+}
+
 /// Handle the config help command - show LLM setup guide
 pub fn handle_config_help() -> Result<(), GitError> {
     let bold = AnstyleStyle::new().bold();
