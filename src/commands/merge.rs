@@ -119,15 +119,19 @@ pub fn handle_merge(
         }
     }
 
-    // Squash commits if enabled
-    if squash_enabled {
-        handle_squash(&target_branch, no_verify, force)?;
-    }
+    // Squash commits if enabled - track whether squashing occurred
+    let squash_info = if squash_enabled {
+        handle_squash(&target_branch, no_verify, force)?
+    } else {
+        None
+    };
 
-    // Rebase onto target (skip if --no-commit)
-    if !no_commit {
-        super::dev::handle_dev_rebase(Some(&target_branch))?;
-    }
+    // Rebase onto target (skip if --no-commit) - track whether rebasing occurred
+    let rebased = if !no_commit {
+        super::dev::handle_dev_rebase(Some(&target_branch))?
+    } else {
+        false
+    };
 
     // Run pre-merge checks unless --no-verify was specified
     // Do this after commit/squash/rebase to validate the final state that will be pushed
@@ -145,8 +149,14 @@ pub fn handle_merge(
         )?;
     }
 
-    // Fast-forward push to target branch (reuse handle_push logic)
-    handle_push(Some(&target_branch), false, "Merged to")?;
+    // Fast-forward push to target branch with squash/rebase info for consolidated message
+    handle_push(
+        Some(&target_branch),
+        false,
+        "Merged to",
+        squash_info.as_ref(),
+        rebased,
+    )?;
 
     // Get primary worktree path before cleanup (while we can still run git commands)
     let primary_worktree_dir = repo.main_worktree_root()?;
@@ -179,11 +189,9 @@ pub fn handle_merge(
             .git_context("Failed to remove worktree")?;
 
         // Print comprehensive summary
-        crate::output::progress("")?;
         handle_merge_summary_output(Some(&primary_worktree_dir))?;
     } else {
         // Print comprehensive summary (worktree preserved)
-        crate::output::progress("")?;
         handle_merge_summary_output(None)?;
     }
 
@@ -373,10 +381,9 @@ fn handle_squash(
     target_branch: &str,
     no_verify: bool,
     force: bool,
-) -> Result<Option<usize>, GitError> {
+) -> Result<Option<super::dev::SquashInfo>, GitError> {
     // Delegate to the atomic dev command
-    super::dev::handle_dev_squash(Some(target_branch), force, no_verify)?;
-    Ok(None)
+    super::dev::handle_dev_squash(Some(target_branch), force, no_verify)
 }
 
 /// Run pre-merge commands sequentially (blocking, fail-fast)

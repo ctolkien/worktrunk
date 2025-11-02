@@ -5,8 +5,6 @@ expression: output.normalized().as_ref()
 [0m✓ Code formatting check passed
 [0m✓ Linting passed - no warnings
 [0m✓ All 47 tests passed in 2.3s
-🔄 [36mRebasing onto [0m[1m[36mmain[0m[36m...[0m
-✅ [32mRebased onto [1m[32mmain[0m[0m
 🔄 [36mRunning pre-merge: [1mformat[0m[0m
 [40m [0m [1m[34mecho[0m [32m'✓ Code formatting check passed'[0m[0m
 
@@ -19,7 +17,7 @@ expression: output.normalized().as_ref()
 [40m [0m [1m[34mecho[0m [32m'✓ All 47 tests passed in 2.3s'[0m[0m
 
 
-🔄 [36mMerging 1 commit to [1m[36mmain[0m[0m @ [2md067f01[0m
+🔄 [36mMerging 1 commit to [1m[36mmain[0m[0m @ [2md067f01[0m (no squashing needed, no rebasing needed)
 
 * [33md067f01[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mfeature[m[33m)[m Add feature
 
@@ -28,5 +26,4 @@ expression: output.normalized().as_ref()
 
 ✅ [32mMerged to [1m[32mmain[0m (1 commit, 1 file, [32m+1[0m)  [0m
 🔄 [36mCleaning up worktree...[0m
-
 ✅ [32mReturned to primary at [1m[32m[TMPDIR]/test-repo[0m[0m

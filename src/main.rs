@@ -427,12 +427,12 @@ fn main() {
                 target,
                 force,
                 no_verify,
-            } => handle_dev_squash(target.as_deref(), force, no_verify),
+            } => handle_dev_squash(target.as_deref(), force, no_verify).map(|_| ()),
             DevCommand::Push {
                 target,
                 allow_merge_commits,
             } => handle_dev_push(target.as_deref(), allow_merge_commits),
-            DevCommand::Rebase { target } => handle_dev_rebase(target.as_deref()),
+            DevCommand::Rebase { target } => handle_dev_rebase(target.as_deref()).map(|_| ()),
         },
         Commands::List {
             format,

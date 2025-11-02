@@ -561,6 +561,8 @@ pub fn handle_push(
     target: Option<&str>,
     allow_merge_commits: bool,
     verb: &str,
+    squash_info: Option<&super::dev::SquashInfo>,
+    rebased: bool,
 ) -> Result<(), GitError> {
     let repo = Repository::current();
 
@@ -620,13 +622,14 @@ pub fn handle_push(
     // Count commits and show what will be pushed
     let commit_count = repo.count_commits(&target_branch, "HEAD")?;
 
-    // Get diff statistics early so we can use them in the summary
+    // Get diff statistics BEFORE push (will be needed for success message later)
     let diff_shortstat = if commit_count > 0 {
         repo.run_command(&["diff", "--shortstat", &format!("{}..HEAD", target_branch)])?
     } else {
         String::new()
     };
 
+    // Build and show consolidated message with squash/rebase info
     if commit_count > 0 {
         let commit_text = if commit_count == 1 {
             "commit"
@@ -641,8 +644,40 @@ pub fn handle_push(
         } else {
             "Pushing"
         };
+
+        // Build operation context based on what happened
+        let mut operations = Vec::new();
+
+        // Add squash info if applicable
+        if let Some(info) = squash_info {
+            let squash_text = if info.had_staged_changes {
+                if info.original_commit_count == 1 {
+                    "combined 1 commit with working tree changes".to_string()
+                } else {
+                    format!(
+                        "squashed {} commits with working tree changes",
+                        info.original_commit_count
+                    )
+                }
+            } else {
+                format!("squashed from {} commits", info.original_commit_count)
+            };
+            operations.push(squash_text);
+        } else {
+            operations.push("no squashing needed".to_string());
+        }
+
+        // Add rebase info
+        if rebased {
+            operations.push("rebased".to_string());
+        } else {
+            operations.push("no rebasing needed".to_string());
+        }
+
+        let operations_text = operations.join(", ");
+
         crate::output::progress(format!(
-            "🔄 {CYAN}{verb_ing} {commit_count} {commit_text} to {CYAN_BOLD}{target_branch}{CYAN_BOLD:#}{CYAN:#} @ {HINT}{head_sha}{HINT:#}\n"
+            "🔄 {CYAN}{verb_ing} {commit_count} {commit_text} to {CYAN_BOLD}{target_branch}{CYAN_BOLD:#}{CYAN:#} @ {HINT}{head_sha}{HINT:#} ({operations_text})\n"
         ))?;
 
         // Show the commit graph with color
@@ -682,9 +717,9 @@ pub fn handle_push(
             error: e.to_string(),
         })?;
 
-    // Build success message with statistics
+    // Show success message after push completes
     if commit_count > 0 {
-        // Parse shortstat to extract files/insertions/deletions
+        // Use the diff statistics captured earlier (before push)
         let stats = parse_diff_shortstat(&diff_shortstat);
 
         let mut summary_parts = vec![format!(

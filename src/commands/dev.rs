@@ -149,12 +149,20 @@ pub fn handle_dev_commit(force: bool, no_verify: bool) -> Result<(), GitError> {
     commit_with_generated_message("Committing changes...", &config.commit_generation)
 }
 
+/// Information about what was squashed
+#[derive(Debug)]
+pub struct SquashInfo {
+    pub original_commit_count: usize,
+    pub had_staged_changes: bool,
+}
+
 /// Handle `wt dev squash` command
+/// Returns Some(info) if squashing occurred, None if no squashing was needed
 pub fn handle_dev_squash(
     target: Option<&str>,
     force: bool,
     no_verify: bool,
-) -> Result<(), GitError> {
+) -> Result<Option<SquashInfo>, GitError> {
     let repo = Repository::current();
     let config = WorktrunkConfig::load().git_context("Failed to load config")?;
     let current_branch = repo
@@ -195,21 +203,19 @@ pub fn handle_dev_squash(
         crate::output::progress(format!(
             "{dim}No commits to squash - already at merge base{dim:#}"
         ))?;
-        return Ok(());
+        return Ok(None);
     }
 
     if commit_count == 0 && has_staged {
         // Just staged changes, no commits - commit them directly (no squashing needed)
         commit_with_generated_message("Committing changes...", &config.commit_generation)?;
-        return Ok(());
+        return Ok(None);
     }
 
     if commit_count == 1 && !has_staged {
         // Single commit, no staged changes - nothing to do
-        crate::output::hint(format!(
-            "{HINT_EMOJI} {HINT}Only 1 commit since {HINT:#}{CYAN_BOLD}{target_branch}{CYAN_BOLD:#}{HINT} - no squashing needed{HINT:#}"
-        ))?;
-        return Ok(());
+        // Don't show hint here - the merge message will indicate "no squashing needed"
+        return Ok(None);
     }
 
     // Either multiple commits OR single commit with staged changes - squash them
@@ -288,20 +294,36 @@ pub fn handle_dev_squash(
         "{SUCCESS_EMOJI} {GREEN}Squashed {commit_count} commits into 1{GREEN:#} @ {HINT}{commit_hash}{HINT:#}"
     ))?;
 
-    Ok(())
+    Ok(Some(SquashInfo {
+        original_commit_count: commit_count,
+        had_staged_changes: has_staged,
+    }))
 }
 
 /// Handle `wt dev push` command
 pub fn handle_dev_push(target: Option<&str>, allow_merge_commits: bool) -> Result<(), GitError> {
-    super::worktree::handle_push(target, allow_merge_commits, "Pushed to")
+    super::worktree::handle_push(target, allow_merge_commits, "Pushed to", None, false)
 }
 
 /// Handle `wt dev rebase` command
-pub fn handle_dev_rebase(target: Option<&str>) -> Result<(), GitError> {
+/// Returns true if rebasing occurred, false if already up-to-date
+pub fn handle_dev_rebase(target: Option<&str>) -> Result<bool, GitError> {
     let repo = Repository::current();
 
     // Get target branch (default to default branch if not provided)
     let target_branch = repo.resolve_target_branch(target)?;
+
+    // Check if already up-to-date
+    let merge_base = repo.merge_base("HEAD", &target_branch)?;
+    let target_sha = repo
+        .run_command(&["rev-parse", &target_branch])?
+        .trim()
+        .to_string();
+
+    if merge_base == target_sha {
+        // Already up-to-date, no rebase needed
+        return Ok(false);
+    }
 
     // Rebase onto target
     crate::output::progress(format!(
@@ -349,5 +371,5 @@ pub fn handle_dev_rebase(target: Option<&str>) -> Result<(), GitError> {
         "{SUCCESS_EMOJI} {GREEN}Rebased onto {green_bold}{target_branch}{green_bold:#}{GREEN:#}"
     ))?;
 
-    Ok(())
+    Ok(true)
 }

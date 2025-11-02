@@ -16,17 +16,23 @@ Running ten agents on different features? `wt switch --create feature-a`, `wt sw
 
 Automates the full lifecycle: create worktree, work, merge back, remove worktree.
 
+<!-- Output generated from: tests/snapshots/integration__integration_tests__merge__readme_example_simple.snap -->
 ```bash
 $ wt switch --create fix-auth
 # Shell now in ../repo.fix-auth/
 
 # Agent works, makes changes, then:
 $ wt merge
-🔄 Switching to main...
-🔄 Staging changes (3 modified)...
-🔄 Merging fix-auth → main...
-✅ Merged and pushed
-✅ Removed worktree
+🔄 Merging 1 commit to main @ a1b2c3d (no squashing needed, no rebasing needed)
+
+* a1b2c3d (HEAD -> fix-auth) Implement JWT validation
+
+ auth.rs | 1 +
+ 1 file changed, 1 insertion(+)
+
+✅ Merged to main (1 commit, 1 file, +1)
+🔄 Cleaning up worktree...
+✅ Returned to primary at ../repo/
 # Shell back in main
 ```
 
@@ -113,7 +119,7 @@ worktree-path = "../{main-worktree}.{branch}"
 
 [commit-generation]
 command = "llm"
-args = ["-m", "claude-3-7-sonnet-20250219"]
+args = ["-m", "claude-haiku-4-5-20251001"]
 ```
 
 Project config at `.config/wt.toml` in the repository root (see Project Automation above).
@@ -137,9 +143,6 @@ $ wt merge --no-squash
 
 # Merge to a specific target branch
 $ wt merge staging
-
-# Provide custom guidance
-$ wt merge -m "Focus on the authentication changes"
 ```
 
 Set up LLM integration: `wt config help` shows the setup guide, `wt config init` creates example config.
@@ -278,6 +281,67 @@ Automate common tasks by creating `.config/wt.toml` in your repository root. Run
 **Skipping hooks:** `wt switch --no-verify` or `wt merge --no-verify`
 
 **Security:** Commands require approval on first run. Use `--force` to bypass.
+
+**Example output with hooks:**
+
+<!-- Output generated from: tests/snapshots/integration__integration_tests__merge__readme_example_complex.snap -->
+
+```bash
+$ wt merge
+🔄 Squashing 3 commits into 1 (3 files, +3)...
+🔄 Generating squash commit message...
+  feat(auth): Implement JWT authentication system
+
+  Add comprehensive JWT token handling including validation, refresh logic,
+  and authentication tests. This establishes the foundation for secure
+  API authentication.
+
+  - Implement token refresh mechanism with expiry handling
+  - Add JWT encoding/decoding with signature verification
+  - Create test suite covering all authentication flows
+
+✅ Squashed 3 commits into 1 @ a1b2c3d
+🔄 Running pre-merge: lint
+  cargo clippy
+
+    Checking worktrunk v0.1.0
+    Finished dev [unoptimized + debuginfo] target(s) in 1.23s
+
+🔄 Running pre-merge: test
+  cargo test
+
+    Finished test [unoptimized + debuginfo] target(s) in 0.12s
+     Running unittests src/lib.rs (target/debug/deps/worktrunk-abc123)
+
+running 18 tests
+test auth::tests::test_jwt_decode ... ok
+test auth::tests::test_jwt_encode ... ok
+test auth::tests::test_token_refresh ... ok
+test auth::tests::test_token_validation ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+🔄 Merging 1 commit to main @ a1b2c3d (squashed from 3 commits, no rebasing needed)
+
+* a1b2c3d (HEAD -> feature-auth) feat(auth): Implement JWT authentication system
+
+ auth.rs      | 1 +
+ auth_test.rs | 1 +
+ jwt.rs       | 1 +
+ 3 files changed, 3 insertions(+)
+
+✅ Merged to main (1 commit, 3 files, +3)
+🔄 Cleaning up worktree...
+✅ Returned to primary at ../repo/
+🔄 Running post-merge: install
+  cargo install --path .
+
+  Installing worktrunk v0.1.0
+   Compiling worktrunk v0.1.0
+    Finished release [optimized] target(s) in 2.34s
+  Installing ~/.cargo/bin/wt
+   Installed package `worktrunk v0.1.0` (executable `wt`)
+```
 
 </details>
 

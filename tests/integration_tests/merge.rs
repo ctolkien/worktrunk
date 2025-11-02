@@ -1678,6 +1678,250 @@ fn test_merge_no_remote() {
     snapshot_merge("merge_no_remote", &repo, &[], Some(&feature_wt));
 }
 
+// README EXAMPLE GENERATION TESTS
+// These tests are specifically designed to generate realistic output examples for the README.
+// The snapshots from these tests are manually copied into README.md to show users what
+// worktrunk output looks like in practice.
+
+/// Generate README example: Simple merge workflow with a single commit
+/// This demonstrates the basic "What It Does" flow - create worktree, make changes, merge back.
+///
+/// Output is used in README.md "What It Does" section.
+/// Source: tests/snapshots/integration__integration_tests__merge__readme_example_simple.snap
+#[test]
+fn test_readme_example_simple() {
+    let mut repo = TestRepo::new();
+    repo.commit("Initial commit");
+    repo.setup_remote("main");
+
+    // Create a worktree for main
+    let main_wt = repo.root_path().parent().unwrap().join("test-repo.main-wt");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["worktree", "add", main_wt.to_str().unwrap(), "main"])
+        .current_dir(repo.root_path())
+        .output()
+        .expect("Failed to add worktree");
+
+    // Create a fix-auth worktree and make a commit
+    let feature_wt = repo.add_worktree("fix-auth", "fix-auth");
+    std::fs::write(feature_wt.join("auth.rs"), "// JWT validation code")
+        .expect("Failed to write file");
+
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["add", "auth.rs"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to add file");
+
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["commit", "-m", "Implement JWT validation"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to commit");
+
+    // Merge fix-auth into main
+    snapshot_merge("readme_example_simple", &repo, &["main"], Some(&feature_wt));
+}
+
+/// Generate README example: Complex merge with multiple hooks
+/// This demonstrates advanced features - pre-merge hooks (tests, lints), post-merge hooks.
+/// Shows the full power of worktrunk's automation capabilities.
+///
+/// Output is used in README.md "Advanced Features" or "Project Automation" section.
+/// Source: tests/snapshots/integration__integration_tests__merge__readme_example_complex.snap
+#[test]
+fn test_readme_example_complex() {
+    let mut repo = TestRepo::new();
+    repo.commit("Initial commit");
+    repo.setup_remote("main");
+
+    // Create project config with multiple hooks
+    let config_dir = repo.root_path().join(".config");
+    fs::create_dir_all(&config_dir).expect("Failed to create .config dir");
+
+    // Create mock commands for realistic output
+    let bin_dir = repo.root_path().join(".bin");
+    fs::create_dir_all(&bin_dir).expect("Failed to create bin dir");
+
+    // Mock cargo that handles both test and clippy subcommands
+    let cargo_script = r#"#!/bin/sh
+if [ "$1" = "test" ]; then
+    echo "    Finished test [unoptimized + debuginfo] target(s) in 0.12s"
+    echo "     Running unittests src/lib.rs (target/debug/deps/worktrunk-abc123)"
+    echo ""
+    echo "running 18 tests"
+    echo "test auth::tests::test_jwt_decode ... ok"
+    echo "test auth::tests::test_jwt_encode ... ok"
+    echo "test auth::tests::test_token_refresh ... ok"
+    echo "test auth::tests::test_token_validation ... ok"
+    echo ""
+    echo "test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s"
+    exit 0
+elif [ "$1" = "clippy" ]; then
+    echo "    Checking worktrunk v0.1.0"
+    echo "    Finished dev [unoptimized + debuginfo] target(s) in 1.23s"
+    exit 0
+elif [ "$1" = "install" ]; then
+    echo "  Installing worktrunk v0.1.0"
+    echo "   Compiling worktrunk v0.1.0"
+    echo "    Finished release [optimized] target(s) in 2.34s"
+    echo "  Installing ~/.cargo/bin/wt"
+    echo "   Installed package \`worktrunk v0.1.0\` (executable \`wt\`)"
+    exit 0
+else
+    echo "cargo: unknown subcommand '$1'"
+    exit 1
+fi
+"#;
+    fs::write(bin_dir.join("cargo"), cargo_script).expect("Failed to write cargo script");
+
+    // Mock llm command that generates a high-quality commit message
+    let llm_script = r#"#!/bin/sh
+# Read stdin (the prompt) but ignore it for deterministic output
+cat > /dev/null
+
+# Return a realistic, high-quality squash commit message
+cat << 'EOF'
+feat(auth): Implement JWT authentication system
+
+Add comprehensive JWT token handling including validation, refresh logic,
+and authentication tests. This establishes the foundation for secure
+API authentication.
+
+- Implement token refresh mechanism with expiry handling
+- Add JWT encoding/decoding with signature verification
+- Create test suite covering all authentication flows
+EOF
+"#;
+    fs::write(bin_dir.join("llm"), llm_script).expect("Failed to write llm script");
+
+    // Make scripts executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(bin_dir.join("cargo")).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(bin_dir.join("cargo"), perms).unwrap();
+
+        let mut perms = fs::metadata(bin_dir.join("llm")).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(bin_dir.join("llm"), perms).unwrap();
+    }
+
+    let config_content = r#"
+[pre-merge-command]
+"test" = "cargo test"
+"lint" = "cargo clippy"
+
+[post-merge-command]
+"install" = "cargo install --path ."
+"#;
+
+    fs::write(config_dir.join("wt.toml"), config_content).expect("Failed to write project config");
+
+    // Commit the config and mock cargo
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["add", ".config/wt.toml", ".bin"])
+        .current_dir(repo.root_path())
+        .output()
+        .expect("Failed to add config");
+
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["commit", "-m", "Add project automation config"])
+        .current_dir(repo.root_path())
+        .output()
+        .expect("Failed to commit config");
+
+    // Create a worktree for main
+    let main_wt = repo.root_path().parent().unwrap().join("test-repo.main-wt");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["worktree", "add", main_wt.to_str().unwrap(), "main"])
+        .current_dir(repo.root_path())
+        .output()
+        .expect("Failed to add worktree");
+
+    // Create a feature worktree and make multiple commits
+    let feature_wt = repo.add_worktree("feature-auth", "feature-auth");
+
+    // First commit: token refresh
+    std::fs::write(feature_wt.join("auth.rs"), "// Token refresh logic\n")
+        .expect("Failed to write file");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["add", "auth.rs"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to add file");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["commit", "-m", "Add token refresh logic"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to commit");
+
+    // Second commit: JWT validation
+    std::fs::write(feature_wt.join("jwt.rs"), "// JWT validation\n").expect("Failed to write file");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["add", "jwt.rs"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to add file");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["commit", "-m", "Implement JWT validation"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to commit");
+
+    // Third commit: tests
+    std::fs::write(feature_wt.join("auth_test.rs"), "// Tests\n").expect("Failed to write file");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["add", "auth_test.rs"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to add file");
+    let mut cmd = Command::new("git");
+    repo.configure_git_cmd(&mut cmd);
+    cmd.args(["commit", "-m", "Add authentication tests"])
+        .current_dir(&feature_wt)
+        .output()
+        .expect("Failed to commit");
+
+    // Configure LLM in worktrunk config for deterministic, high-quality commit messages
+    let llm_path = bin_dir.join("llm");
+    let worktrunk_config = format!(
+        r#"
+[commit-generation]
+command = "{}"
+"#,
+        llm_path.display()
+    );
+    fs::write(repo.test_config_path(), worktrunk_config).expect("Failed to write worktrunk config");
+
+    // Merge with --force to skip approval prompts for commands
+    // Set PATH to include .bin directory so mock cargo command is found
+    let path_with_bin = format!(
+        "{}:{}",
+        bin_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    snapshot_merge_with_env(
+        "readme_example_complex",
+        &repo,
+        &["main", "--force"],
+        Some(&feature_wt),
+        &[("PATH", &path_with_bin)],
+    );
+}
+
 #[test]
 fn test_merge_no_commit_with_clean_tree() {
     let mut repo = TestRepo::new();
