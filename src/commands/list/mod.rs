@@ -14,7 +14,7 @@ use render::{
     format_list_item_line,
 };
 use worktrunk::git::{GitError, Repository};
-use worktrunk::styling::println;
+use worktrunk::styling::{ADDITION, DELETION, println};
 
 /// Helper to enrich common display fields shared between worktrees and branches
 fn enrich_common_fields(
@@ -30,8 +30,20 @@ fn enrich_common_fields(
 
     let upstream_display = upstream
         .active()
-        .and_then(|(_, upstream_ahead, upstream_behind)| {
-            format_ahead_behind_plain(upstream_ahead, upstream_behind)
+        .map(|(_, upstream_ahead, upstream_behind)| {
+            // Always show arrows for upstream (even ↑0 ↓0) to distinguish from no remote
+            format_ahead_behind_plain(upstream_ahead, upstream_behind).unwrap_or_else(|| {
+                let dim_deletion = DELETION.dimmed();
+                format!(
+                    "{}↑{}{} {}↓{}{}",
+                    ADDITION,
+                    0,
+                    ADDITION.render_reset(),
+                    dim_deletion,
+                    0,
+                    dim_deletion.render_reset()
+                )
+            })
         });
 
     let ci_status_display = pr_status.as_ref().map(format_ci_status_plain);

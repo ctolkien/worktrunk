@@ -1,4 +1,5 @@
 /// Logical identifier for each column rendered by `wt list`.
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ColumnKind {
     Branch,
@@ -15,6 +16,7 @@ pub enum ColumnKind {
 }
 
 /// Differentiates between diff-style columns with plus/minus symbols and those with arrows.
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DiffVariant {
     Signs,
@@ -22,6 +24,7 @@ pub enum DiffVariant {
 }
 
 /// Static metadata describing a column's behavior in both layout and rendering.
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub struct ColumnSpec {
     pub kind: ColumnKind,
@@ -53,6 +56,7 @@ impl ColumnSpec {
 }
 
 /// Static registry of all possible columns in display order.
+#[allow(dead_code)]
 pub const COLUMN_SPECS: &[ColumnSpec] = &[
     ColumnSpec::new(
         ColumnKind::Branch,
@@ -111,27 +115,27 @@ pub const COLUMN_SPECS: &[ColumnSpec] = &[
         6,
     ),
     ColumnSpec::new(
-        ColumnKind::Time,
-        super::layout::HEADER_AGE,
+        ColumnKind::Commit,
+        super::layout::HEADER_COMMIT,
         8,
         false,
         false,
         7,
     ),
     ColumnSpec::new(
-        ColumnKind::CiStatus,
-        super::layout::HEADER_CI,
+        ColumnKind::Time,
+        super::layout::HEADER_AGE,
         9,
         false,
-        true,
+        false,
         8,
     ),
     ColumnSpec::new(
-        ColumnKind::Commit,
-        super::layout::HEADER_COMMIT,
+        ColumnKind::CiStatus,
+        super::layout::HEADER_CI,
         10,
         false,
-        false,
+        true,
         9,
     ),
     ColumnSpec::new(

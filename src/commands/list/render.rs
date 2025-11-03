@@ -3,8 +3,11 @@ use anstyle::{AnsiColor, Color, Style};
 use worktrunk::styling::{ADDITION, CURRENT, DELETION, StyledLine, println};
 
 use super::ci_status::{CiStatus, PrStatus};
-use super::columns::{ColumnKind, DiffVariant};
-use super::layout::{ColumnFormat, DiffDigits, LayoutConfig};
+use super::layout::{
+    DiffWidths, HEADER_AGE, HEADER_AHEAD_BEHIND, HEADER_BRANCH, HEADER_BRANCH_DIFF, HEADER_CI,
+    HEADER_COMMIT, HEADER_MESSAGE, HEADER_PATH, HEADER_STATE, HEADER_UPSTREAM, HEADER_WORKING_DIFF,
+    LayoutConfig,
+};
 use super::model::ListItem;
 
 /// Format ahead/behind counts as plain text with ANSI colors (for json-pretty)
@@ -86,93 +89,114 @@ pub fn format_ci_status_plain(pr_status: &PrStatus) -> String {
     format!("{}● {}{}", style, status_str, style.render_reset())
 }
 
-#[derive(Clone, Copy)]
-enum ValueAlign {
-    Left,
-    Right,
-}
-
-#[derive(Clone, Copy)]
-struct DiffRenderConfig {
-    positive_symbol: &'static str,
-    negative_symbol: &'static str,
-    align: ValueAlign,
-}
-
-fn diff_render_config(variant: DiffVariant) -> DiffRenderConfig {
-    match variant {
-        DiffVariant::Signs => DiffRenderConfig {
-            positive_symbol: "+",
-            negative_symbol: "-",
-            align: ValueAlign::Right,
-        },
-        DiffVariant::Arrows => DiffRenderConfig {
-            positive_symbol: "↑",
-            negative_symbol: "↓",
-            align: ValueAlign::Left,
-        },
-    }
-}
-
-fn format_diff_like_column(
-    positive: usize,
-    negative: usize,
-    digits: DiffDigits,
-    total_width: usize,
-    variant: DiffVariant,
-    positive_style: Style,
-    negative_style: Style,
+/// Format arrow-based counts (e.g., "↑6 ↓1") with alignment
+/// Down arrows always appear at the same column position by reserving space for ahead part
+fn format_arrow_column(
+    ahead: usize,
+    behind: usize,
+    widths: &DiffWidths,
+    green: Style,
+    red: Style,
 ) -> StyledLine {
-    let config = diff_render_config(variant);
     let mut segment = StyledLine::new();
 
-    if positive == 0 && negative == 0 {
-        segment.push_raw(" ".repeat(total_width));
-        return segment;
-    }
+    if ahead > 0 || behind > 0 {
+        // Always reserve full width for ahead part (↑ + max_digits)
+        if ahead > 0 {
+            let ahead_str = format!("↑{}", ahead);
+            segment.push_styled(&ahead_str, green);
+            // Pad ahead part to fixed width
+            let ahead_padding = widths.added_digits.saturating_sub(ahead.to_string().len());
+            if ahead_padding > 0 {
+                segment.push_raw(" ".repeat(ahead_padding));
+            }
+        } else {
+            // Reserve full space when ahead is zero
+            segment.push_raw(" ".repeat(1 + widths.added_digits));
+        }
 
-    let positive_width = 1 + digits.added;
-    let negative_width = 1 + digits.deleted;
-    let content_width = positive_width + 1 + negative_width;
-    let extra_padding = total_width.saturating_sub(content_width);
+        // Always add separator space
+        segment.push_raw(" ");
 
-    if matches!(config.align, ValueAlign::Right) && extra_padding > 0 {
-        segment.push_raw(" ".repeat(extra_padding));
-    }
+        // Always reserve full width for behind part (↓ + max_digits)
+        if behind > 0 {
+            let behind_str = format!("↓{}", behind);
+            segment.push_styled(&behind_str, red);
+            // Pad behind part to fixed width
+            let behind_padding = widths
+                .deleted_digits
+                .saturating_sub(behind.to_string().len());
+            if behind_padding > 0 {
+                segment.push_raw(" ".repeat(behind_padding));
+            }
+        } else {
+            // Reserve full space when behind is zero
+            segment.push_raw(" ".repeat(1 + widths.deleted_digits));
+        }
 
-    if positive > 0 {
-        let value = format!("{}{}", config.positive_symbol, positive);
-        let formatted = match config.align {
-            ValueAlign::Right => format!("{:>width$}", value, width = positive_width),
-            ValueAlign::Left => format!("{:<width$}", value, width = positive_width),
-        };
-        segment.push_styled(formatted, positive_style);
+        // Pad to total width if header is wider than data
+        // (e.g., "Commits" header = 7, but data "↓50" = 5)
+        segment.pad_to(widths.total);
     } else {
-        segment.push_raw(" ".repeat(positive_width));
-    }
-
-    segment.push_raw(" ");
-
-    if negative > 0 {
-        let value = format!("{}{}", config.negative_symbol, negative);
-        let formatted = match config.align {
-            ValueAlign::Right => format!("{:>width$}", value, width = negative_width),
-            ValueAlign::Left => format!("{:<width$}", value, width = negative_width),
-        };
-        segment.push_styled(formatted, negative_style);
-    } else {
-        segment.push_raw(" ".repeat(negative_width));
-    }
-
-    if matches!(config.align, ValueAlign::Left) && extra_padding > 0 {
-        segment.pad_to(segment.width() + extra_padding);
-    }
-
-    if segment.width() < total_width {
-        segment.pad_to(total_width);
+        segment.push_raw(" ".repeat(widths.total));
     }
 
     segment
+}
+
+/// Format diff values as styled segments (right-aligned with attached signs)
+fn format_diff_column(
+    added: usize,
+    deleted: usize,
+    widths: &DiffWidths,
+    green: Style,
+    red: Style,
+) -> StyledLine {
+    let mut diff_segment = StyledLine::new();
+
+    if added > 0 || deleted > 0 {
+        // Always maintain full column width for alignment
+        // Format: [padding] [+nnn] [ ] [-nnn]
+        let content_width = (1 + widths.added_digits) + 1 + (1 + widths.deleted_digits);
+        let left_padding = widths.total.saturating_sub(content_width);
+
+        if left_padding > 0 {
+            diff_segment.push_raw(" ".repeat(left_padding));
+        }
+
+        // Added part: show value or spaces
+        if added > 0 {
+            let added_part = format!(
+                "{:>width$}",
+                format!("+{}", added),
+                width = 1 + widths.added_digits
+            );
+            diff_segment.push_styled(added_part, green);
+        } else {
+            // Blank space to maintain alignment
+            diff_segment.push_raw(" ".repeat(1 + widths.added_digits));
+        }
+
+        // Space between added and deleted
+        diff_segment.push_raw(" ");
+
+        // Deleted part: show value or spaces
+        if deleted > 0 {
+            let deleted_part = format!(
+                "{:>width$}",
+                format!("-{}", deleted),
+                width = 1 + widths.deleted_digits
+            );
+            diff_segment.push_styled(deleted_part, red);
+        } else {
+            // Blank space to maintain alignment
+            diff_segment.push_raw(" ".repeat(1 + widths.deleted_digits));
+        }
+    } else {
+        diff_segment.push_raw(" ".repeat(widths.total));
+    }
+
+    diff_segment
 }
 
 fn append_line(target: &mut StyledLine, source: StyledLine) {
@@ -185,6 +209,13 @@ fn push_blank(line: &mut StyledLine, width: usize) {
     if width > 0 {
         line.push_raw(" ".repeat(width));
     }
+}
+
+fn push_diff(line: &mut StyledLine, added: usize, deleted: usize, widths: &DiffWidths) {
+    append_line(
+        line,
+        format_diff_column(added, deleted, widths, ADDITION, DELETION),
+    );
 }
 
 /// Format CI status indicator using the statusline.sh color scheme
@@ -225,14 +256,77 @@ pub fn format_all_states(item: &ListItem) -> String {
 }
 
 pub fn format_header_line(layout: &LayoutConfig) {
+    let widths = &layout.widths;
+    let positions = &layout.positions;
     let style = Style::new();
     let mut line = StyledLine::new();
 
-    for column in &layout.columns {
-        line.pad_to(column.start);
-        let header = format!("{:width$}", column.header, width = column.width);
-        line.push_styled(header, style);
-    }
+    // Use absolute positions for guaranteed alignment
+    push_header_at(
+        &mut line,
+        HEADER_BRANCH,
+        widths.branch,
+        positions.branch,
+        style,
+    );
+    push_header_at(
+        &mut line,
+        HEADER_WORKING_DIFF,
+        widths.working_diff.total,
+        positions.working_diff,
+        style,
+    );
+    push_header_at(
+        &mut line,
+        HEADER_AHEAD_BEHIND,
+        widths.ahead_behind.total,
+        positions.ahead_behind,
+        style,
+    );
+    push_header_at(
+        &mut line,
+        HEADER_BRANCH_DIFF,
+        widths.branch_diff.total,
+        positions.branch_diff,
+        style,
+    );
+    push_header_at(
+        &mut line,
+        HEADER_STATE,
+        widths.states,
+        positions.states,
+        style,
+    );
+    push_header_at(&mut line, HEADER_PATH, widths.path, positions.path, style);
+    push_header_at(
+        &mut line,
+        HEADER_UPSTREAM,
+        widths.upstream.total,
+        positions.upstream,
+        style,
+    );
+    push_header_at(
+        &mut line,
+        HEADER_COMMIT,
+        widths.commit,
+        positions.commit,
+        style,
+    );
+    push_header_at(&mut line, HEADER_AGE, widths.time, positions.time, style);
+    push_header_at(
+        &mut line,
+        HEADER_CI,
+        widths.ci_status,
+        positions.ci_status,
+        style,
+    );
+    push_header_at(
+        &mut line,
+        HEADER_MESSAGE,
+        widths.message,
+        positions.message,
+        style,
+    );
 
     println!("{}", line.render());
 }
@@ -248,6 +342,16 @@ fn optional_reason_state(label: &str, reason: Option<&str>) -> Option<String> {
 }
 
 /// Push a header at an absolute column position
+fn push_header_at(line: &mut StyledLine, label: &str, width: usize, position: usize, style: Style) {
+    if width > 0 {
+        // Pad to absolute position
+        line.pad_to(position);
+        // Add header content padded to width
+        let header = format!("{:width$}", label, width = width);
+        line.push_styled(header, style);
+    }
+}
+
 /// Check if a branch is potentially removable (nothing ahead, no uncommitted changes)
 fn is_potentially_removable(item: &ListItem) -> bool {
     let counts = item.counts();
@@ -265,6 +369,8 @@ pub fn format_list_item_line(
     layout: &LayoutConfig,
     current_worktree_path: Option<&std::path::PathBuf>,
 ) {
+    let widths = &layout.widths;
+
     let head = item.head();
     let commit = item.commit_details();
     let counts = item.counts();
@@ -295,140 +401,149 @@ pub fn format_list_item_line(
         text_style
     };
 
+    // Start building the line using absolute column positions
     let mut line = StyledLine::new();
-    for column in &layout.columns {
-        line.pad_to(column.start);
+    let positions = &layout.positions;
 
-        match (column.kind, column.format) {
-            (ColumnKind::Branch, _) => {
-                let branch_text = format!("{:width$}", item.branch_name(), width = column.width);
-                if let Some(style) = text_style {
-                    line.push_styled(branch_text, style);
-                } else {
-                    line.push_raw(branch_text);
-                }
-            }
-            (ColumnKind::WorkingDiff, ColumnFormat::Diff { digits, variant }) => {
-                if let Some(info) = worktree_info {
-                    let (wt_added, wt_deleted) = info.working_tree_diff;
-                    let segment = format_diff_like_column(
-                        wt_added,
-                        wt_deleted,
-                        digits,
-                        column.width,
-                        variant,
-                        ADDITION,
-                        DELETION,
-                    );
-                    append_line(&mut line, segment);
-                } else {
-                    push_blank(&mut line, column.width);
-                }
-            }
-            (ColumnKind::AheadBehind, ColumnFormat::Diff { digits, variant }) => {
-                if !item.is_primary() && (counts.ahead > 0 || counts.behind > 0) {
-                    let dim_deletion = DELETION.dimmed();
-                    let segment = format_diff_like_column(
-                        counts.ahead,
-                        counts.behind,
-                        digits,
-                        column.width,
-                        variant,
-                        ADDITION,
-                        dim_deletion,
-                    );
-                    append_line(&mut line, segment);
-                } else {
-                    push_blank(&mut line, column.width);
-                }
-            }
-            (ColumnKind::BranchDiff, ColumnFormat::Diff { digits, variant }) => {
-                if !item.is_primary() {
-                    let segment = format_diff_like_column(
-                        branch_diff.0,
-                        branch_diff.1,
-                        digits,
-                        column.width,
-                        variant,
-                        ADDITION,
-                        DELETION,
-                    );
-                    append_line(&mut line, segment);
-                } else {
-                    push_blank(&mut line, column.width);
-                }
-            }
-            (ColumnKind::States, _) => {
-                let states = format_all_states(item);
-                if !states.is_empty() {
-                    let states_text = format!("{:width$}", states, width = column.width);
-                    line.push_raw(states_text);
-                } else {
-                    push_blank(&mut line, column.width);
-                }
-            }
-            (ColumnKind::Path, _) => {
-                if let Some(info) = worktree_info {
-                    let path_str = shorten_path(&info.worktree.path, &layout.common_prefix);
-                    let path_text = format!("{:width$}", path_str, width = column.width);
-                    if let Some(style) = text_style {
-                        line.push_styled(path_text, style);
-                    } else {
-                        line.push_raw(path_text);
-                    }
-                } else {
-                    push_blank(&mut line, column.width);
-                }
-            }
-            (ColumnKind::Upstream, ColumnFormat::Diff { digits, variant }) => {
-                if let Some((_remote_name, upstream_ahead, upstream_behind)) = upstream.active() {
-                    let dim_deletion = DELETION.dimmed();
-                    let segment = format_diff_like_column(
-                        upstream_ahead,
-                        upstream_behind,
-                        digits,
-                        column.width,
-                        variant,
-                        ADDITION,
-                        dim_deletion,
-                    );
-                    append_line(&mut line, segment);
-                } else {
-                    push_blank(&mut line, column.width);
-                }
-            }
-            (ColumnKind::Time, _) => {
-                let time_str = format!(
-                    "{:width$}",
-                    format_relative_time(commit.timestamp),
-                    width = column.width
-                );
-                line.push_styled(time_str, Style::new().dimmed());
-            }
-            (ColumnKind::CiStatus, _) => {
-                if let Some(pr_status) = item.pr_status() {
-                    let mut ci_segment = format_ci_status(pr_status);
-                    ci_segment.pad_to(column.width);
-                    append_line(&mut line, ci_segment);
-                } else {
-                    push_blank(&mut line, column.width);
-                }
-            }
-            (ColumnKind::Commit, _) => {
-                let commit_text = format!("{:width$}", short_head, width = column.width);
-                line.push_styled(commit_text, Style::new().dimmed());
-            }
-            (ColumnKind::Message, _) => {
-                let msg = truncate_at_word_boundary(&commit.commit_message, layout.max_message_len);
-                let msg_start = line.width();
-                line.push_styled(msg, Style::new().dimmed());
-                line.pad_to(msg_start + column.width);
-            }
-            // Fallback for diff columns when format is unexpectedly Text
-            (_, _) => {
-                push_blank(&mut line, column.width);
-            }
+    // Branch name (dimmed if removable)
+    if widths.branch > 0 {
+        line.pad_to(positions.branch);
+        let branch_text = format!("{:width$}", item.branch_name(), width = widths.branch);
+        if let Some(style) = text_style {
+            line.push_styled(branch_text, style);
+        } else {
+            line.push_raw(branch_text);
         }
+    }
+
+    // Working tree diff (worktrees only)
+    if widths.working_diff.total > 0 {
+        line.pad_to(positions.working_diff);
+        if let Some(info) = worktree_info {
+            let (wt_added, wt_deleted) = info.working_tree_diff;
+            push_diff(&mut line, wt_added, wt_deleted, &widths.working_diff);
+        } else {
+            push_blank(&mut line, widths.working_diff.total);
+        }
+    }
+
+    // Ahead/behind (commits difference) - green ahead, dim red behind
+    if widths.ahead_behind.total > 0 {
+        line.pad_to(positions.ahead_behind);
+        if !item.is_primary() && (counts.ahead > 0 || counts.behind > 0) {
+            let dim_deletion = DELETION.dimmed();
+            append_line(
+                &mut line,
+                format_arrow_column(
+                    counts.ahead,
+                    counts.behind,
+                    &widths.ahead_behind,
+                    ADDITION,
+                    dim_deletion,
+                ),
+            );
+        } else {
+            push_blank(&mut line, widths.ahead_behind.total);
+        }
+    }
+
+    // Branch diff (line diff in commits)
+    if widths.branch_diff.total > 0 {
+        line.pad_to(positions.branch_diff);
+        if !item.is_primary() {
+            push_diff(&mut line, branch_diff.0, branch_diff.1, &widths.branch_diff);
+        } else {
+            push_blank(&mut line, widths.branch_diff.total);
+        }
+    }
+
+    // States (includes conflicts)
+    if widths.states > 0 {
+        line.pad_to(positions.states);
+        let states = format_all_states(item);
+        if !states.is_empty() {
+            let states_text = format!("{:width$}", states, width = widths.states);
+            line.push_raw(states_text);
+        } else {
+            push_blank(&mut line, widths.states);
+        }
+    }
+
+    // Path (worktrees only)
+    if widths.path > 0 {
+        line.pad_to(positions.path);
+        if let Some(info) = worktree_info {
+            let path_str = shorten_path(&info.worktree.path, &layout.common_prefix);
+            let path_text = format!("{:width$}", path_str, width = widths.path);
+            if let Some(style) = text_style {
+                line.push_styled(path_text, style);
+            } else {
+                line.push_raw(path_text);
+            }
+        } else {
+            push_blank(&mut line, widths.path);
+        }
+    }
+
+    // Upstream tracking
+    if widths.upstream.total > 0 {
+        line.pad_to(positions.upstream);
+        if let Some((_remote_name, upstream_ahead, upstream_behind)) = upstream.active() {
+            let dim_deletion = DELETION.dimmed();
+            // TODO: Handle show_remote_names when implemented
+            append_line(
+                &mut line,
+                format_arrow_column(
+                    upstream_ahead,
+                    upstream_behind,
+                    &widths.upstream,
+                    ADDITION,
+                    dim_deletion,
+                ),
+            );
+        } else {
+            // No remote tracking - show blank
+            push_blank(&mut line, widths.upstream.total);
+        }
+    }
+
+    // Commit (short HEAD) - always dimmed (reference info)
+    if widths.commit > 0 {
+        line.pad_to(positions.commit);
+        line.push_styled(short_head, Style::new().dimmed());
+    }
+
+    // Age (Time)
+    if widths.time > 0 {
+        line.pad_to(positions.time);
+        let time_str = format!(
+            "{:width$}",
+            format_relative_time(commit.timestamp),
+            width = widths.time
+        );
+        line.push_styled(time_str, Style::new().dimmed());
+    }
+
+    // CI status
+    if widths.ci_status > 0 {
+        line.pad_to(positions.ci_status);
+        if let Some(pr_status) = item.pr_status() {
+            let mut ci_segment = format_ci_status(pr_status);
+            ci_segment.pad_to(widths.ci_status);
+            append_line(&mut line, ci_segment);
+        } else {
+            push_blank(&mut line, widths.ci_status);
+        }
+    }
+
+    // Message
+    if widths.message > 0 {
+        line.pad_to(positions.message);
+        let msg = truncate_at_word_boundary(&commit.commit_message, layout.max_message_len);
+        let msg_start = line.width();
+        line.push_styled(msg, Style::new().dimmed());
+        // Pad to correct visual width (not character count - important for unicode!)
+        line.pad_to(msg_start + widths.message);
     }
 
     println!("{}", line.render());
@@ -441,88 +556,67 @@ mod tests {
 
     #[test]
     fn test_format_diff_column_pads_to_total_width() {
-        use super::super::columns::DiffVariant;
+        // Test that diff column is padded to total width when content is smaller
 
         // Case 1: Single-digit diffs with total=6 (to fit "WT +/-" header)
-        let digits = DiffDigits {
-            added: 1,
-            deleted: 1,
+        let widths = DiffWidths {
+            total: 6,
+            added_digits: 1,
+            deleted_digits: 1,
         };
-        let total = 6;
-        let result =
-            format_diff_like_column(1, 1, digits, total, DiffVariant::Signs, ADDITION, DELETION);
+        let result = format_diff_column(1, 1, &widths, ADDITION, DELETION);
         assert_eq!(
             result.width(),
-            total,
+            6,
             "Diff '+1 -1' should be padded to 6 chars"
         );
 
         // Case 2: Two-digit diffs with total=8
-        let digits = DiffDigits {
-            added: 2,
-            deleted: 2,
+        let widths = DiffWidths {
+            total: 8,
+            added_digits: 2,
+            deleted_digits: 2,
         };
-        let total = 8;
-        let result = format_diff_like_column(
-            10,
-            50,
-            digits,
-            total,
-            DiffVariant::Signs,
-            ADDITION,
-            DELETION,
-        );
+        let result = format_diff_column(10, 50, &widths, ADDITION, DELETION);
         assert_eq!(
             result.width(),
-            total,
+            8,
             "Diff '+10 -50' should be padded to 8 chars"
         );
 
         // Case 3: Asymmetric digit counts with total=9
-        let digits = DiffDigits {
-            added: 3,
-            deleted: 2,
+        let widths = DiffWidths {
+            total: 9,
+            added_digits: 3,
+            deleted_digits: 2,
         };
-        let total = 9;
-        let result = format_diff_like_column(
-            100,
-            50,
-            digits,
-            total,
-            DiffVariant::Signs,
-            ADDITION,
-            DELETION,
-        );
+        let result = format_diff_column(100, 50, &widths, ADDITION, DELETION);
         assert_eq!(
             result.width(),
-            total,
+            9,
             "Diff '+100 -50' should be padded to 9 chars"
         );
 
         // Case 4: Zero diff should also pad to total width
-        let digits = DiffDigits {
-            added: 1,
-            deleted: 1,
+        let widths = DiffWidths {
+            total: 6,
+            added_digits: 1,
+            deleted_digits: 1,
         };
-        let total = 6;
-        let result =
-            format_diff_like_column(0, 0, digits, total, DiffVariant::Signs, ADDITION, DELETION);
-        assert_eq!(result.width(), total, "Empty diff should be 6 spaces");
+        let result = format_diff_column(0, 0, &widths, ADDITION, DELETION);
+        assert_eq!(result.width(), 6, "Empty diff should be 6 spaces");
     }
 
     #[test]
     fn test_format_diff_column_right_alignment() {
         // Test that diff values are right-aligned within the total width
-        use super::super::columns::DiffVariant;
-
-        let digits = DiffDigits {
-            added: 1,
-            deleted: 1,
+        let widths = DiffWidths {
+            total: 6,
+            added_digits: 1,
+            deleted_digits: 1,
         };
-        let total = 6;
 
-        let result =
-            format_diff_like_column(1, 1, digits, total, DiffVariant::Signs, ADDITION, DELETION);
+        let result = format_diff_column(1, 1, &widths, ADDITION, DELETION);
         let rendered = result.render();
 
         // Strip ANSI codes to check alignment
@@ -643,66 +737,72 @@ mod tests {
     }
 
     #[test]
-    fn test_arrow_variant_alignment_invariant() {
-        use super::super::columns::DiffVariant;
+    fn test_arrow_column_alignment_invariant() {
+        // Test that arrow columns maintain consistent width regardless of values
+        // This ensures down arrows always appear at the same horizontal position
+        use super::super::layout::DiffWidths;
+        use super::format_arrow_column;
         use worktrunk::styling::{ADDITION, DELETION};
 
-        let digits = DiffDigits {
-            added: 2,
-            deleted: 2,
+        let widths = DiffWidths {
+            total: 7, // "↑99 ↓99" = 1+2+1+1+2 = 7
+            added_digits: 2,
+            deleted_digits: 2,
         };
-        let total = 7;
 
         let dim_deletion = DELETION.dimmed();
-        let cases = [(0, 0), (1, 0), (0, 1), (1, 1), (99, 99), (5, 44)];
 
-        for (ahead, behind) in cases {
-            let result = format_diff_like_column(
-                ahead,
-                behind,
-                digits,
-                total,
-                DiffVariant::Arrows,
-                ADDITION,
-                dim_deletion,
+        // All these cases should produce identical width (vertical alignment)
+        let test_cases = vec![
+            (0, 0, "both zero"),
+            (1, 0, "only ahead"),
+            (0, 1, "only behind"),
+            (1, 1, "both single digit"),
+            (99, 99, "both max digits"),
+            (5, 44, "mixed digits"),
+        ];
+
+        for (ahead, behind, description) in test_cases {
+            let result = format_arrow_column(ahead, behind, &widths, ADDITION, dim_deletion);
+            assert_eq!(
+                result.width(),
+                7,
+                "Arrow column ({ahead}, {behind}) [{description}] should always be width 7"
             );
-            assert_eq!(result.width(), total);
         }
     }
 
     #[test]
-    fn test_arrow_variant_respects_header_width() {
-        use super::super::columns::DiffVariant;
+    fn test_arrow_column_with_header_wider_than_data() {
+        // Reproduces the actual bug: when header is wider than data
+        // - No ahead values (max_ahead_digits = 0)
+        // - Max behind is 50 (max_behind_digits = 2)
+        // - data_width = 1 + 0 + 1 + 1 + 2 = 5
+        // - header "Commits" = 7
+        // - total = max(5, 7) = 7
+        use super::super::layout::DiffWidths;
+        use super::format_arrow_column;
         use worktrunk::styling::{ADDITION, DELETION};
 
-        let digits = DiffDigits {
-            added: 0,
-            deleted: 2,
+        let widths = DiffWidths {
+            total: 7,          // To fit "Commits" header
+            added_digits: 0,   // No ahead values
+            deleted_digits: 2, // Max behind is 50
         };
-        let total = 7;
 
         let dim_deletion = DELETION.dimmed();
 
-        let empty = format_diff_like_column(
-            0,
-            0,
-            digits,
-            total,
-            DiffVariant::Arrows,
-            ADDITION,
-            dim_deletion,
-        );
-        assert_eq!(empty.width(), total);
+        // Empty column should be 7 spaces
+        let empty = format_arrow_column(0, 0, &widths, ADDITION, dim_deletion);
+        assert_eq!(empty.width(), 7, "Empty column should be 7 spaces");
 
-        let behind_only = format_diff_like_column(
-            0,
-            50,
-            digits,
-            total,
-            DiffVariant::Arrows,
-            ADDITION,
-            dim_deletion,
+        // Column with only behind should also be 7!
+        let behind_only = format_arrow_column(0, 50, &widths, ADDITION, dim_deletion);
+        assert_eq!(
+            behind_only.width(),
+            7,
+            "Column with behind=50 should be 7 chars (currently {} - THIS IS THE BUG)",
+            behind_only.width()
         );
-        assert_eq!(behind_only.width(), total);
     }
 }
