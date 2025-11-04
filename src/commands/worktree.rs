@@ -143,6 +143,8 @@ pub enum RemoveResult {
         primary_path: PathBuf,
         worktree_path: PathBuf,
         changed_directory: bool,
+        branch_name: String,
+        no_delete_branch: bool,
     },
     /// Switched to default branch in main repo
     SwitchedToDefault(String),
@@ -271,7 +273,10 @@ pub fn handle_switch(
     ))
 }
 
-pub fn handle_remove(worktree_name: Option<&str>) -> Result<RemoveResult, GitError> {
+pub fn handle_remove(
+    worktree_name: Option<&str>,
+    no_delete_branch: bool,
+) -> Result<RemoveResult, GitError> {
     let repo = Repository::current();
 
     // Resolve "@" to current branch early so progress message shows resolved name
@@ -292,13 +297,16 @@ pub fn handle_remove(worktree_name: Option<&str>) -> Result<RemoveResult, GitErr
 
     // Two modes: remove current worktree vs. remove by name
     match resolved_name.as_deref() {
-        None => remove_current_worktree(&repo),
-        Some(name) => remove_worktree_by_name(&repo, name),
+        None => remove_current_worktree(&repo, no_delete_branch),
+        Some(name) => remove_worktree_by_name(&repo, name, no_delete_branch),
     }
 }
 
 /// Remove the current worktree (original behavior)
-fn remove_current_worktree(repo: &Repository) -> Result<RemoveResult, GitError> {
+fn remove_current_worktree(
+    repo: &Repository,
+    no_delete_branch: bool,
+) -> Result<RemoveResult, GitError> {
     // Check for uncommitted changes in current worktree
     repo.ensure_clean_working_tree()?;
 
@@ -309,6 +317,9 @@ fn remove_current_worktree(repo: &Repository) -> Result<RemoveResult, GitError> 
         // In worktree: navigate to primary worktree and remove this one
         // (no need to check default branch in this path)
         let worktree_root = repo.worktree_root()?;
+        let current_branch = repo
+            .current_branch()?
+            .ok_or_else(|| GitError::CommandFailed("Not on a branch".to_string()))?;
         let worktrees = repo.list_worktrees()?;
         let primary_worktree_dir = worktrees.primary().path.clone();
 
@@ -317,6 +328,8 @@ fn remove_current_worktree(repo: &Repository) -> Result<RemoveResult, GitError> 
             primary_path: primary_worktree_dir,
             worktree_path: worktree_root,
             changed_directory: true, // We're in the worktree being removed
+            branch_name: current_branch,
+            no_delete_branch,
         })
     } else {
         // In main repo: check if already on default branch
@@ -337,7 +350,11 @@ fn remove_current_worktree(repo: &Repository) -> Result<RemoveResult, GitError> 
 }
 
 /// Remove a worktree by branch name (branch_name should already be resolved)
-fn remove_worktree_by_name(repo: &Repository, branch_name: &str) -> Result<RemoveResult, GitError> {
+fn remove_worktree_by_name(
+    repo: &Repository,
+    branch_name: &str,
+    no_delete_branch: bool,
+) -> Result<RemoveResult, GitError> {
     // Find the worktree for this branch
     let worktree_path = repo.worktree_for_branch(branch_name)?;
 
@@ -379,6 +396,8 @@ fn remove_worktree_by_name(repo: &Repository, branch_name: &str) -> Result<Remov
         primary_path,
         worktree_path,
         changed_directory,
+        branch_name: branch_name.to_string(),
+        no_delete_branch,
     })
 }
 
