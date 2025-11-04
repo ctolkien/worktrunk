@@ -33,7 +33,7 @@ pub fn approve_command_batch(
     let approved = if force {
         true
     } else {
-        prompt_for_batch_approval(&needs_approval, project_id)?
+        prompt_for_batch_approval(&needs_approval, project_id, context)?
     };
 
     if !approved {
@@ -72,7 +72,11 @@ fn log_approval_warning(message: &str, error: impl std::fmt::Display) {
     println!("{WARNING_EMOJI} {WARNING}{message}: {error}{WARNING:#}");
 }
 
-fn prompt_for_batch_approval(commands: &[&Command], project_id: &str) -> std::io::Result<bool> {
+fn prompt_for_batch_approval(
+    commands: &[&Command],
+    project_id: &str,
+    context: &str,
+) -> std::io::Result<bool> {
     use std::io::{self, Write};
 
     let project_name = project_id.split('/').next_back().unwrap_or(project_id);
@@ -87,10 +91,17 @@ fn prompt_for_batch_approval(commands: &[&Command], project_id: &str) -> std::io
         "{WARNING_EMOJI} {WARNING}Permission required to execute {warning_bold}{count}{warning_bold:#} command{plural}{WARNING:#}",
     );
     println!();
+    println!("{bold}{project_name}{bold:#} ({dim}{project_id}{dim:#}) wants to execute:");
+    println!();
 
     for cmd in commands {
-        println!("{bold}{project_name}{bold:#} ({dim}{project_id}{dim:#}) wants to execute:");
-        println!();
+        // Format as: {context} {bold}{name}{bold:#}:
+        // context is provided by caller in lowercase (e.g., "post-create", "pre-merge")
+        let label = match &cmd.name {
+            Some(name) => format!("{context} {bold}{name}{bold:#}:"),
+            None => format!("{context}:"),
+        };
+        println!("{label}");
         print!("{}", format_bash_with_gutter(&cmd.expanded, ""));
         println!();
     }

@@ -275,8 +275,7 @@ impl<'de> Deserialize<'de> for CommandConfig {
             CommandConfigToml::Single(cmd) => vec![Command::new(None, cmd)],
             CommandConfigToml::Multiple(cmds) => cmds
                 .into_iter()
-                .enumerate()
-                .map(|(i, template)| Command::new(Some((i + 1).to_string()), template))
+                .map(|template| Command::new(None, template))
                 .collect(),
             CommandConfigToml::Named(map) => {
                 // IndexMap preserves insertion order from TOML
@@ -879,14 +878,8 @@ mod tests {
         let cmd_config = config.post_create_command.unwrap();
         let commands = cmd_config.commands();
         assert_eq!(commands.len(), 2);
-        assert_eq!(
-            commands[0],
-            Command::new(Some("1".to_string()), "npm install".to_string())
-        );
-        assert_eq!(
-            commands[1],
-            Command::new(Some("2".to_string()), "npm test".to_string())
-        );
+        assert_eq!(commands[0], Command::new(None, "npm install".to_string()));
+        assert_eq!(commands[1], Command::new(None, "npm test".to_string()));
     }
 
     #[test]
@@ -1000,12 +993,9 @@ task2 = "echo 'Task 2 running' > task2.txt"
         assert_eq!(commands.len(), 2);
         assert_eq!(
             commands[0],
-            Command::new(Some("1".to_string()), "cargo fmt -- --check".to_string())
+            Command::new(None, "cargo fmt -- --check".to_string())
         );
-        assert_eq!(
-            commands[1],
-            Command::new(Some("2".to_string()), "cargo test".to_string())
-        );
+        assert_eq!(commands[1], Command::new(None, "cargo test".to_string()));
     }
 
     #[test]

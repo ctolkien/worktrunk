@@ -253,3 +253,30 @@ approved-commands = ["echo 'Second command'"]
         false,
     );
 }
+
+#[test]
+fn test_approval_named_commands() {
+    let repo = TestRepo::new();
+    repo.commit("Initial commit");
+
+    let config_dir = repo.root_path().join(".config");
+    fs::create_dir_all(&config_dir).expect("Failed to create .config dir");
+    fs::write(
+        config_dir.join("wt.toml"),
+        r#"[post-create-command]
+install = "echo 'Installing dependencies...'"
+build = "echo 'Building project...'"
+test = "echo 'Running tests...'"
+"#,
+    )
+    .expect("Failed to write config");
+
+    repo.commit("Add config");
+
+    snapshot_approval(
+        "approval_named_commands",
+        &repo,
+        &["--create", "test-named"],
+        false,
+    );
+}

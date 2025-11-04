@@ -158,13 +158,7 @@ pub fn handle_merge(
 
     // Approve all commands in a single batch
     // Commands collected here are not yet expanded - expansion happens later in prepare_project_commands
-    approve_command_batch(
-        &all_commands,
-        &project_id,
-        &config,
-        force,
-        "Merge operation",
-    )?;
+    approve_command_batch(&all_commands, &project_id, &config, force, "merge")?;
 
     // Handle uncommitted changes (skip if --no-commit) - track whether commit occurred
     let committed = if !no_commit && repo.is_dirty()? {
@@ -504,7 +498,7 @@ pub fn run_pre_merge_commands(
         &ctx,
         false,
         &[("target", target_branch)],
-        "Pre-merge commands",
+        "pre-merge",
     )?;
     for prepared in commands {
         let label = crate::commands::format_command_label("pre-merge", prepared.name.as_deref());
@@ -561,7 +555,7 @@ pub fn execute_post_merge_commands(
         &ctx,
         false,
         &[("target", target_branch)],
-        "Post-merge commands",
+        "post-merge",
     )?;
 
     if commands.is_empty() {
@@ -624,13 +618,8 @@ pub fn run_pre_commit_commands(
         vec![]
     };
 
-    let commands = prepare_project_commands(
-        pre_commit_config,
-        &ctx,
-        false,
-        &extra_vars,
-        "Pre-commit commands",
-    )?;
+    let commands =
+        prepare_project_commands(pre_commit_config, &ctx, false, &extra_vars, "pre-commit")?;
 
     if commands.is_empty() {
         return Ok(());

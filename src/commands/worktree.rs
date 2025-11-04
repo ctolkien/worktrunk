@@ -452,8 +452,7 @@ pub fn execute_post_create_commands(
 
     let repo_root = repo.main_worktree_root()?;
     let ctx = CommandContext::new(repo, config, branch, worktree_path, &repo_root, force);
-    let commands =
-        prepare_project_commands(post_create_config, &ctx, false, &[], "Post-create commands")?;
+    let commands = prepare_project_commands(post_create_config, &ctx, false, &[], "post-create")?;
 
     if commands.is_empty() {
         return Ok(());
@@ -502,8 +501,7 @@ pub fn spawn_post_start_commands(
 
     let repo_root = repo.main_worktree_root()?;
     let ctx = CommandContext::new(repo, config, branch, worktree_path, &repo_root, force);
-    let commands =
-        prepare_project_commands(post_start_config, &ctx, false, &[], "Post-start commands")?;
+    let commands = prepare_project_commands(post_start_config, &ctx, false, &[], "post-start")?;
 
     if commands.is_empty() {
         return Ok(());
@@ -559,8 +557,7 @@ pub fn execute_post_start_commands_sequential(
 
     let repo_root = repo.main_worktree_root()?;
     let ctx = CommandContext::new(repo, config, branch, worktree_path, &repo_root, force);
-    let commands =
-        prepare_project_commands(post_start_config, &ctx, false, &[], "Post-start commands")?;
+    let commands = prepare_project_commands(post_start_config, &ctx, false, &[], "post-start")?;
 
     if commands.is_empty() {
         return Ok(());
