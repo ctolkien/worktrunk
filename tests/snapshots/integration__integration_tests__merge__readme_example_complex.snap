@@ -16,9 +16,9 @@ info:
     GIT_EDITOR: ""
     LANG: C
     LC_ALL: C
-    PATH: "/private/var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpDTrfO7/test-repo/.bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    PATH: "/private/var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmp6wrGds/test-repo/.bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     SOURCE_DATE_EPOCH: "1761609600"
-    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpDTrfO7/test-config.toml
+    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmp6wrGds/test-config.toml
 ---
 success: true
 exit_code: 0
@@ -35,12 +35,10 @@ exit_code: 0
 [40m [0m  - Add JWT encoding/decoding with signature verification
 [40m [0m  - Create test suite covering all authentication flows
 ✅ [32mSquashed @ [2m[SHA][0m
-🔄 [36mRunning pre-merge: [1mtest[0m[0m
-🔄 [40m [0m  [1m[34mcargo[0m test[0m
-
-🔄 [36mRunning pre-merge: [1mlint[0m[0m
-🔄 [40m [0m  [1m[34mcargo[0m clippy[0m
-
+🔄 [36mRunning pre-merge: [1mtest[0m:[0m
+[40m [0m  [1m[34mcargo[0m test[0m
+🔄 [36mRunning pre-merge: [1mlint[0m:[0m
+[40m [0m  [1m[34mcargo[0m clippy[0m
 🔄 [36mMerging 1 commit to [1m[36mmain[0m @ [2m[SHA][0m (no rebase needed)
 
 🔄 * [SHA][33m ([m[1;36mHEAD[m[33m -> [m[1;32mfeature-auth[m[33m)[m feat(auth): Implement JWT authentication system
@@ -53,9 +51,8 @@ exit_code: 0
 ✅ [32mMerged to [1m[32mmain[0m[0m (1 commit, 3 files, [32m+3[0m)
 ✅ [32mReturned to primary at [1m[32m[REPO][0m[0m
 🔄 [36mRemoving worktree & branch...[0m
-🔄 [36mRunning post-merge: [1minstall[0m[0m
-🔄 [40m [0m  [1m[34mcargo[0m install [36m--path[0m .[0m
-
+🔄 [36mRunning post-merge: [1minstall[0m:[0m
+[40m [0m  [1m[34mcargo[0m install [36m--path[0m .[0m
 
 ----- stderr -----
 [0m    Finished test [unoptimized + debuginfo] target(s) in 0.12s

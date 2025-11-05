@@ -3,14 +3,12 @@ source: tests/integration_tests/merge.rs
 expression: output
 ---
 Exit code: 0
-🔄 [36mRunning pre-merge: [1mfirst[0m[0m
-🔄 [40m [0m  [1m[34mecho[0m [32m'STDOUT-FROM-FIRST'[0m [36m&&[0m [1m[34mecho[0m [32m'STDERR-FROM-FIRST'[0m >&2[0m
-
+🔄 [36mRunning pre-merge: [1mfirst[0m:[0m
+[40m [0m  [1m[34mecho[0m [32m'STDOUT-FROM-FIRST'[0m [36m&&[0m [1m[34mecho[0m [32m'STDERR-FROM-FIRST'[0m >&2[0m
 [0mSTDOUT-FROM-FIRST
 STDERR-FROM-FIRST
-🔄 [36mRunning pre-merge: [1msecond[0m[0m
-🔄 [40m [0m  [1m[34mecho[0m [32m'STDOUT-FROM-SECOND'[0m [36m&&[0m [1m[34mecho[0m [32m'STDERR-FROM-SECOND'[0m >&2[0m
-
+🔄 [36mRunning pre-merge: [1msecond[0m:[0m
+[40m [0m  [1m[34mecho[0m [32m'STDOUT-FROM-SECOND'[0m [36m&&[0m [1m[34mecho[0m [32m'STDERR-FROM-SECOND'[0m >&2[0m
 [0mSTDOUT-FROM-SECOND
 STDERR-FROM-SECOND
 🔄 [36mMerging 1 commit to [1m[36mmain[0m @ [2m[SHA][0m (no commit/squash/rebase needed)

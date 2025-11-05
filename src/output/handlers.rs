@@ -106,9 +106,9 @@ pub fn handle_switch_output(
 pub fn execute_user_command(command: &str) -> Result<(), GitError> {
     use worktrunk::styling::{CYAN, format_bash_with_gutter};
 
-    // Show what command is being executed (matches post-create/post-start format)
-    super::progress(format!("{CYAN}Executing (--execute){CYAN:#}"))?;
-    super::progress(format_bash_with_gutter(command, ""))?;
+    // Show what command is being executed (section header + gutter content)
+    super::progress(format!("{CYAN}Executing (--execute):{CYAN:#}"))?;
+    super::gutter(format_bash_with_gutter(command, ""))?;
 
     super::execute(command)?;
 

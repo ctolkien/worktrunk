@@ -485,8 +485,8 @@ pub fn execute_post_create_commands(
     // Execute each command sequentially
     for prepared in commands {
         let label = crate::commands::format_command_label("post-create", prepared.name.as_deref());
-        crate::output::progress(format!("{CYAN}{label}{CYAN:#}"))?;
-        crate::output::progress(format_bash_with_gutter(&prepared.expanded, ""))?;
+        crate::output::progress(format!("{CYAN}{label}:{CYAN:#}"))?;
+        crate::output::gutter(format_bash_with_gutter(&prepared.expanded, ""))?;
 
         if let Err(e) = execute_command_in_worktree(worktree_path, &prepared.expanded) {
             let warning_bold = WARNING.bold();
@@ -535,8 +535,8 @@ pub fn spawn_post_start_commands(
     // Spawn each command as a detached background process
     for prepared in commands {
         let label = crate::commands::format_command_label("post-start", prepared.name.as_deref());
-        crate::output::progress(format!("{CYAN}{label}{CYAN:#}"))?;
-        crate::output::progress(format_bash_with_gutter(&prepared.expanded, ""))?;
+        crate::output::progress(format!("{CYAN}{label}:{CYAN:#}"))?;
+        crate::output::gutter(format_bash_with_gutter(&prepared.expanded, ""))?;
 
         let name = prepared.name.as_deref().unwrap_or("cmd");
         match spawn_detached(worktree_path, &prepared.expanded, name) {
@@ -592,8 +592,8 @@ pub fn execute_post_start_commands_sequential(
     // Execute sequentially for testing
     for prepared in commands {
         let label = crate::commands::format_command_label("post-start", prepared.name.as_deref());
-        crate::output::progress(format!("{CYAN}{label}{CYAN:#}"))?;
-        crate::output::progress(format_bash_with_gutter(&prepared.expanded, ""))?;
+        crate::output::progress(format!("{CYAN}{label}:{CYAN:#}"))?;
+        crate::output::gutter(format_bash_with_gutter(&prepared.expanded, ""))?;
 
         if let Err(e) = execute_command_in_worktree(worktree_path, &prepared.expanded) {
             let message = match &prepared.name {
