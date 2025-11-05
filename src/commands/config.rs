@@ -2,8 +2,8 @@ use etcetera::base_strategy::{BaseStrategy, choose_base_strategy};
 use std::path::PathBuf;
 use worktrunk::git::{GitError, GitResultExt, Repository};
 use worktrunk::styling::{
-    AnstyleStyle, GREEN, GREEN_BOLD, HINT, HINT_EMOJI, INFO_EMOJI, SUCCESS_EMOJI, format_toml,
-    print, println,
+    AnstyleStyle, CYAN, GREEN, GREEN_BOLD, HINT, HINT_EMOJI, INFO_EMOJI, SUCCESS_EMOJI,
+    format_toml, print, println,
 };
 
 /// Example configuration file content
@@ -164,19 +164,20 @@ fn get_global_config_path() -> Option<PathBuf> {
 
 /// Handle the config refresh-cache command
 pub fn handle_config_refresh_cache() -> Result<(), GitError> {
-    use anstyle::{AnsiColor, Color};
-
     let repo = Repository::current();
 
     // Display progress message
-    let cyan = AnstyleStyle::new().fg_color(Some(Color::Ansi(AnsiColor::Cyan)));
-    println!("🔄 {cyan}Querying remote for default branch...{cyan:#}");
+    crate::output::progress(format!(
+        "{CYAN}Querying remote for default branch...{CYAN:#}"
+    ))?;
 
     // Refresh the cache (this will make a network call)
     let branch = repo.refresh_default_branch()?;
 
     // Display success message
-    println!("{SUCCESS_EMOJI} {GREEN}Cache refreshed: {GREEN_BOLD}{branch}{GREEN_BOLD:#}{GREEN:#}");
+    crate::output::success(format!(
+        "{GREEN}Cache refreshed: {GREEN_BOLD}{branch}{GREEN_BOLD:#}{GREEN:#}"
+    ))?;
 
     Ok(())
 }

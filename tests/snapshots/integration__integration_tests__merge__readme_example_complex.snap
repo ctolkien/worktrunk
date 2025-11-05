@@ -16,9 +16,9 @@ info:
     GIT_EDITOR: ""
     LANG: C
     LC_ALL: C
-    PATH: "/private/var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmp6wrGds/test-repo/.bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    PATH: "/private/var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpjFNZmk/test-repo/.bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     SOURCE_DATE_EPOCH: "1761609600"
-    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmp6wrGds/test-config.toml
+    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpjFNZmk/test-config.toml
 ---
 success: true
 exit_code: 0
@@ -41,13 +41,11 @@ exit_code: 0
 [40m [0m  [1m[34mcargo[0m clippy[0m
 🔄 [36mMerging 1 commit to [1m[36mmain[0m @ [2m[SHA][0m (no rebase needed)
 
-🔄 * [SHA][33m ([m[1;36mHEAD[m[33m -> [m[1;32mfeature-auth[m[33m)[m feat(auth): Implement JWT authentication system
-
-🔄  auth.rs      | 1 [32m+[m
- auth_test.rs | 1 [32m+[m
- jwt.rs       | 1 [32m+[m
- 3 files changed, 3 insertions(+)
-
+[40m [0m  * [SHA][33m ([m[1;36mHEAD[m[33m -> [m[1;32mfeature-auth[m[33m)[m feat(auth): Implement JWT authentication system
+[40m [0m   auth.rs      | 1 [32m+[m
+[40m [0m   auth_test.rs | 1 [32m+[m
+[40m [0m   jwt.rs       | 1 [32m+[m
+[40m [0m   3 files changed, 3 insertions(+)
 ✅ [32mMerged to [1m[32mmain[0m[0m (1 commit, 3 files, [32m+3[0m)
 ✅ [32mReturned to primary at [1m[32m[REPO][0m[0m
 🔄 [36mRemoving worktree & branch...[0m

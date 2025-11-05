@@ -105,6 +105,7 @@ use worktrunk::config::{CommandPhase, ProjectConfig, WorktrunkConfig};
 use worktrunk::git::{GitError, GitResultExt, Repository};
 use worktrunk::styling::{
     CYAN, CYAN_BOLD, GREEN, GREEN_BOLD, WARNING, WARNING_BOLD, format_bash_with_gutter,
+    format_with_gutter,
 };
 
 use super::command_executor::{CommandContext, prepare_project_commands};
@@ -742,7 +743,7 @@ pub fn handle_push(
             "--decorate",
             &format!("{}..HEAD", target_branch),
         ])?;
-        crate::output::progress(format!("{}\n", log_output.trim()))?;
+        crate::output::gutter(format_with_gutter(&log_output, "", None))?;
 
         // Show diff statistics with color (use terminal width for proper formatting)
         let term_width = crate::display::get_terminal_width();
@@ -756,7 +757,7 @@ pub fn handle_push(
 
         let diff_stat = diff_stat.trim_end();
         if !diff_stat.is_empty() {
-            crate::output::progress(format!("{}\n", diff_stat))?;
+            crate::output::gutter(format_with_gutter(diff_stat, "", None))?;
         }
     }
 
