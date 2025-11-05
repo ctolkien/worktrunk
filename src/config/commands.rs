@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 /// Phase in which a command executes
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display, strum::AsRefStr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::AsRefStr)]
 #[strum(serialize_all = "kebab-case")]
 pub enum CommandPhase {
     /// After creating a worktree (blocking)
@@ -20,6 +20,18 @@ pub enum CommandPhase {
     PreMerge,
     /// After successful merge (blocking)
     PostMerge,
+}
+
+impl std::fmt::Display for CommandPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = self.as_ref();
+        // Capitalize first letter: "pre-commit" -> "Pre-commit"
+        let mut chars = s.chars();
+        match chars.next() {
+            None => Ok(()),
+            Some(first) => write!(f, "{}{}", first.to_uppercase(), chars.as_str()),
+        }
+    }
 }
 
 /// Represents a command with its template and optionally expanded form
