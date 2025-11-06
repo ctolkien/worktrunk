@@ -13,6 +13,7 @@ mod output;
 
 pub use crate::cli::OutputFormat;
 
+use commands::command_executor::CommandContext;
 #[cfg(unix)]
 use commands::handle_select;
 use commands::worktree::SwitchResult;
@@ -208,13 +209,16 @@ fn main() {
                 // Note: If user declines post-start commands, continue anyway - they're optional
                 if !no_verify && let SwitchResult::CreatedWorktree { path, .. } = &result {
                     let repo = Repository::current();
-                    if let Err(e) = commands::worktree::spawn_post_start_commands(
-                        path,
+                    let repo_root = repo.worktree_base()?;
+                    let ctx = CommandContext::new(
                         &repo,
                         &config,
                         &resolved_branch,
+                        path,
+                        &repo_root,
                         force,
-                    ) {
+                    );
+                    if let Err(e) = commands::worktree::spawn_post_start_commands(&ctx) {
                         // Only treat CommandNotApproved as non-fatal (user declined)
                         // Other errors should still fail
                         if !matches!(e, GitError::CommandNotApproved) {

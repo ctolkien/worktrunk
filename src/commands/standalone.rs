@@ -34,11 +34,17 @@ pub fn handle_standalone_run_hook(hook_type: HookType, force: bool) -> Result<()
     match hook_type {
         HookType::PostCreate => {
             check_hook_configured(&project_config.post_create_command, hook_type)?;
-            execute_post_create_commands(&worktree_path, &repo, &config, &branch, force)
+            let repo_root = repo.worktree_base()?;
+            let ctx =
+                CommandContext::new(&repo, &config, &branch, &worktree_path, &repo_root, force);
+            execute_post_create_commands(&ctx)
         }
         HookType::PostStart => {
             check_hook_configured(&project_config.post_start_command, hook_type)?;
-            execute_post_start_commands_sequential(&worktree_path, &repo, &config, &branch, force)
+            let repo_root = repo.worktree_base()?;
+            let ctx =
+                CommandContext::new(&repo, &config, &branch, &worktree_path, &repo_root, force);
+            execute_post_start_commands_sequential(&ctx)
         }
         HookType::PreCommit => {
             check_hook_configured(&project_config.pre_commit_command, hook_type)?;
@@ -57,27 +63,18 @@ pub fn handle_standalone_run_hook(hook_type: HookType, force: bool) -> Result<()
         HookType::PreMerge => {
             check_hook_configured(&project_config.pre_merge_command, hook_type)?;
             let target_branch = repo.default_branch().unwrap_or_else(|_| "main".to_string());
-            run_pre_merge_commands(
-                &project_config,
-                &branch,
-                &target_branch,
-                &worktree_path,
-                &repo,
-                &config,
-                force,
-            )
+            let repo_root = repo.worktree_base()?;
+            let ctx =
+                CommandContext::new(&repo, &config, &branch, &worktree_path, &repo_root, force);
+            run_pre_merge_commands(&project_config, &ctx, &target_branch)
         }
         HookType::PostMerge => {
             check_hook_configured(&project_config.post_merge_command, hook_type)?;
             let target_branch = repo.default_branch().unwrap_or_else(|_| "main".to_string());
-            execute_post_merge_commands(
-                &worktree_path,
-                &repo,
-                &config,
-                &branch,
-                &target_branch,
-                force,
-            )
+            let repo_root = repo.worktree_base()?;
+            let ctx =
+                CommandContext::new(&repo, &config, &branch, &worktree_path, &repo_root, force);
+            execute_post_merge_commands(&ctx, &target_branch)
         }
     }
 }

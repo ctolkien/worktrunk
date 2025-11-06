@@ -106,6 +106,7 @@ use worktrunk::styling::{
     CYAN, CYAN_BOLD, GREEN, GREEN_BOLD, WARNING, WARNING_BOLD, format_with_gutter,
 };
 
+use super::command_executor::CommandContext;
 use super::hooks::{HookFailureStrategy, HookPipeline};
 use super::project_config::load_project_config;
 
@@ -270,14 +271,22 @@ pub fn handle_switch(
 
     // Execute post-create commands (sequential, blocking)
     // Note: If user declines, continue anyway - worktree already created
-    if !no_verify
-        && let Err(e) =
-            execute_post_create_commands(&worktree_path, &repo, config, &resolved_branch, force)
-    {
-        // Only treat CommandNotApproved as non-fatal (user declined)
-        // Other errors should still fail
-        if !matches!(e, GitError::CommandNotApproved) {
-            return Err(e);
+    if !no_verify {
+        let repo_root = repo.worktree_base()?;
+        let ctx = CommandContext::new(
+            &repo,
+            config,
+            &resolved_branch,
+            &worktree_path,
+            &repo_root,
+            force,
+        );
+        if let Err(e) = execute_post_create_commands(&ctx) {
+            // Only treat CommandNotApproved as non-fatal (user declined)
+            // Other errors should still fail
+            if !matches!(e, GitError::CommandNotApproved) {
+                return Err(e);
+            }
         }
     }
 
@@ -552,14 +561,8 @@ impl TargetWorktreeStash {
 }
 
 /// Execute post-create commands sequentially (blocking)
-pub fn execute_post_create_commands(
-    worktree_path: &std::path::Path,
-    repo: &Repository,
-    config: &WorktrunkConfig,
-    branch: &str,
-    force: bool,
-) -> Result<(), GitError> {
-    let project_config = match load_project_config(repo)? {
+pub fn execute_post_create_commands(ctx: &CommandContext) -> Result<(), GitError> {
+    let project_config = match load_project_config(ctx.repo)? {
         Some(cfg) => cfg,
         None => return Ok(()),
     };
@@ -568,8 +571,7 @@ pub fn execute_post_create_commands(
         return Ok(());
     };
 
-    let repo_root = repo.worktree_base()?;
-    let pipeline = HookPipeline::new(repo, config, branch, worktree_path, &repo_root, force);
+    let pipeline = HookPipeline::new(*ctx);
     pipeline.run_sequential(
         post_create_config,
         CommandPhase::PostCreate,
@@ -581,14 +583,8 @@ pub fn execute_post_create_commands(
 }
 
 /// Spawn post-start commands in parallel as background processes (non-blocking)
-pub fn spawn_post_start_commands(
-    worktree_path: &std::path::Path,
-    repo: &Repository,
-    config: &WorktrunkConfig,
-    branch: &str,
-    force: bool,
-) -> Result<(), GitError> {
-    let project_config = match load_project_config(repo)? {
+pub fn spawn_post_start_commands(ctx: &CommandContext) -> Result<(), GitError> {
+    let project_config = match load_project_config(ctx.repo)? {
         Some(cfg) => cfg,
         None => return Ok(()),
     };
@@ -597,8 +593,7 @@ pub fn spawn_post_start_commands(
         return Ok(());
     };
 
-    let repo_root = repo.worktree_base()?;
-    let pipeline = HookPipeline::new(repo, config, branch, worktree_path, &repo_root, force);
+    let pipeline = HookPipeline::new(*ctx);
     pipeline.spawn_detached(
         post_start_config,
         CommandPhase::PostStart,
@@ -609,14 +604,8 @@ pub fn spawn_post_start_commands(
 }
 
 /// Execute post-start commands sequentially (blocking) - for testing
-pub fn execute_post_start_commands_sequential(
-    worktree_path: &std::path::Path,
-    repo: &Repository,
-    config: &WorktrunkConfig,
-    branch: &str,
-    force: bool,
-) -> Result<(), GitError> {
-    let project_config = match load_project_config(repo)? {
+pub fn execute_post_start_commands_sequential(ctx: &CommandContext) -> Result<(), GitError> {
+    let project_config = match load_project_config(ctx.repo)? {
         Some(cfg) => cfg,
         None => return Ok(()),
     };
@@ -625,8 +614,7 @@ pub fn execute_post_start_commands_sequential(
         return Ok(());
     };
 
-    let repo_root = repo.worktree_base()?;
-    let pipeline = HookPipeline::new(repo, config, branch, worktree_path, &repo_root, force);
+    let pipeline = HookPipeline::new(*ctx);
     pipeline.run_sequential(
         post_start_config,
         CommandPhase::PostStart,

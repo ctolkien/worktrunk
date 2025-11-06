@@ -1,6 +1,6 @@
 use worktrunk::HookType;
-use worktrunk::config::{CommandConfig, CommandPhase, WorktrunkConfig};
-use worktrunk::git::{GitError, Repository};
+use worktrunk::config::{CommandConfig, CommandPhase};
+use worktrunk::git::GitError;
 use worktrunk::styling::{CYAN, WARNING, WARNING_BOLD, format_bash_with_gutter};
 
 use super::command_executor::{CommandContext, PreparedCommand, prepare_project_commands};
@@ -21,17 +21,8 @@ pub struct HookPipeline<'a> {
 }
 
 impl<'a> HookPipeline<'a> {
-    pub fn new(
-        repo: &'a Repository,
-        config: &'a WorktrunkConfig,
-        branch: &'a str,
-        worktree_path: &'a std::path::Path,
-        repo_root: &'a std::path::Path,
-        force: bool,
-    ) -> Self {
-        Self {
-            ctx: CommandContext::new(repo, config, branch, worktree_path, repo_root, force),
-        }
+    pub fn new(ctx: CommandContext<'a>) -> Self {
+        Self { ctx }
     }
 
     fn prepare_commands(

@@ -11,6 +11,7 @@ pub struct PreparedCommand {
     pub expanded: String,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct CommandContext<'a> {
     pub repo: &'a Repository,
     pub config: &'a WorktrunkConfig,

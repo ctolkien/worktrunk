@@ -1,5 +1,5 @@
 use worktrunk::HookType;
-use worktrunk::config::{Command, CommandPhase, ProjectConfig, WorktrunkConfig};
+use worktrunk::config::{Command, CommandPhase, ProjectConfig};
 use worktrunk::git::{GitError, GitResultExt, Repository};
 use worktrunk::styling::{CYAN, CYAN_BOLD, ERROR, ERROR_EMOJI, GREEN_BOLD, HINT, HINT_EMOJI};
 
@@ -171,15 +171,16 @@ pub fn handle_merge(
     // Run pre-merge checks unless --no-verify was specified
     // Do this after commit/squash/rebase to validate the final state that will be pushed
     if !no_verify && let Some(project_config) = load_project_config(&repo)? {
-        run_pre_merge_commands(
-            &project_config,
-            &current_branch,
-            &target_branch,
-            &worktree_path,
+        let repo_root = repo.worktree_base()?;
+        let ctx = CommandContext::new(
             &repo,
             &config,
+            &current_branch,
+            &worktree_path,
+            &repo_root,
             force,
-        )?;
+        );
+        run_pre_merge_commands(&project_config, &ctx, &target_branch)?;
     }
 
     // Fast-forward push to target branch with commit/squash/rebase info for consolidated message
@@ -246,14 +247,15 @@ pub fn handle_merge(
     // This runs after cleanup so the context is clear to the user
     // Create a fresh Repository instance at the primary worktree (the old repo may be invalid)
     let primary_repo = Repository::at(&primary_worktree_dir);
-    execute_post_merge_commands(
-        &primary_worktree_dir,
+    let ctx = CommandContext::new(
         &primary_repo,
         &config,
         &current_branch,
-        &target_branch,
+        &primary_worktree_dir,
+        &primary_worktree_dir, // For primary worktree, worktree_path == repo_root
         force,
-    )?;
+    );
+    execute_post_merge_commands(&ctx, &target_branch)?;
 
     Ok(())
 }
@@ -294,26 +296,14 @@ fn handle_squash(target_branch: &str, force: bool) -> Result<bool, GitError> {
 /// Run pre-merge commands sequentially (blocking, fail-fast)
 pub fn run_pre_merge_commands(
     project_config: &ProjectConfig,
-    current_branch: &str,
+    ctx: &CommandContext,
     target_branch: &str,
-    worktree_path: &std::path::Path,
-    repo: &Repository,
-    config: &WorktrunkConfig,
-    force: bool,
 ) -> Result<(), GitError> {
     let Some(pre_merge_config) = &project_config.pre_merge_command else {
         return Ok(());
     };
 
-    let repo_root = repo.worktree_base()?;
-    let pipeline = HookPipeline::new(
-        repo,
-        config,
-        current_branch,
-        worktree_path,
-        &repo_root,
-        force,
-    );
+    let pipeline = HookPipeline::new(*ctx);
 
     pipeline.run_sequential(
         pre_merge_config,
@@ -329,15 +319,11 @@ pub fn run_pre_merge_commands(
 
 /// Execute post-merge commands sequentially in the main worktree (blocking)
 pub fn execute_post_merge_commands(
-    main_worktree_path: &std::path::Path,
-    repo: &Repository,
-    config: &WorktrunkConfig,
-    branch: &str,
+    ctx: &CommandContext,
     target_branch: &str,
-    force: bool,
 ) -> Result<(), GitError> {
     // Load project config from the main worktree path directly
-    let project_config = match load_project_config(repo)? {
+    let project_config = match load_project_config(ctx.repo)? {
         Some(cfg) => cfg,
         None => return Ok(()),
     };
@@ -346,14 +332,7 @@ pub fn execute_post_merge_commands(
         return Ok(());
     };
 
-    let pipeline = HookPipeline::new(
-        repo,
-        config,
-        branch,
-        main_worktree_path,
-        main_worktree_path,
-        force,
-    );
+    let pipeline = HookPipeline::new(*ctx);
 
     pipeline.run_sequential(
         post_merge_config,

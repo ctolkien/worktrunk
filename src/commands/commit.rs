@@ -194,14 +194,7 @@ pub fn run_pre_commit_commands(
         return Ok(());
     };
 
-    let pipeline = HookPipeline::new(
-        ctx.repo,
-        ctx.config,
-        ctx.branch,
-        ctx.worktree_path,
-        ctx.repo_root,
-        ctx.force,
-    );
+    let pipeline = HookPipeline::new(*ctx);
 
     let extra_vars: Vec<(&str, &str)> = target_branch
         .into_iter()
