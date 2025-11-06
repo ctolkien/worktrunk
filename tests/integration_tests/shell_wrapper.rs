@@ -45,6 +45,21 @@ static TMPDIR_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
         .expect("Invalid tmpdir regex pattern")
 });
 
+/// Regex for normalizing workspace paths (dynamically built from CARGO_MANIFEST_DIR)
+/// Matches: <project_root>/tests/fixtures/
+/// Replaces with: [WORKSPACE]/tests/fixtures/
+static WORKSPACE_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let pattern = format!(r"{}/tests/fixtures/", regex::escape(manifest_dir));
+    regex::Regex::new(&pattern).expect("Invalid workspace regex pattern")
+});
+
+/// Regex for normalizing git commit hashes (7-character hex)
+/// Matches 7-character lowercase hex sequences (git short hashes)
+/// Note: No word boundaries because ANSI codes (ending with 'm') directly precede hashes
+static COMMIT_HASH_REGEX: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"[0-9a-f]{7}").expect("Invalid commit hash regex pattern"));
+
 /// Output from executing a command through a shell wrapper
 #[derive(Debug)]
 struct ShellOutput {
@@ -71,13 +86,20 @@ impl ShellOutput {
 
     /// Normalize paths and ANSI codes in output for snapshot testing
     fn normalized(&self) -> String {
-        // First normalize paths
-        let path_normalized = TMPDIR_REGEX.replace_all(&self.combined, "[TMPDIR]");
+        // First normalize temporary directory paths
+        let tmpdir_normalized = TMPDIR_REGEX.replace_all(&self.combined, "[TMPDIR]");
+
+        // Then normalize workspace paths (varying directory names)
+        let workspace_normalized =
+            WORKSPACE_REGEX.replace_all(&tmpdir_normalized, "[WORKSPACE]/tests/fixtures/");
+
+        // Normalize commit hashes (7-character hex strings)
+        let hash_normalized = COMMIT_HASH_REGEX.replace_all(&workspace_normalized, "[HASH]");
 
         // Then normalize ANSI codes: remove redundant leading reset codes
         // This handles differences between macOS and Linux PTY ANSI generation
-        let has_trailing_newline = path_normalized.ends_with('\n');
-        let mut result = path_normalized
+        let has_trailing_newline = hash_normalized.ends_with('\n');
+        let mut result = hash_normalized
             .lines()
             .map(|line| {
                 // Strip leading \x1b[0m reset codes (may appear as ESC[0m in the output)
