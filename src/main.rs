@@ -28,13 +28,15 @@ mod display;
 mod llm;
 mod output;
 
+#[cfg(unix)]
+use commands::handle_select;
 use commands::worktree::SwitchResult;
 use commands::{
     ConfigAction, Shell, handle_beta_ask_approvals, handle_beta_commit, handle_beta_push,
     handle_beta_rebase, handle_beta_run_hook, handle_beta_squash, handle_complete,
     handle_completion, handle_config_help, handle_config_init, handle_config_list,
     handle_config_refresh_cache, handle_configure_shell, handle_init, handle_list, handle_merge,
-    handle_remove, handle_select, handle_switch,
+    handle_remove, handle_switch,
 };
 use output::{execute_user_command, handle_remove_output, handle_switch_output};
 
@@ -158,6 +160,7 @@ enum BetaCommand {
     /// - Mode 3: Branch diff (line changes ahead of main)
     ///
     /// Note: When viewing main itself, all commits shown without dimming
+    #[cfg(unix)]
     Select,
 }
 
@@ -614,6 +617,7 @@ fn main() {
             } => handle_beta_push(target.as_deref(), allow_merge_commits),
             BetaCommand::Rebase { target } => handle_beta_rebase(target.as_deref()).map(|_| ()),
             BetaCommand::AskApprovals { force, all } => handle_beta_ask_approvals(force, all),
+            #[cfg(unix)]
             BetaCommand::Select => handle_select(),
         },
         Commands::List {
