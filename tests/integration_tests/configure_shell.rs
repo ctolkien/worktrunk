@@ -216,7 +216,7 @@ fn test_configure_shell_no_files() {
         ----- stdout -----
 
         ----- stderr -----
-        No shell config files found in $HOME. Checked: [TEMP_HOME]/.bash_profile, [TEMP_HOME]/.zshrc, and more. Create a config file or use --shell to specify a shell.
+        ❌ [31mNo shell config files found in $HOME. Checked: [TEMP_HOME]/.bash_profile, [TEMP_HOME]/.zshrc, and more. Create a config file or use --shell to specify a shell.[0m
         ");
     });
 }

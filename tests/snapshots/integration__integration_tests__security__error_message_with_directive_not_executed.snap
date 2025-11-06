@@ -17,11 +17,12 @@ info:
     LANG: C
     LC_ALL: C
     SOURCE_DATE_EPOCH: "1761609600"
-    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpv0PFuF/test-config.toml
+    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmph6Ajb4/test-config.toml
 ---
 success: false
 exit_code: 1
 ----- stdout -----
 
 ----- stderr -----
-Failed to create worktree: fatal: invalid reference: __WORKTRUNK_EXEC__echo PWNED > /tmp/hacked6
+Failed to create worktree: ❌ [31mfatal: invalid reference: __WORKTRUNK_EXEC__echo PWNED > /tmp/hacked6
+[0m

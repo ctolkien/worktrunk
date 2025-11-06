@@ -54,6 +54,8 @@ pub enum GitError {
         target_branch: String,
         git_output: String,
     },
+    /// Worktree path already exists on filesystem
+    WorktreePathExists { path: PathBuf },
 }
 
 impl std::fmt::Display for GitError {
@@ -61,8 +63,16 @@ impl std::fmt::Display for GitError {
         use crate::styling::{ERROR, ERROR_BOLD, ERROR_EMOJI, HINT, HINT_EMOJI};
 
         match self {
-            // Plain message that will be displayed by main.rs
-            GitError::CommandFailed(msg) => write!(f, "{}", msg),
+            // Generic error - format with emoji and styling
+            // Skip formatting if message already contains ANSI codes (from nested error formatting)
+            GitError::CommandFailed(msg) => {
+                if msg.contains("\x1b[") || msg.contains("[31m") || msg.contains("[0m") {
+                    // Already formatted, just pass through
+                    write!(f, "{}", msg)
+                } else {
+                    write!(f, "{ERROR_EMOJI} {ERROR}{msg}{ERROR:#}")
+                }
+            }
 
             // ParseError messages need formatting
             GitError::ParseError(msg) => {
@@ -234,6 +244,15 @@ impl std::fmt::Display for GitError {
                 }
 
                 Ok(())
+            }
+
+            // Worktree path already exists
+            GitError::WorktreePathExists { path } => {
+                write!(
+                    f,
+                    "{ERROR_EMOJI} {ERROR}Directory already exists: {ERROR_BOLD}{}{ERROR_BOLD:#}{ERROR:#}\n\n{HINT_EMOJI} {HINT}Remove the directory or use a different branch name{HINT:#}",
+                    path.display()
+                )
             }
         }
     }

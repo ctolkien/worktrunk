@@ -236,8 +236,33 @@ pub fn handle_switch(
         args.push(&resolved_branch);
     }
 
-    repo.run_command(&args)
-        .git_context("Failed to create worktree")?;
+    // Create worktree and parse specific error cases
+    if let Err(e) = repo.run_command(&args) {
+        // Check if error is about directory already existing
+        if let GitError::CommandFailed(ref msg) = e
+            && msg.contains("already exists")
+        {
+            // Parse the path from git's error message
+            // Format: "fatal: '/path/to/dir' already exists"
+            if let Some(path_str) = msg
+                .lines()
+                .find(|line| line.contains("already exists"))
+                .and_then(|line| {
+                    // Extract path between quotes
+                    line.split('\'').nth(1).or_else(|| line.split('"').nth(1))
+                })
+            {
+                let path = std::path::PathBuf::from(path_str);
+                // Canonicalize if possible, otherwise use as-is
+                let normalized_path = path.canonicalize().unwrap_or(path);
+                return Err(GitError::WorktreePathExists {
+                    path: normalized_path,
+                });
+            }
+        }
+        // Fall back to generic error with context
+        return Err(e).git_context("Failed to create worktree");
+    }
 
     // Canonicalize the path to resolve any .. components
     let worktree_path = worktree_path
