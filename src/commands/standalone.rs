@@ -11,7 +11,9 @@ use super::commit::{
 };
 use super::context::CommandEnv;
 use super::merge::{execute_post_merge_commands, run_pre_merge_commands};
-use super::project_config::{load_project_config, require_project_config};
+use super::project_config::{
+    collect_commands_for_hooks, load_project_config, require_project_config,
+};
 use super::worktree::{execute_post_create_commands, execute_post_start_commands_sequential};
 
 /// Handle `wt beta run-hook` command
@@ -93,23 +95,17 @@ fn check_hook_configured<T>(hook: &Option<T>, hook_type: HookType) -> Result<(),
 
 /// Handle `wt beta commit` command
 pub fn handle_standalone_commit(force: bool, no_verify: bool) -> Result<(), GitError> {
-    let CommandEnv {
-        repo,
-        branch: current_branch,
-        config,
-        worktree_path,
-    } = CommandEnv::current()?;
-
-    let repo_root = repo.worktree_base()?;
-    let commit_ctx = CommandContext::new(
-        &repo,
-        &config,
-        &current_branch,
-        &worktree_path,
+    let env = CommandEnv::current()?;
+    let repo_root = env.repo.worktree_base()?;
+    let ctx = CommandContext::new(
+        &env.repo,
+        &env.config,
+        &env.branch,
+        &env.worktree_path,
         &repo_root,
         force,
     );
-    let mut options = CommitOptions::new(&commit_ctx);
+    let mut options = CommitOptions::new(&ctx);
     options.no_verify = no_verify;
     options.auto_trust = false;
     options.show_no_squash_note = false;
@@ -354,7 +350,7 @@ pub fn handle_rebase(target: Option<&str>) -> Result<bool, GitError> {
 /// Handle `wt beta ask-approvals` command - approve all commands in the project
 pub fn handle_standalone_ask_approvals(force: bool, show_all: bool) -> Result<(), GitError> {
     use super::command_approval::approve_command_batch;
-    use worktrunk::config::{CommandPhase, WorktrunkConfig};
+    use worktrunk::config::WorktrunkConfig;
 
     let repo = Repository::current();
     let project_id = repo.project_identifier()?;
@@ -364,32 +360,14 @@ pub fn handle_standalone_ask_approvals(force: bool, show_all: bool) -> Result<()
     let project_config = require_project_config(&repo)?;
 
     // Collect all commands from the project config
-    let mut commands = Vec::new();
-
-    // post-create-command
-    if let Some(cmd_config) = &project_config.post_create_command {
-        commands.extend(cmd_config.commands_with_phase(CommandPhase::PostCreate));
-    }
-
-    // post-start-command
-    if let Some(cmd_config) = &project_config.post_start_command {
-        commands.extend(cmd_config.commands_with_phase(CommandPhase::PostStart));
-    }
-
-    // pre-commit-command
-    if let Some(cmd_config) = &project_config.pre_commit_command {
-        commands.extend(cmd_config.commands_with_phase(CommandPhase::PreCommit));
-    }
-
-    // pre-merge-command
-    if let Some(cmd_config) = &project_config.pre_merge_command {
-        commands.extend(cmd_config.commands_with_phase(CommandPhase::PreMerge));
-    }
-
-    // post-merge-command
-    if let Some(cmd_config) = &project_config.post_merge_command {
-        commands.extend(cmd_config.commands_with_phase(CommandPhase::PostMerge));
-    }
+    let all_hooks = [
+        HookType::PostCreate,
+        HookType::PostStart,
+        HookType::PreCommit,
+        HookType::PreMerge,
+        HookType::PostMerge,
+    ];
+    let commands = collect_commands_for_hooks(&project_config, &all_hooks);
 
     if commands.is_empty() {
         let dim = worktrunk::styling::AnstyleStyle::new().dimmed();

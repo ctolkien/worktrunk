@@ -25,7 +25,7 @@ pub(crate) use parse::{
 // They're accessible as git::HookType, git::Worktree, and git::WorktreeList without needing re-export.
 
 /// Hook types for git operations
-#[derive(Debug, Clone, Copy, clap::ValueEnum, strum::Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
 pub enum HookType {
     PostCreate,

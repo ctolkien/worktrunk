@@ -3,36 +3,12 @@
 //! Handles parsing and representation of commands that run during various phases
 //! of worktree and merge operations.
 
+use crate::git::HookType;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-/// Phase in which a command executes
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::AsRefStr)]
-#[strum(serialize_all = "kebab-case")]
-pub enum CommandPhase {
-    /// After creating a worktree (blocking)
-    PostCreate,
-    /// After creating a worktree (background)
-    PostStart,
-    /// Before committing during merge (blocking, fail-fast)
-    PreCommit,
-    /// Before merging (blocking, fail-fast)
-    PreMerge,
-    /// After successful merge (blocking)
-    PostMerge,
-}
-
-impl std::fmt::Display for CommandPhase {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = self.as_ref();
-        // Capitalize first letter: "pre-commit" -> "Pre-commit"
-        let mut chars = s.chars();
-        match chars.next() {
-            None => Ok(()),
-            Some(first) => write!(f, "{}{}", first.to_uppercase(), chars.as_str()),
-        }
-    }
-}
+/// Phase in which a command executes (alias to the canonical hook type)
+pub type CommandPhase = HookType;
 
 /// Represents a command with its template and optionally expanded form
 #[derive(Debug, Clone, PartialEq)]

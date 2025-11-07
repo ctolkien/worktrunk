@@ -15,7 +15,7 @@ exit_code: 0
 
 🟡 [33m[1m[33mtest-repo[0m[33m wants to execute [1m[33m1[0m[33m command:[0m
 
-🔄 Post-create:
+🔄 post-create:
 [40m [0m  [1m[34mecho[0m [32m'test command'[0m[0m
 
 💡 Allow and remember? [1m[y/N][0m 

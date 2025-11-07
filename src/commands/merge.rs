@@ -8,7 +8,7 @@ use super::command_executor::CommandContext;
 use super::commit::{CommitOptions, commit_changes};
 use super::context::CommandEnv;
 use super::hooks::{HookFailureStrategy, HookPipeline};
-use super::project_config::load_project_config;
+use super::project_config::{collect_commands_for_hooks, load_project_config};
 use super::worktree::handle_push;
 
 /// Context for collecting merge commands
@@ -39,24 +39,19 @@ impl<'a> MergeCommandCollector<'a> {
 
         // Collect pre-commit commands if we'll commit (direct or via squash)
         // These run before: (1) direct commit (line 179), or (2) squash commit (line 194 → handle_dev_squash)
-        if !self.no_commit
-            && self.repo.is_dirty()?
-            && let Some(pre_commit_config) = &project_config.pre_commit_command
-        {
-            all_commands.extend(pre_commit_config.commands_with_phase(CommandPhase::PreCommit));
+        let mut hooks = Vec::new();
+
+        if !self.no_commit && self.repo.is_dirty()? {
+            hooks.push(HookType::PreCommit);
         }
 
-        // Collect pre-merge commands (if not --no-verify)
-        if !self.no_verify
-            && let Some(pre_merge_config) = &project_config.pre_merge_command
-        {
-            all_commands.extend(pre_merge_config.commands_with_phase(CommandPhase::PreMerge));
+        if !self.no_verify {
+            hooks.push(HookType::PreMerge);
         }
 
-        // Collect post-merge commands
-        if let Some(post_merge_config) = &project_config.post_merge_command {
-            all_commands.extend(post_merge_config.commands_with_phase(CommandPhase::PostMerge));
-        }
+        hooks.push(HookType::PostMerge);
+
+        all_commands.extend(collect_commands_for_hooks(&project_config, &hooks));
 
         let project_id = self.repo.project_identifier()?;
         Ok((all_commands, project_id))
@@ -117,9 +112,8 @@ pub fn handle_merge(
         if squash_enabled {
             false // Squash path handles staging and committing
         } else {
-            // Commit immediately when not squashing
             let repo_root = repo.worktree_base()?;
-            let commit_ctx = CommandContext::new(
+            let ctx = CommandContext::new(
                 &repo,
                 &config,
                 &current_branch,
@@ -127,11 +121,11 @@ pub fn handle_merge(
                 &repo_root,
                 force,
             );
-            let mut options = CommitOptions::new(&commit_ctx);
+            let mut options = CommitOptions::new(&ctx);
             options.target_branch = Some(&target_branch);
             options.no_verify = no_verify;
             options.tracked_only = tracked_only;
-            options.auto_trust = true; // commands already approved in merge batch
+            options.auto_trust = true;
             options.warn_about_untracked = !tracked_only;
             options.show_no_squash_note = true;
 

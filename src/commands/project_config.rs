@@ -1,6 +1,6 @@
 use std::path::Path;
-use worktrunk::config::ProjectConfig;
-use worktrunk::git::{GitError, GitResultExt, Repository};
+use worktrunk::config::{Command, ProjectConfig};
+use worktrunk::git::{GitError, GitResultExt, HookType, Repository};
 
 fn load_project_config_at(repo_root: &Path) -> Result<Option<ProjectConfig>, GitError> {
     ProjectConfig::load(repo_root).git_context("Failed to load project config")
@@ -32,4 +32,25 @@ pub fn require_project_config(repo: &Repository) -> Result<ProjectConfig, GitErr
             ))
         }
     }
+}
+
+/// Collect commands for the given hook types, preserving order of the provided hooks.
+pub fn collect_commands_for_hooks(
+    project_config: &ProjectConfig,
+    hooks: &[HookType],
+) -> Vec<Command> {
+    let mut commands = Vec::new();
+    for hook in hooks {
+        let cfg = match hook {
+            HookType::PostCreate => &project_config.post_create_command,
+            HookType::PostStart => &project_config.post_start_command,
+            HookType::PreCommit => &project_config.pre_commit_command,
+            HookType::PreMerge => &project_config.pre_merge_command,
+            HookType::PostMerge => &project_config.post_merge_command,
+        };
+        if let Some(config) = cfg {
+            commands.extend(config.commands_with_phase(*hook));
+        }
+    }
+    commands
 }
