@@ -167,10 +167,6 @@ fn display_summary(items: &[ListItem], include_branches: bool, layout: &layout::
         parts.push(format!("{} ahead", metrics.ahead_items));
     }
 
-    if metrics.behind_items > 0 {
-        parts.push(format!("{} behind", metrics.behind_items));
-    }
-
     if layout.hidden_nonempty_count > 0 {
         let plural = if layout.hidden_nonempty_count == 1 {
             "column"
@@ -193,7 +189,6 @@ struct SummaryMetrics {
     branches: usize,
     dirty_worktrees: usize,
     ahead_items: usize,
-    behind_items: usize,
 }
 
 impl SummaryMetrics {
@@ -211,9 +206,6 @@ impl SummaryMetrics {
         let counts = item.counts();
         if counts.ahead > 0 {
             self.ahead_items += 1;
-        }
-        if counts.behind > 0 {
-            self.behind_items += 1;
         }
     }
 }
