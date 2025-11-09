@@ -344,13 +344,13 @@ $ wt merge
   - Create test suite covering all authentication flows
 
 ✅ Squashed @ a1b2c3d
-🔄 Running pre-merge: lint
+🔄 Running pre-merge lint
   cargo clippy
 
     Checking worktrunk v0.1.0
     Finished dev [unoptimized + debuginfo] target(s) in 1.23s
 
-🔄 Running pre-merge: test
+🔄 Running pre-merge test
   cargo test
 
     Finished test [unoptimized + debuginfo] target(s) in 0.12s
@@ -376,7 +376,7 @@ test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ✅ Merged to main (1 commit, 3 files, +3)
 ✅ Returned to primary at ../repo/
 🔄 Removing worktree & branch...
-🔄 Running post-merge: install
+🔄 Running post-merge install
   cargo install --path .
 
   Installing worktrunk v0.1.0

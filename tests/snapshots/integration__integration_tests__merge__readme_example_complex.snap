@@ -34,9 +34,9 @@ exit_code: 0
 [40m [0m  - Add JWT encoding/decoding with signature verification
 [40m [0m  - Create test suite covering all authentication flows
 ✅ [32mSquashed @ [2m[SHA][0m
-🔄 [36mRunning pre-merge: [1mtest[0m:[0m
+🔄 [36mRunning pre-merge [1mtest[0m:[0m
 [40m [0m  [1m[34mcargo[0m test[0m
-🔄 [36mRunning pre-merge: [1mlint[0m:[0m
+🔄 [36mRunning pre-merge [1mlint[0m:[0m
 [40m [0m  [1m[34mcargo[0m clippy[0m
 🔄 [36mMerging 1 commit to [1m[36mmain[0m[36m @ [2m[SHA][0m (no rebase needed)
 
@@ -48,7 +48,7 @@ exit_code: 0
 ✅ [32mMerged to [1m[32mmain[0m[0m (1 commit, 3 files, [32m+3[0m)
 🔄 [36mRemoving worktree & branch...[0m
 ✅ [32mRemoved worktree & branch for [1m[32mfeature-auth[0m[32m, returned to primary at [1m[32m[REPO][0m[0m
-🔄 [36mRunning post-merge: [1minstall[0m:[0m
+🔄 [36mRunning post-merge [1minstall[0m:[0m
 [40m [0m  [1m[34mcargo[0m install [36m--path[0m .[0m
 
 ----- stderr -----

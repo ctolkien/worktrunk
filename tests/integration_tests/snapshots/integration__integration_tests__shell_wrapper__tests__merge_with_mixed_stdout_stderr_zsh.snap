@@ -18,11 +18,11 @@ expression: output.normalized()
 [check2] stderr line 3
 [check2] stdout complete
 [check2] stderr complete
-🔄 [36mRunning pre-merge: [1mcheck1[0m:[0m
+🔄 [36mRunning pre-merge [1mcheck1[0m:[0m
 [40m [0m  [1m[34m[WORKSPACE]/tests/fixtures/mixed-output.sh[0m check1 3[0m
 
 
-🔄 [36mRunning pre-merge: [1mcheck2[0m:[0m
+🔄 [36mRunning pre-merge [1mcheck2[0m:[0m
 [40m [0m  [1m[34m[WORKSPACE]/tests/fixtures/mixed-output.sh[0m check2 3[0m
 
 
