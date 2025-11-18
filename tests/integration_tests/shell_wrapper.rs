@@ -239,19 +239,45 @@ fn build_shell_script(shell: &str, repo: &TestRepo, subcommand: &str, args: &[&s
     }
 }
 
-/// Execute a command in a PTY (pseudo-terminal)
+/// Normalize line endings (CRLF -> LF)
+fn normalize_newlines(s: &str) -> String {
+    s.replace("\r\n", "\n")
+}
+
+/// Execute a command in a PTY with interactive input support
 ///
-/// This provides the most accurate test environment - child processes see a real TTY
-/// and behave exactly as they would in a user's terminal (streaming, colors, etc.)
+/// This is similar to `exec_in_pty` but allows sending input during execution.
+/// The PTY will automatically echo the input (like a real terminal), so you'll
+/// see both the prompts and the input in the captured output.
+///
+/// # Arguments
+/// * `shell` - The shell to use (e.g., "bash", "zsh")
+/// * `script` - The script to execute
+/// * `working_dir` - Working directory for the command
+/// * `env_vars` - Environment variables to set
+/// * `inputs` - A slice of strings to send as input (e.g., `&["y\n", "feature\n"]`)
+///
+/// # Example
+/// ```no_run
+/// let (output, exit_code) = exec_in_pty_interactive(
+///     "bash",
+///     "wt switch --create",
+///     repo.root_path(),
+///     &[("CLICOLOR_FORCE", "1")],
+///     &["y\n"],  // Send 'y' and newline when prompted
+/// );
+/// // The output will show: "Allow? [y/N] y"
+/// ```
 #[cfg(test)]
-fn exec_in_pty(
+fn exec_in_pty_interactive(
     shell: &str,
     script: &str,
     working_dir: &std::path::Path,
-    env_vars: &[(String, String)],
+    env_vars: &[(&str, &str)],
+    inputs: &[&str],
 ) -> (String, i32) {
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
-    use std::io::Read;
+    use std::io::{Read, Write};
 
     let pty_system = native_pty_system();
     let pair = pty_system
@@ -267,12 +293,9 @@ fn exec_in_pty(
     let mut cmd = CommandBuilder::new(shell);
 
     // Clear inherited environment for test isolation
-    // This prevents user environment (ZELLIJ, TMUX, custom aliases, etc.) from
-    // affecting test behavior or causing side effects (e.g., renaming Zellij tabs)
     cmd.env_clear();
 
     // Set minimal required environment for shells to function
-    // HOME and PATH are preserved for rustup/cargo and finding git/commands
     cmd.env(
         "HOME",
         std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string()),
@@ -284,16 +307,9 @@ fn exec_in_pty(
     cmd.env("USER", "testuser");
     cmd.env("SHELL", shell);
 
-    // For zsh, isolate from user rc files to prevent TTY access issues
-    // User startup files (~/.zshenv, ~/.zshrc) can touch /dev/tty (e.g., stty, zle,
-    // compinit, GPG_TTY=$(tty)) which causes SIGTTIN/TTOU/TSTP signals when the
-    // process tries to access the controlling terminal.
-    // See: https://zsh.sourceforge.io/Doc/Release/Files.html
+    // For zsh, isolate from user rc files
     if shell == "zsh" {
-        // Set ZDOTDIR to /dev/null so ~/.zshenv is not found
         cmd.env("ZDOTDIR", "/dev/null");
-
-        // Prevent loading any other rc files
         cmd.arg("--no-rcs");
         cmd.arg("-o");
         cmd.arg("NO_GLOBAL_RCS");
@@ -307,7 +323,7 @@ fn exec_in_pty(
     cmd.arg(script);
     cmd.cwd(working_dir);
 
-    // Add test-specific environment variables
+    // Add test-specific environment variables (convert &str tuples to String tuples)
     for (key, value) in env_vars {
         cmd.env(key, value);
     }
@@ -318,12 +334,25 @@ fn exec_in_pty(
         .expect("Failed to spawn command in PTY");
     drop(pair.slave); // Close slave in parent
 
-    // Read everything the "terminal" would display
+    // Clone the reader for capturing output
     let mut reader = pair
         .master
         .try_clone_reader()
         .expect("Failed to clone PTY reader");
 
+    // Write input synchronously if we have any (matches approval_pty.rs approach)
+    if !inputs.is_empty() {
+        let mut writer = pair.master.take_writer().expect("Failed to get PTY writer");
+        for input in inputs {
+            writer
+                .write_all(input.as_bytes())
+                .expect("Failed to write input to PTY");
+            writer.flush().expect("Failed to flush PTY writer");
+        }
+        drop(writer); // Explicitly drop writer so PTY sees EOF
+    }
+
+    // Read everything the "terminal" would display (including echoed input)
     let mut buf = String::new();
     reader
         .read_to_string(&mut buf)
@@ -334,11 +363,6 @@ fn exec_in_pty(
     (normalize_newlines(&buf), status.exit_code() as i32)
 }
 
-/// Normalize line endings (CRLF -> LF)
-fn normalize_newlines(s: &str) -> String {
-    s.replace("\r\n", "\n")
-}
-
 /// Execute a command through a shell wrapper
 ///
 /// This simulates what actually happens when users run `wt switch`, etc. in their shell:
@@ -346,6 +370,8 @@ fn normalize_newlines(s: &str) -> String {
 /// 2. It calls `wt_exec --internal switch ...`
 /// 3. The wrapper parses NUL-delimited output and handles directives
 /// 4. Users see only the final human-friendly output
+///
+/// Now uses PTY interactive mode for consistent behavior and potential input echoing.
 ///
 /// Returns ShellOutput with combined output and exit code
 fn exec_through_wrapper(
@@ -364,49 +390,74 @@ fn exec_through_wrapper_from(
     args: &[&str],
     working_dir: &std::path::Path,
 ) -> ShellOutput {
+    // Delegate to interactive version with no input
+    // This provides consistent PTY behavior across all tests
+    exec_through_wrapper_interactive(shell, repo, subcommand, args, working_dir, &[])
+}
+
+/// Execute a command through a shell wrapper with interactive input support
+///
+/// This is similar to `exec_through_wrapper_from` but allows sending input during execution
+/// (e.g., approval responses). The PTY will automatically echo the input, so you'll see
+/// both the prompts and the responses in the captured output.
+///
+/// # Arguments
+/// * `shell` - The shell to use (e.g., "bash", "zsh", "fish")
+/// * `repo` - The test repository
+/// * `subcommand` - The wt subcommand (e.g., "merge", "switch")
+/// * `args` - Arguments to the subcommand (without --force)
+/// * `working_dir` - Working directory for the command
+/// * `inputs` - Input strings to send (e.g., `&["y\n"]` for approval prompts)
+///
+/// # Example
+/// ```no_run
+/// // Test merge with approval prompt visible in output
+/// let output = exec_through_wrapper_interactive(
+///     "bash",
+///     &repo,
+///     "merge",
+///     &["main"],
+///     repo.root_path(),
+///     &["y\n"],  // Approve the merge
+/// );
+/// // Output will show: "💡 Allow and remember? [y/N] y"
+/// ```
+#[cfg(test)]
+fn exec_through_wrapper_interactive(
+    shell: &str,
+    repo: &TestRepo,
+    subcommand: &str,
+    args: &[&str],
+    working_dir: &std::path::Path,
+    inputs: &[&str],
+) -> ShellOutput {
     let script = build_shell_script(shell, repo, subcommand, args);
 
-    // PTY execution - provides exact terminal behavior for all shells
-    // Note: Fish's psub (process substitution) uses file-backed buffers, which causes
-    // different temporal ordering than bash/zsh. Child command output may appear before
-    // the progress messages that spawned them. This is actual fish behavior, not a test bug.
+    // Keep config path as owned String because:
+    // 1. repo.test_config_path() returns a PathBuf
+    // 2. .to_string_lossy() returns a Cow<str> that borrows from the PathBuf
+    // 3. We need to borrow a &str for the env_vars vector
+    // 4. The owned String lives long enough to satisfy the borrow in env_vars
+    let config_path = repo.test_config_path().to_string_lossy().to_string();
 
-    // Collect environment variables that clean_cli_env would set
-    let env_vars = vec![
-        ("CLICOLOR_FORCE".to_string(), "1".to_string()),
-        (
-            "WORKTRUNK_CONFIG_PATH".to_string(),
-            repo.test_config_path().to_string_lossy().to_string(),
-        ),
-        // Set TERM for consistent terminal behavior across local and CI environments
-        // Without this, macOS and Linux PTYs have different defaults which causes
-        // different ANSI escape sequence generation (different reset placements)
-        ("TERM".to_string(), "xterm".to_string()),
-        // Git config from configure_git_cmd
-        ("GIT_AUTHOR_NAME".to_string(), "Test User".to_string()),
-        (
-            "GIT_AUTHOR_EMAIL".to_string(),
-            "test@example.com".to_string(),
-        ),
-        ("GIT_COMMITTER_NAME".to_string(), "Test User".to_string()),
-        (
-            "GIT_COMMITTER_EMAIL".to_string(),
-            "test@example.com".to_string(),
-        ),
-        (
-            "GIT_AUTHOR_DATE".to_string(),
-            "2025-10-28T12:00:00Z".to_string(),
-        ),
-        (
-            "GIT_COMMITTER_DATE".to_string(),
-            "2025-10-28T12:00:00Z".to_string(),
-        ),
-        ("LANG".to_string(), "C".to_string()),
-        ("LC_ALL".to_string(), "C".to_string()),
-        ("SOURCE_DATE_EPOCH".to_string(), "1761609600".to_string()),
+    // Same environment setup as exec_through_wrapper_from
+    let env_vars: Vec<(&str, &str)> = vec![
+        ("CLICOLOR_FORCE", "1"),
+        ("WORKTRUNK_CONFIG_PATH", &config_path),
+        ("TERM", "xterm"),
+        ("GIT_AUTHOR_NAME", "Test User"),
+        ("GIT_AUTHOR_EMAIL", "test@example.com"),
+        ("GIT_COMMITTER_NAME", "Test User"),
+        ("GIT_COMMITTER_EMAIL", "test@example.com"),
+        ("GIT_AUTHOR_DATE", "2025-10-28T12:00:00Z"),
+        ("GIT_COMMITTER_DATE", "2025-10-28T12:00:00Z"),
+        ("LANG", "C"),
+        ("LC_ALL", "C"),
+        ("SOURCE_DATE_EPOCH", "1761609600"),
     ];
 
-    let (combined, exit_code) = exec_in_pty(shell, &script, working_dir, &env_vars);
+    let (combined, exit_code) =
+        exec_in_pty_interactive(shell, &script, working_dir, &env_vars, inputs);
 
     ShellOutput {
         combined,
@@ -1311,37 +1362,24 @@ approved-commands = ["echo 'fish background task'"]
             _ => format!("( {} ) 2>&1", script),
         };
 
-        let env_vars = vec![
-            ("CLICOLOR_FORCE".to_string(), "1".to_string()),
-            (
-                "WORKTRUNK_CONFIG_PATH".to_string(),
-                repo.test_config_path().to_string_lossy().to_string(),
-            ),
-            ("TERM".to_string(), "xterm".to_string()),
-            ("GIT_AUTHOR_NAME".to_string(), "Test User".to_string()),
-            (
-                "GIT_AUTHOR_EMAIL".to_string(),
-                "test@example.com".to_string(),
-            ),
-            ("GIT_COMMITTER_NAME".to_string(), "Test User".to_string()),
-            (
-                "GIT_COMMITTER_EMAIL".to_string(),
-                "test@example.com".to_string(),
-            ),
-            (
-                "GIT_AUTHOR_DATE".to_string(),
-                "2025-10-28T12:00:00Z".to_string(),
-            ),
-            (
-                "GIT_COMMITTER_DATE".to_string(),
-                "2025-10-28T12:00:00Z".to_string(),
-            ),
-            ("LANG".to_string(), "C".to_string()),
-            ("LC_ALL".to_string(), "C".to_string()),
-            ("SOURCE_DATE_EPOCH".to_string(), "1761609600".to_string()),
+        let config_path = repo.test_config_path().to_string_lossy().to_string();
+        let env_vars: Vec<(&str, &str)> = vec![
+            ("CLICOLOR_FORCE", "1"),
+            ("WORKTRUNK_CONFIG_PATH", &config_path),
+            ("TERM", "xterm"),
+            ("GIT_AUTHOR_NAME", "Test User"),
+            ("GIT_AUTHOR_EMAIL", "test@example.com"),
+            ("GIT_COMMITTER_NAME", "Test User"),
+            ("GIT_COMMITTER_EMAIL", "test@example.com"),
+            ("GIT_AUTHOR_DATE", "2025-10-28T12:00:00Z"),
+            ("GIT_COMMITTER_DATE", "2025-10-28T12:00:00Z"),
+            ("LANG", "C"),
+            ("LC_ALL", "C"),
+            ("SOURCE_DATE_EPOCH", "1761609600"),
         ];
 
-        let (combined, exit_code) = exec_in_pty(shell, &final_script, &worktrunk_source, &env_vars);
+        let (combined, exit_code) =
+            exec_in_pty_interactive(shell, &final_script, &worktrunk_source, &env_vars, &[]);
         let output = ShellOutput {
             combined,
             exit_code,
