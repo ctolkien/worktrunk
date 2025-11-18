@@ -66,3 +66,19 @@ wt --source -C /path/to/repo beta select
 ## MCP Limitations
 
 MCP terminals use pseudo-TTY, not real terminals. If tests pass in MCP but users report issues, the bug is likely environment-specific. Always test on the actual problematic repository.
+
+## Shell Completion for CLI Arguments
+
+Branch and worktree arguments should include shell completion for better UX. Add completion helpers to CLI definitions:
+
+```rust
+/// Target branch (defaults to current)
+#[arg(long, add = crate::completion::branch_value_completer())]
+branch: Option<String>,
+```
+
+**Available completers:**
+- `branch_value_completer()` - Completes with branch names
+- `worktree_branch_completer()` - Completes with worktree paths and branch names
+
+**Pattern:** All branch arguments should use `branch_value_completer()` for consistency with commands like `wt merge`, `wt switch --base`, `wt rebase`.

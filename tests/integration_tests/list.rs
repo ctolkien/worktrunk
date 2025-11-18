@@ -611,26 +611,10 @@ fn test_list_json_with_user_status() {
 }
 
 #[test]
-fn test_list_branch_only_ignores_main_worktree_status() {
-    // Regression test for bug where branch-only entries incorrectly inherited
-    // main worktree's worktree-specific status
+fn test_list_branch_only_with_status() {
+    // Test that branch-only entries (no worktree) can display branch-keyed status
     let repo = TestRepo::new();
     repo.commit("Initial commit");
-
-    // Set worktree-specific status on main worktree (requires extensions.worktreeConfig)
-    let mut cmd = Command::new("git");
-    repo.configure_git_cmd(&mut cmd);
-    cmd.args(["config", "extensions.worktreeConfig", "true"])
-        .current_dir(repo.root_path())
-        .output()
-        .expect("Failed to enable worktreeConfig");
-
-    let mut cmd = Command::new("git");
-    repo.configure_git_cmd(&mut cmd);
-    cmd.args(["config", "--worktree", "worktrunk.status", "🏠"])
-        .current_dir(repo.root_path())
-        .output()
-        .expect("Failed to set main worktree status");
 
     // Create a branch-only entry (no worktree)
     let mut cmd = Command::new("git");
@@ -649,7 +633,7 @@ fn test_list_branch_only_ignores_main_worktree_status() {
         .expect("Failed to set branch status");
 
     // Use --branches flag to show branch-only entries
-    snapshot_list_with_branches("branch_only_ignores_main_worktree_status", &repo);
+    snapshot_list_with_branches("branch_only_with_status", &repo);
 }
 
 #[test]

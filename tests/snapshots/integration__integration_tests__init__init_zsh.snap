@@ -16,7 +16,7 @@ info:
     LANG: C
     LC_ALL: C
     SOURCE_DATE_EPOCH: "1761609600"
-    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmptJsgAq/test-config.toml
+    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpVHSm2d/test-config.toml
 ---
 success: true
 exit_code: 0
@@ -241,6 +241,48 @@ _arguments "${_arguments_options[@]}" : \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0
+;;
+(status)
+_arguments "${_arguments_options[@]}" : \
+'-C+[Change working directory]:path:_files' \
+'-v[Show git commands and debug info]' \
+'--verbose[Show git commands and debug info]' \
+'-h[Print help]' \
+'--help[Print help]' \
+":: :_wt__config__status_commands" \
+"*::: :->status" \
+&& ret=0
+
+    case $state in
+    (status)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:wt-config-status-command-$line[1]:"
+        case $line[1] in
+            (set)
+_arguments "${_arguments_options[@]}" : \
+'--branch=[Target branch (defaults to current)]:BRANCH:_default' \
+'-C+[Change working directory]:path:_files' \
+'-v[Show git commands and debug info]' \
+'--verbose[Show git commands and debug info]' \
+'-h[Print help]' \
+'--help[Print help]' \
+':value -- Status emoji to display:_default' \
+&& ret=0
+;;
+(unset)
+_arguments "${_arguments_options[@]}" : \
+'-C+[Change working directory]:path:_files' \
+'-v[Show git commands and debug info]' \
+'--verbose[Show git commands and debug info]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'::target -- Branch or "*" for all:_default' \
+&& ret=0
+;;
+        esac
+    ;;
+esac
 ;;
         esac
     ;;
@@ -496,6 +538,7 @@ _wt__config_commands() {
 'list:List all configuration files and their locations' \
 'refresh-cache:Refresh the cached default branch by querying the remote' \
 'shell:Configure shell by writing to config files' \
+'status:Manage branch status markers' \
     )
     _describe -t commands 'wt config commands' commands "$@"
 }
@@ -518,6 +561,24 @@ _wt__config__refresh-cache_commands() {
 _wt__config__shell_commands() {
     local commands; commands=()
     _describe -t commands 'wt config shell commands' commands "$@"
+}
+(( $+functions[_wt__config__status_commands] )) ||
+_wt__config__status_commands() {
+    local commands; commands=(
+'set:Set status emoji for branch' \
+'unset:Clear status emoji' \
+    )
+    _describe -t commands 'wt config status commands' commands "$@"
+}
+(( $+functions[_wt__config__status__set_commands] )) ||
+_wt__config__status__set_commands() {
+    local commands; commands=()
+    _describe -t commands 'wt config status set commands' commands "$@"
+}
+(( $+functions[_wt__config__status__unset_commands] )) ||
+_wt__config__status__unset_commands() {
+    local commands; commands=()
+    _describe -t commands 'wt config status unset commands' commands "$@"
 }
 (( $+functions[_wt__init_commands] )) ||
 _wt__init_commands() {

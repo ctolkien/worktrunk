@@ -364,16 +364,14 @@ args = ["-m", "claude-haiku-4-5-20251001"]
 
 ### Custom Worktree Status
 
-Add emoji status markers to worktrees that appear in `wt list`. Perfect for tracking work-in-progress states, CI status, or team coordination.
-
-**Set status manually:**
+Add emoji status markers to branches that appear in `wt list`. Perfect for tracking work-in-progress states, CI status, or team coordination.
 
 ```bash
-# Set an emoji status for a branch (works everywhere)
-git config worktrunk.status.feature-x "🚧"
+# Set status for current branch
+wt config status set "🚧"
 
-# Clear the status
-git config --unset worktrunk.status.feature-x
+# Or use git config directly
+git config worktrunk.status.feature-x "🚧"
 ```
 
 **Status appears in the Status column:**
@@ -424,33 +422,6 @@ dirty-with-status   ≡?🤖                  ./myapp.dirty-with-status/
 - The hooks automatically detect the current branch and set/clear its status
 - Status is shared across all worktrees on the same branch (by design)
 - Works with any git repository, no special configuration needed
-
-<details>
-<summary><b>Alternative: Per-Worktree Status (Advanced)</b></summary>
-
-For true per-worktree isolation (different status for multiple worktrees on the same branch), use worktree-specific config:
-
-**One-time setup (enables per-worktree config for the repo):**
-
-```bash
-git config extensions.worktreeConfig true
-```
-
-**Set status from within a worktree:**
-
-```bash
-# From within the worktree
-git config --worktree worktrunk.status "🚧"
-
-# Clear status
-git config --worktree --unset worktrunk.status
-```
-
-**Claude Code hooks for per-worktree:**
-
-Copy the hooks from [`.claude-plugin/hooks/hooks.worktree.json`](.claude-plugin/hooks/hooks.worktree.json) to your `~/.claude/settings.json`.
-
-**Priority:** Worktree-specific config takes precedence over branch-keyed config when both exist.
 
 </details>
 

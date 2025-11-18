@@ -16,7 +16,10 @@ pub mod select;
 pub mod standalone;
 pub mod worktree;
 
-pub use config::{handle_config_init, handle_config_list, handle_config_refresh_cache};
+pub use config::{
+    handle_config_init, handle_config_list, handle_config_refresh_cache, handle_config_status_set,
+    handle_config_status_unset,
+};
 pub use configure_shell::{ConfigAction, handle_configure_shell};
 pub use init::handle_init;
 pub use list::handle_list;

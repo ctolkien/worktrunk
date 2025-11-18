@@ -20,13 +20,14 @@ use commands::handle_select;
 use commands::worktree::{SwitchResult, handle_push};
 use commands::{
     ConfigAction, handle_config_init, handle_config_list, handle_config_refresh_cache,
-    handle_configure_shell, handle_init, handle_list, handle_merge, handle_rebase, handle_remove,
-    handle_squash, handle_standalone_ask_approvals, handle_standalone_clear_approvals,
-    handle_standalone_commit, handle_standalone_run_hook, handle_switch,
+    handle_config_status_set, handle_config_status_unset, handle_configure_shell, handle_init,
+    handle_list, handle_merge, handle_rebase, handle_remove, handle_squash,
+    handle_standalone_ask_approvals, handle_standalone_clear_approvals, handle_standalone_commit,
+    handle_standalone_run_hook, handle_switch,
 };
 use output::{execute_user_command, handle_remove_output, handle_switch_output};
 
-use cli::{Cli, Commands, ConfigCommand, StandaloneCommand};
+use cli::{Cli, Commands, ConfigCommand, StandaloneCommand, StatusAction};
 
 fn main() {
     if completion::maybe_handle_env_completion() {
@@ -176,6 +177,11 @@ fn main() {
                     })
                     .git_err()
             }
+            ConfigCommand::Status { action } => match action {
+                StatusAction::Set { value, branch } => handle_config_status_set(value, branch),
+                StatusAction::Unset { target } => handle_config_status_unset(target),
+            }
+            .git_err(),
         },
         Commands::Standalone { action } => match action {
             StandaloneCommand::RunHook { hook_type, force } => {

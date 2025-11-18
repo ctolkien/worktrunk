@@ -16,7 +16,7 @@ info:
     LANG: C
     LC_ALL: C
     SOURCE_DATE_EPOCH: "1761609600"
-    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpp7A70A/test-config.toml
+    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmpLl28QZ/test-config.toml
 ---
 success: true
 exit_code: 0
@@ -198,13 +198,14 @@ complete -c wt -n "__fish_wt_using_subcommand init" -l command-name -d 'Command 
 complete -c wt -n "__fish_wt_using_subcommand init" -s C -d 'Change working directory' -r -F
 complete -c wt -n "__fish_wt_using_subcommand init" -s v -l verbose -d 'Show git commands and debug info'
 complete -c wt -n "__fish_wt_using_subcommand init" -s h -l help -d 'Print help'
-complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list refresh-cache shell" -s C -d 'Change working directory' -r -F
-complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list refresh-cache shell" -s v -l verbose -d 'Show git commands and debug info'
-complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list refresh-cache shell" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list refresh-cache shell" -f -a "init" -d 'Initialize global configuration file with examples'
-complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list refresh-cache shell" -f -a "list" -d 'List all configuration files and their locations'
-complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list refresh-cache shell" -f -a "refresh-cache" -d 'Refresh the cached default branch by querying the remote'
-complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list refresh-cache shell" -f -a "shell" -d 'Configure shell by writing to config files'
+complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list refresh-cache shell status" -s C -d 'Change working directory' -r -F
+complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list refresh-cache shell status" -s v -l verbose -d 'Show git commands and debug info'
+complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list refresh-cache shell status" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list refresh-cache shell status" -f -a "init" -d 'Initialize global configuration file with examples'
+complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list refresh-cache shell status" -f -a "list" -d 'List all configuration files and their locations'
+complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list refresh-cache shell status" -f -a "refresh-cache" -d 'Refresh the cached default branch by querying the remote'
+complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list refresh-cache shell status" -f -a "shell" -d 'Configure shell by writing to config files'
+complete -c wt -n "__fish_wt_using_subcommand config; and not __fish_seen_subcommand_from init list refresh-cache shell status" -f -a "status" -d 'Manage branch status markers'
 complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from init" -s C -d 'Change working directory' -r -F
 complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from init" -s v -l verbose -d 'Show git commands and debug info'
 complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from init" -s h -l help -d 'Print help'
@@ -222,6 +223,11 @@ complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand
 complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from shell" -s f -l force -d 'Skip confirmation prompt'
 complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from shell" -s v -l verbose -d 'Show git commands and debug info'
 complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from shell" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from status" -s C -d 'Change working directory' -r -F
+complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from status" -s v -l verbose -d 'Show git commands and debug info'
+complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from status" -s h -l help -d 'Print help'
+complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from status" -f -a "set" -d 'Set status emoji for branch'
+complete -c wt -n "__fish_wt_using_subcommand config; and __fish_seen_subcommand_from status" -f -a "unset" -d 'Clear status emoji'
 complete -c wt -n "__fish_wt_using_subcommand beta; and not __fish_seen_subcommand_from run-hook commit squash push rebase ask-approvals clear-approvals select" -s C -d 'Change working directory' -r -F
 complete -c wt -n "__fish_wt_using_subcommand beta; and not __fish_seen_subcommand_from run-hook commit squash push rebase ask-approvals clear-approvals select" -s v -l verbose -d 'Show git commands and debug info'
 complete -c wt -n "__fish_wt_using_subcommand beta; and not __fish_seen_subcommand_from run-hook commit squash push rebase ask-approvals clear-approvals select" -s h -l help -d 'Print help'

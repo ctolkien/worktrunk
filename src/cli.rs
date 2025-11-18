@@ -111,6 +111,32 @@ Oil Shell (~/.config/oil/oshrc):
         #[arg(long, default_value = DEFAULT_COMMAND_NAME)]
         command_name: String,
     },
+
+    /// Manage branch status markers
+    Status {
+        #[command(subcommand)]
+        action: StatusAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum StatusAction {
+    /// Set status emoji for branch
+    Set {
+        /// Status emoji to display
+        value: String,
+
+        /// Target branch (defaults to current)
+        #[arg(long, add = crate::completion::branch_value_completer())]
+        branch: Option<String>,
+    },
+
+    /// Clear status emoji
+    Unset {
+        /// Branch or "*" for all
+        #[arg(default_value = "", add = crate::completion::branch_value_completer())]
+        target: String,
+    },
 }
 
 #[derive(Subcommand)]

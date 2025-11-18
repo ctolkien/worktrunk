@@ -13,6 +13,7 @@ pub mod completion;
 pub mod completion_validation;
 pub mod config_init;
 pub mod config_list;
+pub mod config_status;
 pub mod configure_shell;
 pub mod default_branch;
 pub mod directives;

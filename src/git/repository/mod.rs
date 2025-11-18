@@ -231,16 +231,8 @@ impl Repository {
             .filter(|s| !s.is_empty())
     }
 
-    /// Read user-defined status, preferring worktree config then falling back to branch-keyed.
+    /// Read user-defined branch-keyed status.
     pub fn user_status(&self, branch: Option<&str>) -> Option<String> {
-        if let Ok(output) = self.run_command(&["config", "--worktree", "--get", "worktrunk.status"])
-        {
-            let status = output.trim().to_string();
-            if !status.is_empty() {
-                return Some(status);
-            }
-        }
-
         branch.and_then(|branch| self.branch_keyed_status(branch))
     }
 

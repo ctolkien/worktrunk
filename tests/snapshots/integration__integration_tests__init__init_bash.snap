@@ -16,7 +16,7 @@ info:
     LANG: C
     LC_ALL: C
     SOURCE_DATE_EPOCH: "1761609600"
-    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmppHjR06/test-config.toml
+    WORKTRUNK_CONFIG_PATH: /var/folders/wf/s6ycxvvs4ln8qsdbfx40hnc40000gn/T/.tmplQc7bx/test-config.toml
 ---
 success: true
 exit_code: 0
@@ -214,6 +214,15 @@ _wt() {
             wt__config,shell)
                 cmd="wt__config__shell"
                 ;;
+            wt__config,status)
+                cmd="wt__config__status"
+                ;;
+            wt__config__status,set)
+                cmd="wt__config__status__set"
+                ;;
+            wt__config__status,unset)
+                cmd="wt__config__status__unset"
+                ;;
             *)
                 ;;
         esac
@@ -401,7 +410,7 @@ _wt() {
             return 0
             ;;
         wt__config)
-            opts="-C -v -h --verbose --help init list refresh-cache shell"
+            opts="-C -v -h --verbose --help init list refresh-cache shell status"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -487,6 +496,64 @@ _wt() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        wt__config__status)
+            opts="-C -v -h --verbose --help set unset"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        wt__config__status__set)
+            opts="-C -v -h --branch --verbose --help <VALUE>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --branch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        wt__config__status__unset)
+            opts="-C -v -h --verbose --help [TARGET]"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
                 -C)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
