@@ -81,6 +81,12 @@ impl DirectiveOutput {
         io::stderr().flush()
     }
 
+    pub fn error(&mut self, message: String) -> io::Result<()> {
+        // Error messages go to stderr (already formatted, include ❌ emoji from GitError::Display)
+        writeln!(io::stderr(), "{message}")?;
+        io::stderr().flush()
+    }
+
     #[cfg(unix)]
     pub fn blank_line(&mut self) -> io::Result<()> {
         // Blank lines are only meaningful in interactive mode; no-op here to avoid empty directives

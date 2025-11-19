@@ -124,6 +124,23 @@ pub fn warning(message: impl Into<String>) -> io::Result<()> {
     })
 }
 
+/// Emit an error message
+///
+/// Error messages are critical failures like "❌ Cannot remove main worktree"
+/// The message is already formatted (includes ERROR_EMOJI from GitError::Display).
+///
+/// In interactive mode: goes to stdout (with other worktrunk output)
+/// In directive mode: goes to stderr (with other user-facing messages)
+pub fn error(message: impl Into<String>) -> io::Result<()> {
+    OUTPUT_CONTEXT.with(|ctx| {
+        let msg = message.into();
+        match &mut *ctx.borrow_mut() {
+            OutputHandler::Interactive(i) => i.error(msg),
+            OutputHandler::Directive(d) => d.error(msg),
+        }
+    })
+}
+
 /// Insert a blank line between UI output and worktrunk messages
 #[cfg(unix)]
 pub fn blank_line() -> io::Result<()> {

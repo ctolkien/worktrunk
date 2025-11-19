@@ -57,6 +57,13 @@ impl InteractiveOutput {
         Ok(())
     }
 
+    pub fn error(&mut self, message: String) -> io::Result<()> {
+        // Error messages are already formatted (include ❌ emoji from GitError::Display)
+        println!("{message}");
+        stdout().flush()?;
+        Ok(())
+    }
+
     #[cfg(unix)]
     pub fn blank_line(&mut self) -> io::Result<()> {
         // Ensure subsequent output starts on a fresh line after interactive UIs like skim

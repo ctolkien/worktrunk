@@ -27,11 +27,10 @@ fn test_switch_internal_directive() {
         success: false
         exit_code: 1
         ----- stdout -----
-        ❌ [31mFailed to create worktree for [1m[31mmy-feature[0m[0m
-        [40m [0m  fatal: invalid reference: my-feature
-
 
         ----- stderr -----
+        ❌ [31mFailed to create worktree for [1m[31mmy-feature[0m[0m
+        [40m [0m  fatal: invalid reference: my-feature
         ");
     });
 }
@@ -88,12 +87,12 @@ fn test_remove_internal_directive() {
         success: false
         exit_code: 1
         ----- stdout -----
-        ❌ [31mCannot remove main worktree[0m
-
-        💡 [2mUse 'wt remove' from a secondary worktree, or 'wt switch' to change branches[0m
 
         ----- stderr -----
         🔄 [36mRemoving worktree for [1m[36mmain[0m...[0m
+        ❌ [31mCannot remove main worktree[0m
+
+        💡 [2mUse 'wt remove' from a secondary worktree, or 'wt switch' to change branches[0m
         ");
     });
 }

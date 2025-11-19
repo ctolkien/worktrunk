@@ -336,8 +336,10 @@ fn main() {
 
     if let Err(e) = result {
         // Error messages are already formatted with emoji and colors
-        // Per CLAUDE.md: worktrunk output (including errors) goes to stdout
-        println!("{}", e);
+        // Route through output system to respect mode:
+        // - Interactive mode: errors go to stdout
+        // - Directive mode: errors go to stderr
+        let _ = output::error(e.to_string());
 
         // Preserve exit code from child processes (especially for signals like SIGINT)
         let exit_code = match &e {
