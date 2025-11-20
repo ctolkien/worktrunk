@@ -1715,12 +1715,12 @@ fn test_list_maximum_status_symbols() {
         .output()
         .unwrap();
 
-    // Prune reflog to ensure deterministic ahead/behind calculation after force push.
-    // Without this, the reflog may retain the old origin/feature reference (before force push),
-    // causing git rev-list --left-right --count to calculate merge-base differently across platforms.
+    // Run git gc to ensure deterministic ahead/behind calculation after force push.
+    // Force pushes can leave stale references that affect merge-base calculation differently
+    // across platforms. Git gc cleans up unreachable objects and packs references.
     let mut cmd = Command::new("git");
     repo.configure_git_cmd(&mut cmd);
-    cmd.args(["reflog", "expire", "--expire=now", "--all"])
+    cmd.args(["gc", "--prune=now"])
         .current_dir(&feature)
         .output()
         .unwrap();
