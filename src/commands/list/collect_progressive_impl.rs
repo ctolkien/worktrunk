@@ -10,11 +10,301 @@
 //! - Continue silently (current behavior)
 
 use crossbeam_channel::Sender;
+use std::path::PathBuf;
 use worktrunk::git::{LineDiff, Repository, Worktree};
 
 use super::ci_status::PrStatus;
 use super::collect::{CellUpdate, detect_worktree_state};
 use super::model::{AheadBehind, BranchDiffTotals, CommitDetails, UpstreamStatus};
+
+/// Context for spawning parallel tasks.
+struct TaskContext {
+    repo_path: PathBuf,
+    commit_sha: String,
+    branch: Option<String>,
+    base_branch: Option<String>,
+    item_idx: usize,
+}
+
+/// Spawn task 1: Commit details (timestamp, message)
+fn spawn_commit_details<'scope>(
+    s: &'scope std::thread::Scope<'scope, '_>,
+    ctx: &TaskContext,
+    tx: Sender<CellUpdate>,
+) {
+    let item_idx = ctx.item_idx;
+    let sha = ctx.commit_sha.clone();
+    let path = ctx.repo_path.clone();
+    s.spawn(move || {
+        let repo = Repository::at(&path);
+        // TODO: Handle errors - for now, simplest thing is to skip on error
+        if let (Ok(timestamp), Ok(commit_message)) =
+            (repo.commit_timestamp(&sha), repo.commit_message(&sha))
+        {
+            let _ = tx.send(CellUpdate::CommitDetails {
+                item_idx,
+                commit: CommitDetails {
+                    timestamp,
+                    commit_message,
+                },
+            });
+        }
+    });
+}
+
+/// Spawn task 2: Ahead/behind counts
+fn spawn_ahead_behind<'scope>(
+    s: &'scope std::thread::Scope<'scope, '_>,
+    ctx: &TaskContext,
+    tx: Sender<CellUpdate>,
+) {
+    if let Some(base) = ctx.base_branch.as_deref() {
+        let item_idx = ctx.item_idx;
+        let sha = ctx.commit_sha.clone();
+        let path = ctx.repo_path.clone();
+        let base = base.to_string();
+        s.spawn(move || {
+            let repo = Repository::at(&path);
+            // TODO: Handle errors
+            if let Ok((ahead, behind)) = repo.ahead_behind(&base, &sha) {
+                let _ = tx.send(CellUpdate::AheadBehind {
+                    item_idx,
+                    counts: AheadBehind { ahead, behind },
+                });
+            }
+        });
+    }
+}
+
+/// Spawn task 3: Branch diff
+fn spawn_branch_diff<'scope>(
+    s: &'scope std::thread::Scope<'scope, '_>,
+    ctx: &TaskContext,
+    tx: Sender<CellUpdate>,
+) {
+    if let Some(base) = ctx.base_branch.as_deref() {
+        let item_idx = ctx.item_idx;
+        let sha = ctx.commit_sha.clone();
+        let path = ctx.repo_path.clone();
+        let base = base.to_string();
+        s.spawn(move || {
+            let repo = Repository::at(&path);
+            // TODO: Handle errors
+            if let Ok(diff) = repo.branch_diff_stats(&base, &sha) {
+                let _ = tx.send(CellUpdate::BranchDiff {
+                    item_idx,
+                    branch_diff: BranchDiffTotals { diff },
+                });
+            }
+        });
+    }
+}
+
+/// Spawn task 4 (worktree only): Working tree diff + status symbols
+fn spawn_working_tree_diff<'scope>(
+    s: &'scope std::thread::Scope<'scope, '_>,
+    ctx: &TaskContext,
+    tx: Sender<CellUpdate>,
+) {
+    let item_idx = ctx.item_idx;
+    let path = ctx.repo_path.clone();
+    let base = ctx.base_branch.clone();
+    s.spawn(move || {
+        let repo = Repository::at(&path);
+        // TODO: Handle errors
+        if let Ok(status_output) = repo.run_command(&["status", "--porcelain"]) {
+            // Parse status to get symbols and is_dirty
+            let (working_tree_symbols, is_dirty) = parse_status_for_symbols(&status_output);
+
+            // Get working tree diff
+            let working_tree_diff = if is_dirty {
+                repo.working_tree_diff_stats().unwrap_or_default()
+            } else {
+                LineDiff::default()
+            };
+
+            // Get diff with main
+            let working_tree_diff_with_main = repo
+                .working_tree_diff_with_base(base.as_deref(), is_dirty)
+                .ok()
+                .flatten();
+
+            let _ = tx.send(CellUpdate::WorkingTreeDiff {
+                item_idx,
+                working_tree_diff,
+                working_tree_diff_with_main,
+                working_tree_symbols,
+                is_dirty,
+            });
+        }
+    });
+}
+
+/// Spawn task 5: Conflicts check
+fn spawn_conflicts<'scope>(
+    s: &'scope std::thread::Scope<'scope, '_>,
+    ctx: &TaskContext,
+    check_conflicts: bool,
+    send_default_on_skip: bool,
+    tx: Sender<CellUpdate>,
+) {
+    let item_idx = ctx.item_idx;
+    if check_conflicts && let Some(base) = ctx.base_branch.as_deref() {
+        let sha = ctx.commit_sha.clone();
+        let path = ctx.repo_path.clone();
+        let base = base.to_string();
+        s.spawn(move || {
+            let repo = Repository::at(&path);
+            // TODO: Handle errors
+            let has_conflicts = repo.has_merge_conflicts(&base, &sha).unwrap_or(false);
+            let _ = tx.send(CellUpdate::Conflicts {
+                item_idx,
+                has_conflicts,
+            });
+        });
+    } else if send_default_on_skip {
+        // Send default value when not checking conflicts (worktree behavior)
+        let _ = tx.send(CellUpdate::Conflicts {
+            item_idx,
+            has_conflicts: false,
+        });
+    }
+    // Branch behavior: don't send anything when not checking
+}
+
+/// Spawn task 6 (worktree only): Worktree state detection
+fn spawn_worktree_state<'scope>(
+    s: &'scope std::thread::Scope<'scope, '_>,
+    ctx: &TaskContext,
+    tx: Sender<CellUpdate>,
+) {
+    let item_idx = ctx.item_idx;
+    let path = ctx.repo_path.clone();
+    s.spawn(move || {
+        let repo = Repository::at(&path);
+        let worktree_state = detect_worktree_state(&repo);
+        let _ = tx.send(CellUpdate::WorktreeState {
+            item_idx,
+            worktree_state,
+        });
+    });
+}
+
+/// Spawn task 7 (worktree only): User status
+fn spawn_user_status<'scope>(
+    s: &'scope std::thread::Scope<'scope, '_>,
+    ctx: &TaskContext,
+    tx: Sender<CellUpdate>,
+) {
+    let item_idx = ctx.item_idx;
+    let path = ctx.repo_path.clone();
+    let branch = ctx.branch.clone();
+    s.spawn(move || {
+        let repo = Repository::at(&path);
+        let user_status = repo.user_status(branch.as_deref());
+        let _ = tx.send(CellUpdate::UserStatus {
+            item_idx,
+            user_status,
+        });
+    });
+}
+
+/// Spawn task 8: Upstream status
+fn spawn_upstream<'scope>(
+    s: &'scope std::thread::Scope<'scope, '_>,
+    ctx: &TaskContext,
+    verbose_errors: bool,
+    tx: Sender<CellUpdate>,
+) {
+    let item_idx = ctx.item_idx;
+    let branch = ctx.branch.clone();
+    let sha = ctx.commit_sha.clone();
+    let path = ctx.repo_path.clone();
+    s.spawn(move || {
+        let repo = Repository::at(&path);
+        let upstream = if let Some(branch) = branch.as_deref() {
+            match repo.upstream_branch(branch) {
+                Ok(Some(upstream_branch)) => {
+                    let remote = upstream_branch.split_once('/').map(|(r, _)| r.to_string());
+                    match repo.ahead_behind(&upstream_branch, &sha) {
+                        Ok((ahead, behind)) => Some(UpstreamStatus {
+                            remote,
+                            ahead,
+                            behind,
+                        }),
+                        Err(e) => {
+                            if verbose_errors {
+                                eprintln!(
+                                    "Warning: ahead_behind failed for {}: {}",
+                                    path.display(),
+                                    e
+                                );
+                            }
+                            None
+                        }
+                    }
+                }
+                Ok(None) => None, // No upstream configured
+                Err(e) => {
+                    if verbose_errors {
+                        eprintln!(
+                            "Warning: upstream_branch failed for {}: {}",
+                            path.display(),
+                            e
+                        );
+                    }
+                    None
+                }
+            }
+        } else {
+            None // No branch (detached HEAD)
+        };
+        let upstream = upstream.unwrap_or_default();
+        let _ = tx.send(CellUpdate::Upstream { item_idx, upstream });
+    });
+}
+
+/// Spawn task 9: CI/PR status
+fn spawn_ci_status<'scope>(
+    s: &'scope std::thread::Scope<'scope, '_>,
+    ctx: &TaskContext,
+    fetch_ci: bool,
+    is_worktree: bool,
+    tx: Sender<CellUpdate>,
+) {
+    if !fetch_ci {
+        return;
+    }
+
+    let item_idx = ctx.item_idx;
+    let branch = ctx.branch.clone();
+    let sha = ctx.commit_sha.clone();
+    let path = ctx.repo_path.clone();
+    s.spawn(move || {
+        if is_worktree {
+            // Worktree: get repo path from worktree_root()
+            let repo = Repository::at(&path);
+            if let Ok(repo_path) = repo.worktree_root() {
+                let pr_status = branch
+                    .as_deref()
+                    .and_then(|branch| PrStatus::detect(branch, &sha, &repo_path));
+                let _ = tx.send(CellUpdate::CiStatus {
+                    item_idx,
+                    pr_status,
+                });
+            }
+        } else {
+            // Branch: use repo_path directly
+            let pr_status = branch
+                .as_deref()
+                .and_then(|branch| PrStatus::detect(branch, &sha, &path));
+            let _ = tx.send(CellUpdate::CiStatus {
+                item_idx,
+                pr_status,
+            });
+        }
+    });
+}
 
 /// Collect worktree data progressively, sending cell updates as each task completes.
 ///
@@ -44,229 +334,24 @@ pub fn collect_worktree_progressive(
         .as_deref()
         .filter(|_| wt.path != primary.path);
 
-    // Clone data needed across threads
-    let wt_path = wt.path.clone();
-    let wt_head = wt.head.clone();
-    let wt_branch = wt.branch.clone();
-    let base_branch_owned = base_branch.map(String::from);
+    let ctx = TaskContext {
+        repo_path: wt.path.clone(),
+        commit_sha: wt.head.clone(),
+        branch: wt.branch.clone(),
+        base_branch: base_branch.map(String::from),
+        item_idx,
+    };
 
-    // Spawn all tasks in parallel using scoped threads
     std::thread::scope(|s| {
-        // Task 1: Commit details
-        {
-            let tx = tx.clone();
-            let head = wt_head.clone();
-            let path = wt_path.clone();
-            s.spawn(move || {
-                let repo = Repository::at(&path);
-                // TODO: Handle errors - for now, simplest thing is to skip on error
-                if let (Ok(timestamp), Ok(commit_message)) =
-                    (repo.commit_timestamp(&head), repo.commit_message(&head))
-                {
-                    let _ = tx.send(CellUpdate::CommitDetails {
-                        item_idx,
-                        commit: CommitDetails {
-                            timestamp,
-                            commit_message,
-                        },
-                    });
-                }
-            });
-        }
-
-        // Task 2: Ahead/behind counts
-        if let Some(base) = base_branch_owned.as_deref() {
-            let tx = tx.clone();
-            let head = wt_head.clone();
-            let path = wt_path.clone();
-            let base = base.to_string();
-            s.spawn(move || {
-                let repo = Repository::at(&path);
-                // TODO: Handle errors
-                if let Ok((ahead, behind)) = repo.ahead_behind(&base, &head) {
-                    let _ = tx.send(CellUpdate::AheadBehind {
-                        item_idx,
-                        counts: AheadBehind { ahead, behind },
-                    });
-                }
-            });
-        }
-
-        // Task 3: Branch diff
-        if let Some(base) = base_branch_owned.as_deref() {
-            let tx = tx.clone();
-            let head = wt_head.clone();
-            let path = wt_path.clone();
-            let base = base.to_string();
-            s.spawn(move || {
-                let repo = Repository::at(&path);
-                // TODO: Handle errors
-                if let Ok(diff) = repo.branch_diff_stats(&base, &head) {
-                    let _ = tx.send(CellUpdate::BranchDiff {
-                        item_idx,
-                        branch_diff: BranchDiffTotals { diff },
-                    });
-                }
-            });
-        }
-
-        // Task 4: Working tree diff + status symbols
-        {
-            let tx = tx.clone();
-            let path = wt_path.clone();
-            let base = base_branch_owned.clone();
-            s.spawn(move || {
-                let repo = Repository::at(&path);
-                // TODO: Handle errors
-                if let Ok(status_output) = repo.run_command(&["status", "--porcelain"]) {
-                    // Parse status to get symbols and is_dirty
-                    let (working_tree_symbols, is_dirty) = parse_status_for_symbols(&status_output);
-
-                    // Get working tree diff
-                    let working_tree_diff = if is_dirty {
-                        repo.working_tree_diff_stats().unwrap_or_default()
-                    } else {
-                        LineDiff::default()
-                    };
-
-                    // Get diff with main
-                    let working_tree_diff_with_main = repo
-                        .working_tree_diff_with_base(base.as_deref(), is_dirty)
-                        .ok()
-                        .flatten();
-
-                    let _ = tx.send(CellUpdate::WorkingTreeDiff {
-                        item_idx,
-                        working_tree_diff,
-                        working_tree_diff_with_main,
-                        working_tree_symbols,
-                        is_dirty,
-                    });
-                }
-            });
-        }
-
-        // Task 5: Conflicts check (always send, even if not checking)
-        {
-            let tx = tx.clone();
-            if check_conflicts && let Some(base) = base_branch_owned.as_deref() {
-                let head = wt_head.clone();
-                let path = wt_path.clone();
-                let base = base.to_string();
-                s.spawn(move || {
-                    let repo = Repository::at(&path);
-                    // TODO: Handle errors
-                    let has_conflicts = repo.has_merge_conflicts(&base, &head).unwrap_or(false);
-                    let _ = tx.send(CellUpdate::Conflicts {
-                        item_idx,
-                        has_conflicts,
-                    });
-                });
-            } else {
-                // Send default value when not checking conflicts
-                let _ = tx.send(CellUpdate::Conflicts {
-                    item_idx,
-                    has_conflicts: false,
-                });
-            }
-        }
-
-        // Task 6: Worktree state detection
-        {
-            let tx = tx.clone();
-            let path = wt_path.clone();
-            s.spawn(move || {
-                let repo = Repository::at(&path);
-                let worktree_state = detect_worktree_state(&repo);
-                let _ = tx.send(CellUpdate::WorktreeState {
-                    item_idx,
-                    worktree_state,
-                });
-            });
-        }
-
-        // Task 7: User status
-        {
-            let tx = tx.clone();
-            let path = wt_path.clone();
-            let branch = wt_branch.clone();
-            s.spawn(move || {
-                let repo = Repository::at(&path);
-                let user_status = repo.user_status(branch.as_deref());
-                let _ = tx.send(CellUpdate::UserStatus {
-                    item_idx,
-                    user_status,
-                });
-            });
-        }
-
-        // Task 8: Upstream status (always sends)
-        {
-            let tx = tx.clone();
-            let branch = wt_branch.clone();
-            let head = wt_head.clone();
-            let path = wt_path.clone();
-            s.spawn(move || {
-                let repo = Repository::at(&path);
-                let upstream = if let Some(branch) = branch.as_deref() {
-                    match repo.upstream_branch(branch) {
-                        Ok(Some(upstream_branch)) => {
-                            let remote =
-                                upstream_branch.split_once('/').map(|(r, _)| r.to_string());
-                            match repo.ahead_behind(&upstream_branch, &head) {
-                                Ok((ahead, behind)) => Some(UpstreamStatus {
-                                    remote,
-                                    ahead,
-                                    behind,
-                                }),
-                                Err(e) => {
-                                    eprintln!(
-                                        "Warning: ahead_behind failed for {}: {}",
-                                        path.display(),
-                                        e
-                                    );
-                                    None
-                                }
-                            }
-                        }
-                        Ok(None) => None, // No upstream configured
-                        Err(e) => {
-                            eprintln!(
-                                "Warning: upstream_branch failed for {}: {}",
-                                path.display(),
-                                e
-                            );
-                            None
-                        }
-                    }
-                } else {
-                    None // No branch (detached HEAD)
-                };
-                let upstream = upstream.unwrap_or_default();
-                let _ = tx.send(CellUpdate::Upstream { item_idx, upstream });
-            });
-        }
-
-        // Task 9: CI status
-        if fetch_ci {
-            let tx = tx.clone();
-            let branch = wt_branch.clone();
-            let head = wt_head.clone();
-            let path = wt_path.clone();
-            s.spawn(move || {
-                let repo = Repository::at(&path);
-                // TODO: Handle errors
-                if let Ok(repo_path) = repo.worktree_root() {
-                    let pr_status = branch
-                        .as_deref()
-                        .and_then(|branch| PrStatus::detect(branch, &head, &repo_path));
-                    let _ = tx.send(CellUpdate::CiStatus {
-                        item_idx,
-                        pr_status,
-                    });
-                }
-            });
-        }
+        spawn_commit_details(s, &ctx, tx.clone());
+        spawn_ahead_behind(s, &ctx, tx.clone());
+        spawn_branch_diff(s, &ctx, tx.clone());
+        spawn_working_tree_diff(s, &ctx, tx.clone());
+        spawn_conflicts(s, &ctx, check_conflicts, true, tx.clone());
+        spawn_worktree_state(s, &ctx, tx.clone());
+        spawn_user_status(s, &ctx, tx.clone());
+        spawn_upstream(s, &ctx, true, tx.clone());
+        spawn_ci_status(s, &ctx, fetch_ci, true, tx);
     });
 }
 
@@ -351,139 +436,20 @@ pub fn collect_branch_progressive(
     check_conflicts: bool,
     tx: Sender<CellUpdate>,
 ) {
-    let base_branch = primary.branch.as_deref();
-    let repo_path = primary.path.clone();
+    let ctx = TaskContext {
+        repo_path: primary.path.clone(),
+        commit_sha: commit_sha.to_string(),
+        branch: Some(branch_name.to_string()),
+        base_branch: primary.branch.as_deref().map(String::from),
+        item_idx,
+    };
 
-    // Clone data needed across threads
-    let branch_name_owned = branch_name.to_string();
-    let commit_sha_owned = commit_sha.to_string();
-
-    // Spawn all tasks in parallel using scoped threads
     std::thread::scope(|s| {
-        // Task 1: Commit details
-        {
-            let tx = tx.clone();
-            let sha = commit_sha_owned.clone();
-            let path = repo_path.clone();
-            s.spawn(move || {
-                let repo = Repository::at(&path);
-                // TODO: Handle errors - for now, simplest thing is to skip on error
-                if let (Ok(timestamp), Ok(commit_message)) =
-                    (repo.commit_timestamp(&sha), repo.commit_message(&sha))
-                {
-                    let _ = tx.send(CellUpdate::CommitDetails {
-                        item_idx,
-                        commit: CommitDetails {
-                            timestamp,
-                            commit_message,
-                        },
-                    });
-                }
-            });
-        }
-
-        // Task 2: Ahead/behind counts
-        if let Some(base) = base_branch {
-            let tx = tx.clone();
-            let sha = commit_sha_owned.clone();
-            let path = repo_path.clone();
-            let base = base.to_string();
-            s.spawn(move || {
-                let repo = Repository::at(&path);
-                // TODO: Handle errors
-                if let Ok((ahead, behind)) = repo.ahead_behind(&base, &sha) {
-                    let _ = tx.send(CellUpdate::AheadBehind {
-                        item_idx,
-                        counts: AheadBehind { ahead, behind },
-                    });
-                }
-            });
-        }
-
-        // Task 3: Branch diff
-        if let Some(base) = base_branch {
-            let tx = tx.clone();
-            let sha = commit_sha_owned.clone();
-            let path = repo_path.clone();
-            let base = base.to_string();
-            s.spawn(move || {
-                let repo = Repository::at(&path);
-                // TODO: Handle errors
-                if let Ok(diff) = repo.branch_diff_stats(&base, &sha) {
-                    let _ = tx.send(CellUpdate::BranchDiff {
-                        item_idx,
-                        branch_diff: BranchDiffTotals { diff },
-                    });
-                }
-            });
-        }
-
-        // Task 4: Upstream status
-        {
-            let tx = tx.clone();
-            let branch = branch_name_owned.clone();
-            let sha = commit_sha_owned.clone();
-            let path = repo_path.clone();
-            s.spawn(move || {
-                let repo = Repository::at(&path);
-                let upstream = match repo.upstream_branch(&branch) {
-                    Ok(Some(upstream_branch)) => {
-                        let remote = upstream_branch.split_once('/').map(|(r, _)| r.to_string());
-                        match repo.ahead_behind(&upstream_branch, &sha) {
-                            Ok((ahead, behind)) => Some(UpstreamStatus {
-                                remote,
-                                ahead,
-                                behind,
-                            }),
-                            Err(_) => None,
-                        }
-                    }
-                    Ok(None) => None, // No upstream configured
-                    Err(_) => None,
-                };
-
-                let _ = tx.send(CellUpdate::Upstream {
-                    item_idx,
-                    upstream: upstream.unwrap_or(UpstreamStatus {
-                        remote: None,
-                        ahead: 0,
-                        behind: 0,
-                    }),
-                });
-            });
-        }
-
-        // Task 5: Conflicts check
-        if check_conflicts && let Some(base) = base_branch {
-            let tx = tx.clone();
-            let sha = commit_sha_owned.clone();
-            let path = repo_path.clone();
-            let base = base.to_string();
-            s.spawn(move || {
-                let repo = Repository::at(&path);
-                // TODO: Handle errors
-                if let Ok(has_conflicts) = repo.has_merge_conflicts(&base, &sha) {
-                    let _ = tx.send(CellUpdate::Conflicts {
-                        item_idx,
-                        has_conflicts,
-                    });
-                }
-            });
-        }
-
-        // Task 6: CI/PR status
-        if fetch_ci {
-            let tx = tx.clone();
-            let branch = branch_name_owned.clone();
-            let sha = commit_sha_owned.clone();
-            let path = repo_path.clone();
-            s.spawn(move || {
-                let pr_status = PrStatus::detect(&branch, &sha, &path);
-                let _ = tx.send(CellUpdate::CiStatus {
-                    item_idx,
-                    pr_status,
-                });
-            });
-        }
+        spawn_commit_details(s, &ctx, tx.clone());
+        spawn_ahead_behind(s, &ctx, tx.clone());
+        spawn_branch_diff(s, &ctx, tx.clone());
+        spawn_upstream(s, &ctx, false, tx.clone());
+        spawn_conflicts(s, &ctx, check_conflicts, false, tx.clone());
+        spawn_ci_status(s, &ctx, fetch_ci, false, tx);
     });
 }
