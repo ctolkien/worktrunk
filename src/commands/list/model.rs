@@ -205,7 +205,6 @@ pub struct ListItem {
 
 pub struct ListData {
     pub items: Vec<ListItem>,
-    pub current_worktree_path: Option<PathBuf>,
 }
 
 impl ListItem {

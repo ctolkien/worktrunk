@@ -174,10 +174,7 @@ use std::path::{Path, PathBuf};
 use unicode_width::UnicodeWidthStr;
 use worktrunk::styling::{ADDITION, DELETION};
 
-use super::{
-    columns::{COLUMN_SPECS, ColumnKind, ColumnSpec, DiffVariant},
-    model::ListItem,
-};
+use super::columns::{COLUMN_SPECS, ColumnKind, ColumnSpec, DiffVariant};
 
 /// Width of short commit hash display (first 8 hex characters)
 const COMMIT_HASH_WIDTH: usize = 8;
@@ -512,8 +509,8 @@ fn build_estimated_widths(max_branch: usize, show_full: bool, fetch_ci: bool) ->
 
 /// Allocate columns using priority-based allocation logic.
 ///
-/// This is the core allocation algorithm used by both `calculate_responsive_layout()`
-/// and `calculate_layout_from_basics()`. Both now use the same pre-allocated width estimates.
+/// This is the core allocation algorithm used by `calculate_layout_from_basics()`
+/// with pre-allocated width estimates for expensive-to-compute columns.
 fn allocate_columns_with_priority(
     metadata: &LayoutMetadata,
     show_full: bool,
@@ -659,56 +656,6 @@ fn allocate_columns_with_priority(
         hidden_nonempty_count,
         status_position_mask: metadata.status_position_mask,
     }
-}
-
-/// Calculate responsive layout based on terminal width
-pub fn calculate_responsive_layout(
-    items: &[ListItem],
-    show_full: bool,
-    fetch_ci: bool,
-) -> LayoutConfig {
-    let terminal_width = get_safe_list_width();
-    let paths: Vec<&Path> = items
-        .iter()
-        .filter_map(|item| item.worktree_path().map(|path| path.as_path()))
-        .collect();
-    let common_prefix = find_common_prefix(&paths);
-
-    // Calculate max branch width from actual data
-    let max_branch = items
-        .iter()
-        .map(|item| item.branch_name().width())
-        .max()
-        .unwrap_or(0);
-    let max_branch = fit_header(HEADER_BRANCH, max_branch);
-
-    // Build pre-allocated width estimates (same as progressive mode)
-    let metadata = build_estimated_widths(max_branch, show_full, fetch_ci);
-
-    // Calculate actual maximum path width (after common prefix removal)
-    let path_data_width = items
-        .iter()
-        .filter_map(|item| item.worktree_path())
-        .map(|path| {
-            use crate::display::shorten_path;
-            use unicode_width::UnicodeWidthStr;
-            shorten_path(path.as_path(), &common_prefix).width()
-        })
-        .max()
-        .unwrap_or(0);
-    let max_path_width = fit_header(HEADER_PATH, path_data_width);
-
-    let commit_width = fit_header(HEADER_COMMIT, COMMIT_HASH_WIDTH);
-
-    allocate_columns_with_priority(
-        &metadata,
-        show_full,
-        fetch_ci,
-        max_path_width,
-        commit_width,
-        terminal_width,
-        common_prefix,
-    )
 }
 
 /// Calculate responsive layout from basic worktree info.
@@ -860,12 +807,12 @@ mod tests {
     #[test]
     fn test_visible_columns_follow_gap_rule() {
         use crate::commands::list::model::{
-            AheadBehind, BranchDiffTotals, CommitDetails, DisplayFields, ItemKind, StatusSymbols,
-            UpstreamStatus, WorktreeData,
+            AheadBehind, BranchDiffTotals, CommitDetails, DisplayFields, ItemKind, ListItem,
+            StatusSymbols, UpstreamStatus, WorktreeData,
         };
 
         // Create test data with specific widths to verify position calculation
-        let item = super::ListItem {
+        let item = ListItem {
             head: "abc12345".to_string(),
             branch: Some("feature".to_string()),
             commit: Some(CommitDetails {
@@ -902,7 +849,7 @@ mod tests {
         };
 
         let items = vec![item];
-        let layout = calculate_responsive_layout(&items, false, false);
+        let layout = calculate_layout_from_basics(&items, false, false);
 
         assert!(
             !layout.columns.is_empty(),
@@ -939,12 +886,12 @@ mod tests {
     #[test]
     fn test_column_positions_with_empty_columns() {
         use crate::commands::list::model::{
-            AheadBehind, BranchDiffTotals, CommitDetails, DisplayFields, ItemKind, StatusSymbols,
-            UpstreamStatus, WorktreeData,
+            AheadBehind, BranchDiffTotals, CommitDetails, DisplayFields, ItemKind, ListItem,
+            StatusSymbols, UpstreamStatus, WorktreeData,
         };
 
         // Create minimal data - most columns will be empty
-        let item = super::ListItem {
+        let item = ListItem {
             head: "abc12345".to_string(),
             branch: Some("main".to_string()),
             commit: Some(CommitDetails {
@@ -981,7 +928,7 @@ mod tests {
         };
 
         let items = vec![item];
-        let layout = calculate_responsive_layout(&items, false, false);
+        let layout = calculate_layout_from_basics(&items, false, false);
 
         assert!(
             layout
