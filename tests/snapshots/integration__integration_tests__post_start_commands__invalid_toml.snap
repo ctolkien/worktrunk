@@ -11,8 +11,11 @@ info:
     COLUMNS: "150"
     GIT_AUTHOR_DATE: "2025-01-01T00:00:00Z"
     GIT_COMMITTER_DATE: "2025-01-01T00:00:00Z"
+    GIT_CONFIG_COUNT: "1"
     GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_KEY_0: advice.mergeConflict
     GIT_CONFIG_SYSTEM: /dev/null
+    GIT_CONFIG_VALUE_0: "false"
     GIT_EDITOR: ""
     LANG: C
     LC_ALL: C
@@ -23,11 +26,5 @@ success: false
 exit_code: 1
 ----- stdout -----
 ❌ [31mFailed to load project config[0m
-[40m [0m  Failed to parse TOML: TOML parse error at line 1, column 39
-[40m [0m    |
-[40m [0m  1 | post-create-command = [invalid syntax
-[40m [0m    |                                       ^
-[40m [0m  unclosed array, expected `]`
-
 
 ----- stderr -----

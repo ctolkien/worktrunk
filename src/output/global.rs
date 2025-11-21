@@ -140,7 +140,7 @@ pub fn warning(message: impl Into<String>) -> io::Result<()> {
 /// Emit an error message
 ///
 /// Error messages are critical failures like "❌ Cannot remove main worktree"
-/// The message is already formatted (includes ERROR_EMOJI from GitError::Display).
+/// The message is already formatted (includes ERROR_EMOJI from WorktrunkError::Display).
 ///
 /// In interactive mode: goes to stdout (with other worktrunk output)
 /// In directive mode: goes to stderr (with other user-facing messages)

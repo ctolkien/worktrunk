@@ -3,9 +3,12 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
+use anyhow::{Context, bail};
+
 // Import types and functions from parent module (mod.rs)
 use super::{
-    DefaultBranchName, DiffStats, GitError, LineDiff, SwitchHistory, Worktree, WorktreeList,
+    DefaultBranchName, DiffStats, LineDiff, SwitchHistory, Worktree, WorktreeList, detached_head,
+    error_message, parse_error, uncommitted_changes,
 };
 
 /// Global base path for repository operations, set by -C flag
@@ -25,52 +28,6 @@ fn base_path() -> &'static PathBuf {
     BASE_PATH
         .get()
         .unwrap_or_else(|| DEFAULT.get_or_init(|| PathBuf::from(".")))
-}
-
-/// Extension trait for Result types to simplify GitError conversions
-///
-/// This trait provides ergonomic methods to convert any Result into Result<T, GitError>.
-///
-/// # Examples
-///
-/// ```no_run
-/// use worktrunk::git::{GitError, GitResultExt};
-///
-/// fn load_config() -> Result<String, std::io::Error> {
-///     std::fs::read_to_string("config.toml")
-/// }
-///
-/// // Without context:
-/// let config = load_config().git_err()?;
-///
-/// // With context:
-/// let config = load_config().git_context("Failed to load config")?;
-/// # Ok::<(), GitError>(())
-/// ```
-pub trait GitResultExt<T> {
-    /// Convert the error to GitError with additional context
-    fn git_context(self, context: &str) -> Result<T, GitError>;
-
-    /// Convert the error to GitError using its Display implementation
-    fn git_err(self) -> Result<T, GitError>;
-}
-
-impl<T, E: std::fmt::Display> GitResultExt<T> for Result<T, E> {
-    fn git_context(self, context: &str) -> Result<T, GitError> {
-        use crate::styling::{ERROR, ERROR_EMOJI, format_with_gutter};
-        self.map_err(|e| {
-            let error_str = e.to_string();
-            let header = format!("{ERROR_EMOJI} {ERROR}{context}{ERROR:#}");
-            // External errors always use gutter formatting (canonical path)
-            let formatted = format!("{}\n{}", header, format_with_gutter(&error_str, "", None));
-            GitError::CommandFailed(formatted)
-        })
-    }
-
-    fn git_err(self) -> Result<T, GitError> {
-        use crate::styling::{ERROR, ERROR_EMOJI};
-        self.map_err(|e| GitError::CommandFailed(format!("{ERROR_EMOJI} {ERROR}{e}{ERROR:#}")))
-    }
 }
 
 /// Internal layout information for a repository.
@@ -95,7 +52,7 @@ struct RepositoryLayout {
 /// let repo = Repository::current();
 /// let branch = repo.current_branch()?;
 /// let is_dirty = repo.is_dirty()?;
-/// # Ok::<(), worktrunk::git::GitError>(())
+/// # Ok::<(), anyhow::Error>(())
 /// ```
 #[derive(Debug)]
 pub struct Repository {
@@ -126,7 +83,7 @@ impl Repository {
     }
 
     /// Get the repository layout, initializing it if needed.
-    fn layout(&self) -> Result<&RepositoryLayout, GitError> {
+    fn layout(&self) -> anyhow::Result<&RepositoryLayout> {
         if let Some(layout) = self.layout.get() {
             return Ok(layout);
         }
@@ -134,7 +91,7 @@ impl Repository {
         let git_common_dir = self
             .git_common_dir()?
             .canonicalize()
-            .map_err(|e| GitError::CommandFailed(format!("Failed to canonicalize path: {}", e)))?;
+            .context("Failed to canonicalize path")?;
 
         let is_bare = self.is_bare_repo()?;
 
@@ -143,7 +100,7 @@ impl Repository {
         } else {
             git_common_dir
                 .parent()
-                .ok_or_else(|| GitError::message("Invalid git directory"))?
+                .ok_or_else(|| anyhow::anyhow!("{}", error_message("Invalid git directory")))?
                 .to_path_buf()
         };
 
@@ -157,7 +114,7 @@ impl Repository {
     }
 
     /// Check if this is a bare repository (no working tree).
-    fn is_bare_repo(&self) -> Result<bool, GitError> {
+    fn is_bare_repo(&self) -> anyhow::Result<bool> {
         let output = self.run_command(&["config", "--bool", "core.bare"])?;
         Ok(output.trim() == "true")
     }
@@ -169,7 +126,7 @@ impl Repository {
     ///    (Note: Detached HEAD falls through to step 2)
     /// 2. Otherwise, get the first remote from `git remote`
     /// 3. Fall back to "origin" if no remotes exist
-    pub fn primary_remote(&self) -> Result<String, GitError> {
+    pub fn primary_remote(&self) -> anyhow::Result<String> {
         // Try to get the remote from the current branch's upstream
         if let Ok(Some(branch)) = self.current_branch()
             && let Ok(Some(upstream)) = self.upstream_branch(&branch)
@@ -186,14 +143,14 @@ impl Repository {
     }
 
     /// Check if a local git branch exists.
-    pub fn local_branch_exists(&self, branch: &str) -> Result<bool, GitError> {
+    pub fn local_branch_exists(&self, branch: &str) -> anyhow::Result<bool> {
         Ok(self
             .run_command(&["rev-parse", "--verify", &format!("refs/heads/{}", branch)])
             .is_ok())
     }
 
     /// Check if a git branch exists (local or remote).
-    pub fn branch_exists(&self, branch: &str) -> Result<bool, GitError> {
+    pub fn branch_exists(&self, branch: &str) -> anyhow::Result<bool> {
         // Try local branch first
         if self.local_branch_exists(branch)? {
             return Ok(true);
@@ -211,7 +168,7 @@ impl Repository {
     }
 
     /// Get the current branch name, or None if in detached HEAD state.
-    pub fn current_branch(&self) -> Result<Option<String>, GitError> {
+    pub fn current_branch(&self) -> anyhow::Result<Option<String>> {
         let stdout = self.run_command(&["branch", "--show-current"])?;
         let branch = stdout.trim();
 
@@ -245,7 +202,7 @@ impl Repository {
         &self,
         current: &str,
         previous: Option<&str>,
-    ) -> Result<(), GitError> {
+    ) -> anyhow::Result<()> {
         let value = if let Some(prev) = previous {
             format!("{},{}", current, prev)
         } else {
@@ -291,18 +248,20 @@ impl Repository {
     /// - `Ok(default_branch)` if "^"
     /// - `Err(DetachedHead)` if "@" and in detached HEAD state
     /// - `Err` if "-" but no previous branch in history
-    pub fn resolve_worktree_name(&self, name: &str) -> Result<String, GitError> {
+    pub fn resolve_worktree_name(&self, name: &str) -> anyhow::Result<String> {
         match name {
-            "@" => self.current_branch()?.ok_or(GitError::DetachedHead),
+            "@" => self
+                .current_branch()?
+                .ok_or_else(|| anyhow::anyhow!("{}", detached_head())),
             "-" => {
                 // Read from worktrunk.history (recorded by wt switch operations)
                 // History stores (current, previous), we want previous
                 self.get_switch_history()
                     .and_then(|h| h.previous)
                     .ok_or_else(|| {
-                        GitError::message(
+                        anyhow::anyhow!("{}", error_message(
                             "No previous branch found in history. Use 'wt list' to see available worktrees.",
-                        )
+                        ))
                     })
             }
             "^" => self.default_branch(),
@@ -324,7 +283,7 @@ impl Repository {
     /// 2. If not cached, query remote (`git ls-remote`) - may take 100ms-2s depending on network
     /// 3. Cache the result (`git remote set-head`) for future invocations
     /// 4. If no remote available, infer from local branches (no caching, shows hint)
-    pub fn default_branch(&self) -> Result<String, GitError> {
+    pub fn default_branch(&self) -> anyhow::Result<String> {
         // Try to get default branch from remote
         if let Ok(remote) = self.primary_remote() {
             // Try local cache first (fast path)
@@ -354,7 +313,7 @@ impl Repository {
     ///
     /// If target is Some, returns it as a String. Otherwise, queries the default branch.
     /// This is a common pattern used throughout commands that accept an optional --target flag.
-    pub fn resolve_target_branch(&self, target: Option<&str>) -> Result<String, GitError> {
+    pub fn resolve_target_branch(&self, target: Option<&str>) -> anyhow::Result<String> {
         target.map_or_else(|| self.default_branch(), |b| Ok(b.to_string()))
     }
 
@@ -366,7 +325,7 @@ impl Repository {
     /// 3. Check user's git config init.defaultBranch
     /// 4. Look for common branch names (main, master, develop)
     /// 5. Fail if none of the above work
-    fn infer_default_branch_locally(&self) -> Result<String, GitError> {
+    fn infer_default_branch_locally(&self) -> anyhow::Result<String> {
         // 1. If there's only one local branch, use it
         let branches = self.local_branches()?;
         if branches.len() == 1 {
@@ -389,13 +348,16 @@ impl Repository {
         }
 
         // 4. Give up - can't infer
-        Err(GitError::CommandFailed(
-            "Could not infer default branch. Please specify target branch explicitly or set up a remote.".to_string()
-        ))
+        bail!(
+            "{}",
+            error_message(
+                "Could not infer default branch. Please specify target branch explicitly or set up a remote."
+            )
+        )
     }
 
     /// List all local branches.
-    fn local_branches(&self) -> Result<Vec<String>, GitError> {
+    fn local_branches(&self) -> anyhow::Result<Vec<String>> {
         let stdout = self.run_command(&["branch", "--format=%(refname:short)"])?;
         Ok(stdout.lines().map(|s| s.trim().to_string()).collect())
     }
@@ -403,15 +365,16 @@ impl Repository {
     /// Get the git common directory (the actual .git directory for the repository).
     ///
     /// Always returns an absolute path, resolving any relative paths returned by git.
-    pub fn git_common_dir(&self) -> Result<PathBuf, GitError> {
+    pub fn git_common_dir(&self) -> anyhow::Result<PathBuf> {
         let stdout = self.run_command(&["rev-parse", "--git-common-dir"])?;
         let path = PathBuf::from(stdout.trim());
 
         // Resolve relative paths against the repo's directory
         if path.is_relative() {
-            self.path.join(&path).canonicalize().map_err(|e| {
-                GitError::CommandFailed(format!("Failed to resolve git common directory\n   {e}"))
-            })
+            self.path
+                .join(&path)
+                .canonicalize()
+                .context("Failed to resolve git common directory")
         } else {
             Ok(path)
         }
@@ -420,15 +383,16 @@ impl Repository {
     /// Get the git directory (may be different from common-dir in worktrees).
     ///
     /// Always returns an absolute path, resolving any relative paths returned by git.
-    pub fn git_dir(&self) -> Result<PathBuf, GitError> {
+    pub fn git_dir(&self) -> anyhow::Result<PathBuf> {
         let stdout = self.run_command(&["rev-parse", "--git-dir"])?;
         let path = PathBuf::from(stdout.trim());
 
         // Resolve relative paths against the repo's directory
         if path.is_relative() {
-            self.path.join(&path).canonicalize().map_err(|e| {
-                GitError::CommandFailed(format!("Failed to resolve git directory\n   {e}"))
-            })
+            self.path
+                .join(&path)
+                .canonicalize()
+                .context("Failed to resolve git directory")
         } else {
             Ok(path)
         }
@@ -440,12 +404,12 @@ impl Repository {
     /// For bare repositories: the bare repository directory itself.
     ///
     /// This is the path that should be used when constructing worktree paths.
-    pub fn worktree_base(&self) -> Result<PathBuf, GitError> {
+    pub fn worktree_base(&self) -> anyhow::Result<PathBuf> {
         Ok(self.layout()?.worktree_base.clone())
     }
 
     /// Check if the working tree has uncommitted changes.
-    pub fn is_dirty(&self) -> Result<bool, GitError> {
+    pub fn is_dirty(&self) -> anyhow::Result<bool> {
         let stdout = self.run_command(&["status", "--porcelain"])?;
         Ok(!stdout.trim().is_empty())
     }
@@ -453,9 +417,9 @@ impl Repository {
     /// Ensure the working tree is clean (no uncommitted changes).
     ///
     /// Returns an error if there are uncommitted changes.
-    pub fn ensure_clean_working_tree(&self) -> Result<(), GitError> {
+    pub fn ensure_clean_working_tree(&self) -> anyhow::Result<()> {
         if self.is_dirty()? {
-            return Err(GitError::UncommittedChanges);
+            bail!("{}", uncommitted_changes());
         }
         Ok(())
     }
@@ -464,71 +428,74 @@ impl Repository {
     ///
     /// Returns the canonicalized absolute path to the top-level directory of the
     /// current working tree. This could be the main worktree or a linked worktree.
-    pub fn worktree_root(&self) -> Result<PathBuf, GitError> {
+    pub fn worktree_root(&self) -> anyhow::Result<PathBuf> {
         let stdout = self.run_command(&["rev-parse", "--show-toplevel"])?;
         let path = PathBuf::from(stdout.trim());
-        path.canonicalize().map_err(|e| {
-            GitError::CommandFailed(format!("Failed to canonicalize worktree root: {}", e))
-        })
+        path.canonicalize()
+            .context("Failed to canonicalize worktree root")
     }
 
     /// Check if the path is in a worktree (vs the main repository).
-    pub fn is_in_worktree(&self) -> Result<bool, GitError> {
+    pub fn is_in_worktree(&self) -> anyhow::Result<bool> {
         let git_dir = self.git_dir()?;
         let common_dir = self.git_common_dir()?;
         Ok(git_dir != common_dir)
     }
 
     /// Check if base is an ancestor of head (i.e., would be a fast-forward).
-    pub fn is_ancestor(&self, base: &str, head: &str) -> Result<bool, GitError> {
+    pub fn is_ancestor(&self, base: &str, head: &str) -> anyhow::Result<bool> {
         self.run_command_check(&["merge-base", "--is-ancestor", base, head])
     }
 
     /// Count commits between base and head.
-    pub fn count_commits(&self, base: &str, head: &str) -> Result<usize, GitError> {
+    pub fn count_commits(&self, base: &str, head: &str) -> anyhow::Result<usize> {
         // Limit concurrent rev-list operations to reduce mmap thrash on commit-graph
         let _guard = super::HEAVY_OPS_SEMAPHORE.acquire();
 
         let range = format!("{}..{}", base, head);
         let stdout = self.run_command(&["rev-list", "--count", &range])?;
 
-        stdout
-            .trim()
-            .parse()
-            .map_err(|e| GitError::ParseError(format!("Failed to parse commit count: {}", e)))
+        stdout.trim().parse().map_err(|e| {
+            anyhow::anyhow!(
+                "{}",
+                parse_error(format!("Failed to parse commit count: {}", e))
+            )
+        })
     }
 
     /// Check if there are merge commits in the range base..head.
-    pub fn has_merge_commits(&self, base: &str, head: &str) -> Result<bool, GitError> {
+    pub fn has_merge_commits(&self, base: &str, head: &str) -> anyhow::Result<bool> {
         let range = format!("{}..{}", base, head);
         let stdout = self.run_command(&["rev-list", "--merges", &range])?;
         Ok(!stdout.trim().is_empty())
     }
 
     /// Get files changed between base and head.
-    pub fn changed_files(&self, base: &str, head: &str) -> Result<Vec<String>, GitError> {
+    pub fn changed_files(&self, base: &str, head: &str) -> anyhow::Result<Vec<String>> {
         let range = format!("{}..{}", base, head);
         let stdout = self.run_command(&["diff", "--name-only", &range])?;
         Ok(stdout.lines().map(String::from).collect())
     }
 
     /// Get commit timestamp in seconds since epoch.
-    pub fn commit_timestamp(&self, commit: &str) -> Result<i64, GitError> {
+    pub fn commit_timestamp(&self, commit: &str) -> anyhow::Result<i64> {
         let stdout = self.run_command(&["show", "-s", "--format=%ct", commit])?;
-        stdout
-            .trim()
-            .parse()
-            .map_err(|e| GitError::ParseError(format!("Failed to parse timestamp: {}", e)))
+        stdout.trim().parse().map_err(|e| {
+            anyhow::anyhow!(
+                "{}",
+                parse_error(format!("Failed to parse timestamp: {}", e))
+            )
+        })
     }
 
     /// Get commit message (subject line) for a commit.
-    pub fn commit_message(&self, commit: &str) -> Result<String, GitError> {
+    pub fn commit_message(&self, commit: &str) -> anyhow::Result<String> {
         let stdout = self.run_command(&["show", "-s", "--format=%s", commit])?;
         Ok(stdout.trim().to_owned())
     }
 
     /// Get the upstream tracking branch for the given branch.
-    pub fn upstream_branch(&self, branch: &str) -> Result<Option<String>, GitError> {
+    pub fn upstream_branch(&self, branch: &str) -> anyhow::Result<Option<String>> {
         let result = self.run_command(&["rev-parse", "--abbrev-ref", &format!("{}@{{u}}", branch)]);
 
         match result {
@@ -541,7 +508,7 @@ impl Repository {
     }
 
     /// Get merge/rebase status for the worktree.
-    pub fn worktree_state(&self) -> Result<Option<String>, GitError> {
+    pub fn worktree_state(&self) -> anyhow::Result<Option<String>> {
         let git_dir = self.git_dir()?;
 
         // Check for merge
@@ -591,7 +558,7 @@ impl Repository {
     ///
     /// Returns (ahead, behind) where ahead is commits in head not in base,
     /// and behind is commits in base not in head.
-    pub fn ahead_behind(&self, base: &str, head: &str) -> Result<(usize, usize), GitError> {
+    pub fn ahead_behind(&self, base: &str, head: &str) -> anyhow::Result<(usize, usize)> {
         // Use single git call with --left-right --count for better performance
         let range = format!("{}...{}", base, head);
         let output = self.run_command(&["rev-list", "--left-right", "--count", &range])?;
@@ -601,25 +568,18 @@ impl Repository {
         // git rev-list --left-right outputs left (base) first, then right (head)
         let parts: Vec<&str> = output.trim().split('\t').collect();
         if parts.len() != 2 {
-            return Err(GitError::CommandFailed(format!(
-                "Unexpected rev-list output format: {}",
-                output
-            )));
+            bail!("Unexpected rev-list output format: {}", output);
         }
 
-        let behind: usize = parts[0]
-            .parse()
-            .map_err(|e| GitError::CommandFailed(format!("Failed to parse behind count: {}", e)))?;
-        let ahead: usize = parts[1]
-            .parse()
-            .map_err(|e| GitError::CommandFailed(format!("Failed to parse ahead count: {}", e)))?;
+        let behind: usize = parts[0].parse().context("Failed to parse behind count")?;
+        let ahead: usize = parts[1].parse().context("Failed to parse ahead count")?;
 
         Ok((ahead, behind))
     }
 
     /// List all local branches with their HEAD commit SHA.
     /// Returns a vector of (branch_name, commit_sha) tuples.
-    pub fn list_local_branches(&self) -> Result<Vec<(String, String)>, GitError> {
+    pub fn list_local_branches(&self) -> anyhow::Result<Vec<(String, String)>> {
         let output = self.run_command(&[
             "for-each-ref",
             "--format=%(refname:short) %(objectname)",
@@ -642,7 +602,7 @@ impl Repository {
     }
 
     /// Get line diff statistics for working tree changes (unstaged + staged).
-    pub fn working_tree_diff_stats(&self) -> Result<LineDiff, GitError> {
+    pub fn working_tree_diff_stats(&self) -> anyhow::Result<LineDiff> {
         // Limit concurrent diff operations to reduce mmap thrash on pack files
         let _guard = super::HEAVY_OPS_SEMAPHORE.acquire();
 
@@ -655,7 +615,7 @@ impl Repository {
     /// This compares the current working tree contents (including uncommitted changes)
     /// against the specified ref, regardless of what HEAD points to.
     ///
-    pub fn working_tree_diff_vs_ref(&self, ref_name: &str) -> Result<LineDiff, GitError> {
+    pub fn working_tree_diff_vs_ref(&self, ref_name: &str) -> anyhow::Result<LineDiff> {
         // Limit concurrent diff operations to reduce mmap thrash on pack files
         let _guard = super::HEAVY_OPS_SEMAPHORE.acquire();
 
@@ -673,7 +633,7 @@ impl Repository {
         &self,
         base_branch: Option<&str>,
         working_tree_dirty: bool,
-    ) -> Result<Option<LineDiff>, GitError> {
+    ) -> anyhow::Result<Option<LineDiff>> {
         let Some(branch) = base_branch else {
             return Ok(Some(LineDiff::default()));
         };
@@ -691,7 +651,7 @@ impl Repository {
 
     /// Get line diff statistics between two refs (using three-dot diff for merge base).
     ///
-    pub fn branch_diff_stats(&self, base: &str, head: &str) -> Result<LineDiff, GitError> {
+    pub fn branch_diff_stats(&self, base: &str, head: &str) -> anyhow::Result<LineDiff> {
         // Limit concurrent diff operations to reduce mmap thrash on pack files
         let _guard = super::HEAVY_OPS_SEMAPHORE.acquire();
 
@@ -716,7 +676,7 @@ impl Repository {
     /// Determine whether there are staged changes in the index.
     ///
     /// Returns `Ok(true)` when staged changes are present, `Ok(false)` otherwise.
-    pub fn has_staged_changes(&self) -> Result<bool, GitError> {
+    pub fn has_staged_changes(&self) -> anyhow::Result<bool> {
         Ok(!self.run_command_check(&["diff", "--cached", "--quiet", "--exit-code"])?)
     }
 
@@ -737,9 +697,9 @@ impl Repository {
     /// let repo = Repository::current();
     /// let (sha, restore_cmd) = repo.create_safety_backup("feature → main (squash)")?;
     /// println!("Backup created: {} - Restore with: {}", sha, restore_cmd);
-    /// # Ok::<(), worktrunk::git::GitError>(())
+    /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn create_safety_backup(&self, message: &str) -> Result<(String, String), GitError> {
+    pub fn create_safety_backup(&self, message: &str) -> anyhow::Result<(String, String)> {
         // Create a backup commit using git stash create (without storing it in the stash list)
         let backup_sha = self
             .run_command(&["stash", "create", "--include-untracked"])?
@@ -748,9 +708,7 @@ impl Repository {
 
         // Validate that we got a SHA back
         if backup_sha.is_empty() {
-            return Err(GitError::CommandFailed(
-                "git stash create returned empty SHA - no changes to backup".into(),
-            ));
+            bail!("git stash create returned empty SHA - no changes to backup");
         }
 
         // Get current branch name to use in the ref name
@@ -774,7 +732,7 @@ impl Repository {
             &ref_name,
             &backup_sha,
         ])
-        .git_context("Failed to create backup ref")?;
+        .context("Failed to create backup ref")?;
 
         // Return short SHA and restore command
         // Use git stash apply because the backup is a merge commit (created by git stash create)
@@ -785,7 +743,7 @@ impl Repository {
     }
 
     /// Get all branch names (local branches only).
-    pub fn all_branches(&self) -> Result<Vec<String>, GitError> {
+    pub fn all_branches(&self) -> anyhow::Result<Vec<String>> {
         let stdout = self.run_command(&[
             "branch",
             "--sort=-committerdate",
@@ -800,7 +758,7 @@ impl Repository {
     }
 
     /// Get the merge base between two commits.
-    pub fn merge_base(&self, commit1: &str, commit2: &str) -> Result<String, GitError> {
+    pub fn merge_base(&self, commit1: &str, commit2: &str) -> anyhow::Result<String> {
         let output = self.run_command(&["merge-base", commit1, commit2])?;
         Ok(output.trim().to_owned())
     }
@@ -816,9 +774,9 @@ impl Repository {
     ///
     /// let repo = Repository::current();
     /// let has_conflicts = repo.has_merge_conflicts("main", "feature-branch")?;
-    /// # Ok::<(), worktrunk::git::GitError>(())
+    /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn has_merge_conflicts(&self, base: &str, head: &str) -> Result<bool, GitError> {
+    pub fn has_merge_conflicts(&self, base: &str, head: &str) -> anyhow::Result<bool> {
         // Use modern merge-tree --write-tree mode which exits with 1 when conflicts exist
         // (the old 3-argument deprecated mode always exits with 0)
         // run_command_check returns true for exit 0, false otherwise
@@ -827,7 +785,7 @@ impl Repository {
     }
 
     /// Get commit subjects (first line of commit message) from a range.
-    pub fn commit_subjects(&self, range: &str) -> Result<Vec<String>, GitError> {
+    pub fn commit_subjects(&self, range: &str) -> anyhow::Result<Vec<String>> {
         let output = self.run_command(&["log", "--format=%s", range])?;
         Ok(output.lines().map(String::from).collect())
     }
@@ -836,14 +794,14 @@ impl Repository {
     ///
     /// Returns a WorktreeList that automatically filters out bare repositories
     /// and provides access to the main worktree.
-    pub fn list_worktrees(&self) -> Result<WorktreeList, GitError> {
+    pub fn list_worktrees(&self) -> anyhow::Result<WorktreeList> {
         let stdout = self.run_command(&["worktree", "list", "--porcelain"])?;
         let raw_worktrees = Worktree::parse_porcelain_list(&stdout)?;
         WorktreeList::from_raw(raw_worktrees)
     }
 
     /// Find the worktree path for a given branch, if one exists.
-    pub fn worktree_for_branch(&self, branch: &str) -> Result<Option<PathBuf>, GitError> {
+    pub fn worktree_for_branch(&self, branch: &str) -> anyhow::Result<Option<PathBuf>> {
         let worktrees = self.list_worktrees()?;
 
         Ok(worktrees
@@ -854,7 +812,7 @@ impl Repository {
     }
 
     /// Get branches that don't have worktrees (available for switch).
-    pub fn available_branches(&self) -> Result<Vec<String>, GitError> {
+    pub fn available_branches(&self) -> anyhow::Result<Vec<String>> {
         let all_branches = self.all_branches()?;
         let worktrees = self.list_worktrees()?;
 
@@ -873,7 +831,7 @@ impl Repository {
     }
 
     /// Get a git config value. Returns None if the key doesn't exist.
-    pub fn get_config(&self, key: &str) -> Result<Option<String>, GitError> {
+    pub fn get_config(&self, key: &str) -> anyhow::Result<Option<String>> {
         match self.run_command(&["config", key]) {
             Ok(value) => Ok(Some(value.trim().to_string())),
             Err(_) => Ok(None), // Config key doesn't exist
@@ -881,16 +839,16 @@ impl Repository {
     }
 
     /// Set a git config value.
-    pub fn set_config(&self, key: &str, value: &str) -> Result<(), GitError> {
+    pub fn set_config(&self, key: &str, value: &str) -> anyhow::Result<()> {
         self.run_command(&["config", key, value])?;
         Ok(())
     }
 
     /// Remove a worktree at the specified path.
-    pub fn remove_worktree(&self, path: &std::path::Path) -> Result<(), GitError> {
-        let path_str = path
-            .to_str()
-            .ok_or_else(|| GitError::message("Invalid UTF-8 in worktree path"))?;
+    pub fn remove_worktree(&self, path: &std::path::Path) -> anyhow::Result<()> {
+        let path_str = path.to_str().ok_or_else(|| {
+            anyhow::anyhow!("{}", error_message("Invalid UTF-8 in worktree path"))
+        })?;
         self.run_command(&["worktree", "remove", path_str])?;
         Ok(())
     }
@@ -903,38 +861,38 @@ impl Repository {
     /// default branch has been changed on the remote).
     ///
     /// Returns the refreshed default branch name.
-    pub fn refresh_default_branch(&self) -> Result<String, GitError> {
+    pub fn refresh_default_branch(&self) -> anyhow::Result<String> {
         let remote = self.primary_remote()?;
         let branch = self.query_remote_default_branch(&remote)?;
         self.cache_default_branch(&remote, &branch)?;
         Ok(branch)
     }
 
-    fn branch_tree_matches_head(&self, branch: &str) -> Result<bool, GitError> {
+    fn branch_tree_matches_head(&self, branch: &str) -> anyhow::Result<bool> {
         let head_tree = self.rev_parse_tree("HEAD^{tree}")?;
         let branch_tree = self.rev_parse_tree(&format!("{branch}^{{tree}}"))?;
         Ok(head_tree == branch_tree)
     }
 
-    fn rev_parse_tree(&self, spec: &str) -> Result<String, GitError> {
+    fn rev_parse_tree(&self, spec: &str) -> anyhow::Result<String> {
         self.run_command(&["rev-parse", spec])
             .map(|output| output.trim().to_string())
     }
 
     // Private helper methods for default_branch()
 
-    fn get_local_default_branch(&self, remote: &str) -> Result<String, GitError> {
+    fn get_local_default_branch(&self, remote: &str) -> anyhow::Result<String> {
         let stdout =
             self.run_command(&["rev-parse", "--abbrev-ref", &format!("{}/HEAD", remote)])?;
         DefaultBranchName::from_local(remote, &stdout).map(DefaultBranchName::into_string)
     }
 
-    fn query_remote_default_branch(&self, remote: &str) -> Result<String, GitError> {
+    fn query_remote_default_branch(&self, remote: &str) -> anyhow::Result<String> {
         let stdout = self.run_command(&["ls-remote", "--symref", remote, "HEAD"])?;
         DefaultBranchName::from_remote(&stdout).map(DefaultBranchName::into_string)
     }
 
-    fn cache_default_branch(&self, remote: &str, branch: &str) -> Result<(), GitError> {
+    fn cache_default_branch(&self, remote: &str, branch: &str) -> anyhow::Result<()> {
         self.run_command(&["remote", "set-head", remote, branch])?;
         Ok(())
     }
@@ -946,7 +904,7 @@ impl Repository {
     ///
     /// This identifier is used to track which commands have been approved
     /// for execution in this project.
-    pub fn project_identifier(&self) -> Result<String, GitError> {
+    pub fn project_identifier(&self) -> anyhow::Result<String> {
         // Try to get the remote URL first
         let remote = self.primary_remote()?;
 
@@ -997,7 +955,9 @@ impl Repository {
         let repo_name = repo_root
             .file_name()
             .and_then(|name| name.to_str())
-            .ok_or_else(|| GitError::message("Could not determine repository name"))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("{}", error_message("Could not determine repository name"))
+            })?;
 
         Ok(repo_name.to_string())
     }
@@ -1013,9 +973,9 @@ impl Repository {
     ///
     /// let repo = Repository::current();
     /// let status = repo.run_command(&["status", "--porcelain"])?;
-    /// # Ok::<(), worktrunk::git::GitError>(())
+    /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn run_command(&self, args: &[&str]) -> Result<String, GitError> {
+    pub fn run_command(&self, args: &[&str]) -> anyhow::Result<String> {
         use std::time::Instant;
 
         let mut cmd = Command::new("git");
@@ -1038,9 +998,7 @@ impl Repository {
         };
 
         let t0 = Instant::now();
-        let output = cmd
-            .output()
-            .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+        let output = cmd.output().context("Failed to execute git command")?;
         let duration = t0.elapsed();
 
         // Performance tracing at debug level (enable with RUST_LOG=debug)
@@ -1060,7 +1018,7 @@ impl Repository {
             for line in stderr.trim().lines() {
                 log::debug!("  ! {}", line);
             }
-            return Err(GitError::CommandFailed(stderr));
+            bail!("{}", stderr);
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
@@ -1084,9 +1042,9 @@ impl Repository {
     ///
     /// let repo = Repository::current();
     /// let is_clean = repo.run_command_check(&["diff", "--quiet", "--exit-code"])?;
-    /// # Ok::<(), worktrunk::git::GitError>(())
+    /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn run_command_check(&self, args: &[&str]) -> Result<bool, GitError> {
+    pub fn run_command_check(&self, args: &[&str]) -> anyhow::Result<bool> {
         let mut cmd = Command::new("git");
         cmd.args(args);
         cmd.current_dir(&self.path);
@@ -1103,9 +1061,7 @@ impl Repository {
             log::debug!("$ git {} [{}]", args.join(" "), worktree);
         }
 
-        let output = cmd
-            .output()
-            .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+        let output = cmd.output().context("Failed to execute git command")?;
 
         let success = output.status.success();
         if !success {
@@ -1118,7 +1074,7 @@ impl Repository {
     ///
     /// The pager is spawned in a detached session (via setsid on Unix) to prevent it from
     /// accessing /dev/tty, which would cause hangs when called from within TUI contexts like skim.
-    pub fn run_diff_with_pager(&self, args: &[&str]) -> Result<String, GitError> {
+    pub fn run_diff_with_pager(&self, args: &[&str]) -> anyhow::Result<String> {
         let mut git_args = args.to_vec();
         git_args.push("--color=always");
         let git_output = self.run_command(&git_args)?;

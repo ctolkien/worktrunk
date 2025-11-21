@@ -1,8 +1,9 @@
 use anstyle::Style;
+use anyhow::Context;
 use clap::FromArgMatches;
 use std::process;
 use worktrunk::config::WorktrunkConfig;
-use worktrunk::git::{GitError, GitResultExt, Repository, set_base_path};
+use worktrunk::git::{Repository, exit_code, is_command_not_approved, set_base_path};
 use worktrunk::path::format_path_for_display;
 use worktrunk::styling::{SUCCESS_EMOJI, println};
 
@@ -173,7 +174,7 @@ fn main() {
             command_name,
         } => {
             let mut cli_cmd = cli::build_command();
-            handle_init(shell, command_name, &mut cli_cmd).git_err()
+            handle_init(shell, command_name, &mut cli_cmd).map_err(|e| anyhow::anyhow!("{}", e))
         }
         Commands::Config { action } => match action {
             ConfigCommand::Init => handle_config_init(),
@@ -185,6 +186,7 @@ fn main() {
                 command_name,
             } => {
                 handle_configure_shell(shell, force, command_name)
+                    .map_err(|e| anyhow::anyhow!("{}", e))
                     .map(|results| {
                         use anstyle::{AnsiColor, Color};
 
@@ -232,13 +234,11 @@ fn main() {
                             "{HINT_EMOJI} {HINT}Restart your shell or run: source <config-file>{HINT:#}"
                         );
                     })
-                    .git_err()
             }
             ConfigCommand::Status { action } => match action {
                 StatusAction::Set { value, branch } => handle_config_status_set(value, branch),
                 StatusAction::Unset { target } => handle_config_status_unset(target),
-            }
-            .git_err(),
+            },
         },
         Commands::Standalone { action } => match action {
             StandaloneCommand::RunHook { hook_type, force } => {
@@ -275,7 +275,7 @@ fn main() {
 
             // Load config and merge with CLI flags (CLI flags take precedence)
             WorktrunkConfig::load()
-                .git_context("Failed to load config")
+                .context("Failed to load config")
                 .and_then(|config| {
                     let repo = Repository::current();
 
@@ -315,7 +315,7 @@ fn main() {
             force,
             verify,
         } => WorktrunkConfig::load()
-            .git_context("Failed to load config")
+            .context("Failed to load config")
             .and_then(|config| {
                 // Execute switch operation (creates worktree, runs post-create hooks)
                 let (result, resolved_branch) =
@@ -341,7 +341,7 @@ fn main() {
                     if let Err(e) = ctx.spawn_post_start_commands() {
                         // Only treat CommandNotApproved as non-fatal (user declined)
                         // Other errors should still fail
-                        if !matches!(e, GitError::CommandNotApproved) {
+                        if !is_command_not_approved(&e) {
                             return Err(e);
                         }
                     }
@@ -359,12 +359,10 @@ fn main() {
             delete_branch,
             force_delete,
             background,
-        } => (|| -> Result<(), GitError> {
+        } => (|| -> anyhow::Result<()> {
             // Validate conflicting flags
             if !delete_branch && force_delete {
-                return Err(GitError::message(
-                    "Cannot use --force-delete with --no-delete-branch",
-                ));
+                anyhow::bail!("Cannot use --force-delete with --no-delete-branch");
             }
 
             let repo = Repository::current();
@@ -445,11 +443,7 @@ fn main() {
         let _ = output::error(e.to_string());
 
         // Preserve exit code from child processes (especially for signals like SIGINT)
-        let exit_code = match &e {
-            GitError::ChildProcessExited { code, .. } => *code,
-            GitError::HookCommandFailed { exit_code, .. } => exit_code.unwrap_or(1),
-            _ => 1,
-        };
-        process::exit(exit_code);
+        let code = exit_code(&e).unwrap_or(1);
+        process::exit(code);
     }
 }

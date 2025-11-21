@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use worktrunk::config::{Command, CommandConfig, CommandPhase, WorktrunkConfig, expand_template};
-use worktrunk::git::{GitError, Repository};
+use worktrunk::git::{Repository, WorktrunkError};
 
 use super::command_approval::approve_command_batch;
 
@@ -49,7 +49,7 @@ fn expand_commands(
     commands: &[Command],
     ctx: &CommandContext<'_>,
     extra_vars: &[(&str, &str)],
-) -> Result<Vec<Command>, GitError> {
+) -> anyhow::Result<Vec<Command>> {
     if commands.is_empty() {
         return Ok(Vec::new());
     }
@@ -83,10 +83,11 @@ fn expand_commands(
     for cmd in commands {
         let expanded_str = expand_template(&cmd.template, repo_name, ctx.branch, &extras_ref)
             .map_err(|e| {
-                GitError::message(format!(
+                anyhow::anyhow!(
                     "Failed to expand command template '{}': {}",
-                    cmd.template, e
-                ))
+                    cmd.template,
+                    e
+                )
             })?;
         expanded_commands.push(Command::with_expansion(
             cmd.name.clone(),
@@ -106,14 +107,14 @@ fn expand_commands(
 /// 2. Requests user approval for unapproved commands (unless auto_trust or force)
 /// 3. Returns prepared commands ready for execution
 ///
-/// Returns `Err(GitError::CommandNotApproved)` if the user declines approval.
+/// Returns `Err(WorktrunkError::CommandNotApproved)` if the user declines approval.
 pub fn prepare_project_commands(
     command_config: &CommandConfig,
     ctx: &CommandContext<'_>,
     auto_trust: bool,
     extra_vars: &[(&str, &str)],
     phase: CommandPhase,
-) -> Result<Vec<PreparedCommand>, GitError> {
+) -> anyhow::Result<Vec<PreparedCommand>> {
     let commands = command_config.commands_with_phase(phase);
     if commands.is_empty() {
         return Ok(Vec::new());
@@ -138,7 +139,7 @@ pub fn prepare_project_commands(
             false,
         )?
     {
-        return Err(GitError::CommandNotApproved);
+        return Err(WorktrunkError::CommandNotApproved.into());
     }
 
     Ok(expanded_commands

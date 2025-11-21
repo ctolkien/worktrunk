@@ -88,8 +88,13 @@ impl DirectiveOutput {
     }
 
     pub fn error(&mut self, message: String) -> io::Result<()> {
-        // Error messages go to stderr (already formatted, include ❌ emoji from GitError::Display)
-        writeln!(io::stderr(), "{message}")?;
+        use worktrunk::styling::{ERROR, ERROR_EMOJI};
+        // Error messages go to stderr; add emoji and styling if not already present
+        if message.starts_with(ERROR_EMOJI) {
+            writeln!(io::stderr(), "{message}")?;
+        } else {
+            writeln!(io::stderr(), "{ERROR_EMOJI} {ERROR}{message}{ERROR:#}")?;
+        }
         io::stderr().flush()
     }
 

@@ -33,6 +33,7 @@ name = "wt"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1.0"
 anstream = "0.6"
 anstyle = "1.0"
 ansi-str = "0.9"

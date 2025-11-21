@@ -3,7 +3,7 @@
 use crate::commands::process::spawn_detached;
 use crate::commands::worktree::{RemoveResult, SwitchResult};
 use crate::output::global::format_switch_success;
-use worktrunk::git::GitError;
+use worktrunk::git::{branch_deletion_failed, worktree_removal_failed};
 use worktrunk::path::format_path_for_display;
 use worktrunk::styling::{
     CYAN, CYAN_BOLD, GREEN, GREEN_BOLD, WARNING, WARNING_BOLD, format_with_gutter,
@@ -112,7 +112,7 @@ pub fn handle_switch_output(
     result: &SwitchResult,
     branch: &str,
     has_execute_command: bool,
-) -> Result<(), GitError> {
+) -> anyhow::Result<()> {
     // Set target directory for command execution
     super::change_directory(result.path())?;
 
@@ -137,14 +137,15 @@ pub fn handle_switch_output(
 }
 
 /// Execute the --execute command after hooks have run
-pub fn execute_user_command(command: &str) -> Result<(), GitError> {
+pub fn execute_user_command(command: &str) -> anyhow::Result<()> {
+    use worktrunk::git::from_io_error;
     use worktrunk::styling::{CYAN, format_bash_with_gutter};
 
     // Show what command is being executed (section header + gutter content)
     super::progress(format!("{CYAN}Executing (--execute):{CYAN:#}"))?;
     super::gutter(format_bash_with_gutter(command, ""))?;
 
-    super::execute(command)?;
+    super::execute(command).map_err(from_io_error)?;
 
     Ok(())
 }
@@ -182,7 +183,7 @@ pub fn handle_remove_output(
     branch: Option<&str>,
     strict_branch_deletion: bool,
     background: bool,
-) -> Result<(), GitError> {
+) -> anyhow::Result<()> {
     let RemoveResult::RemovedWorktree {
         main_path,
         worktree_path,
@@ -253,14 +254,10 @@ pub fn handle_remove_output(
         // Synchronous mode: remove immediately and report actual results
         // Track whether branch was actually deleted (will be computed based on deletion attempt)
         if let Err(err) = repo.remove_worktree(worktree_path) {
-            return Err(match err {
-                GitError::CommandFailed(msg) => GitError::WorktreeRemovalFailed {
-                    branch: branch_name.clone(),
-                    path: worktree_path.clone(),
-                    error: msg,
-                },
-                other => other,
-            });
+            anyhow::bail!(
+                "{}",
+                worktree_removal_failed(branch_name, worktree_path, &err.to_string())
+            );
         }
 
         // Delete the branch (unless --no-delete-branch was specified)
@@ -282,10 +279,10 @@ pub fn handle_remove_output(
                     }
                     Ok(false) | Err(_) => {
                         // Branch is not fully merged to target
-                        Err(worktrunk::git::GitError::CommandFailed(format!(
+                        Err(anyhow::anyhow!(
                             "error: the branch '{}' is not fully merged",
                             branch_name
-                        )))
+                        ))
                     }
                 }
             };
@@ -294,13 +291,7 @@ pub fn handle_remove_output(
                 Ok(_) => true,
                 Err(e) => {
                     if strict_branch_deletion {
-                        return Err(match e {
-                            GitError::CommandFailed(msg) => GitError::BranchDeletionFailed {
-                                branch: branch_name.clone(),
-                                error: msg,
-                            },
-                            other => other,
-                        });
+                        anyhow::bail!("{}", branch_deletion_failed(branch_name, &e.to_string()));
                     }
 
                     // If branch deletion fails in non-strict mode, show a warning but don't error
@@ -309,11 +300,7 @@ pub fn handle_remove_output(
                     ))?;
 
                     // Show the git error in a gutter-formatted block (raw output, no styling)
-                    let raw_error = match &e {
-                        GitError::CommandFailed(msg) => msg.as_str(),
-                        _ => &e.to_string(),
-                    };
-                    super::gutter(format_with_gutter(raw_error, "", None))?;
+                    super::gutter(format_with_gutter(&e.to_string(), "", None))?;
                     false
                 }
             }
@@ -406,7 +393,7 @@ pub(crate) fn execute_streaming(
 pub fn execute_command_in_worktree(
     worktree_path: &std::path::Path,
     command: &str,
-) -> Result<(), GitError> {
+) -> anyhow::Result<()> {
     use std::io::Write;
     use worktrunk::styling::{eprint, stderr};
 
@@ -421,8 +408,8 @@ pub fn execute_command_in_worktree(
     stderr().flush().ok(); // Ignore flush errors - reset is best-effort, command execution should proceed
 
     // Execute with stdout→stderr redirect for deterministic ordering
-    // io::Error is automatically converted to GitError, parsing exit codes via From impl
-    execute_streaming(command, worktree_path, true)?;
+    // io::Error is converted via from_io_error to parse embedded exit codes
+    execute_streaming(command, worktree_path, true).map_err(worktrunk::git::from_io_error)?;
 
     // Flush to ensure all output appears before we continue
     super::flush()?;

@@ -1,6 +1,5 @@
 //! Git diff utilities for parsing and formatting diff statistics.
 
-use super::GitError;
 use crate::styling::{ADDITION, DELETION};
 
 /// Line-level diff totals (added/deleted counts) used across git operations.
@@ -12,7 +11,7 @@ pub struct LineDiff {
 
 impl LineDiff {
     /// Parse `git diff --numstat` output into aggregated line totals.
-    pub fn from_numstat(output: &str) -> Result<Self, GitError> {
+    pub fn from_numstat(output: &str) -> anyhow::Result<Self> {
         let mut totals = LineDiff::default();
 
         for line in output.lines() {

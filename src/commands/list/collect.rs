@@ -21,7 +21,7 @@
 //! This ensures fast operations don't wait for slow ones (e.g., CI doesn't block ahead/behind counts)
 use crossbeam_channel as chan;
 use rayon::prelude::*;
-use worktrunk::git::{GitError, LineDiff, Repository, Worktree};
+use worktrunk::git::{LineDiff, Repository, Worktree};
 use worktrunk::styling::INFO_EMOJI;
 
 use super::ci_status::PrStatus;
@@ -408,7 +408,7 @@ fn drain_cell_updates(
 fn get_branches_without_worktrees(
     repo: &Repository,
     worktrees: &[Worktree],
-) -> Result<Vec<(String, String)>, GitError> {
+) -> anyhow::Result<Vec<(String, String)>> {
     // Get all local branches
     let all_branches = repo.list_local_branches()?;
 
@@ -441,7 +441,7 @@ pub fn collect(
     check_merge_tree_conflicts: bool,
     show_progress: bool,
     render_table: bool,
-) -> Result<Option<super::model::ListData>, GitError> {
+) -> anyhow::Result<Option<super::model::ListData>> {
     use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
     use std::time::Duration;
 

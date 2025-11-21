@@ -1,5 +1,6 @@
+use anyhow::{Context, bail};
 use worktrunk::HookType;
-use worktrunk::git::{GitError, GitResultExt, Repository};
+use worktrunk::git::Repository;
 use worktrunk::styling::{AnstyleStyle, CYAN, CYAN_BOLD, GREEN_BOLD, format_with_gutter};
 
 use super::commit::{CommitGenerator, CommitOptions};
@@ -10,7 +11,7 @@ use super::project_config::collect_commands_for_hooks;
 use super::repository_ext::RepositoryCliExt;
 
 /// Handle `wt beta run-hook` command
-pub fn handle_standalone_run_hook(hook_type: HookType, force: bool) -> Result<(), GitError> {
+pub fn handle_standalone_run_hook(hook_type: HookType, force: bool) -> anyhow::Result<()> {
     // Derive context from current environment
     let env = CommandEnv::current()?;
     let repo = &env.repo;
@@ -51,15 +52,15 @@ pub fn handle_standalone_run_hook(hook_type: HookType, force: bool) -> Result<()
     }
 }
 
-fn check_hook_configured<T>(hook: &Option<T>, hook_type: HookType) -> Result<(), GitError> {
+fn check_hook_configured<T>(hook: &Option<T>, hook_type: HookType) -> anyhow::Result<()> {
     if hook.is_none() {
-        return Err(GitError::message(format!("No {hook_type} hook configured")));
+        return Err(anyhow::anyhow!(format!("No {hook_type} hook configured")));
     }
     Ok(())
 }
 
 /// Handle `wt beta commit` command
-pub fn handle_standalone_commit(force: bool, no_verify: bool) -> Result<(), GitError> {
+pub fn handle_standalone_commit(force: bool, no_verify: bool) -> anyhow::Result<()> {
     let env = CommandEnv::current()?;
     let ctx = env.context(force);
     let mut options = CommitOptions::new(&ctx);
@@ -85,7 +86,7 @@ pub fn handle_squash(
     auto_trust: bool,
     tracked_only: bool,
     warn_about_untracked: bool,
-) -> Result<bool, GitError> {
+) -> anyhow::Result<bool> {
     let env = CommandEnv::current()?;
     let repo = &env.repo;
     let current_branch = env.branch.clone();
@@ -102,10 +103,10 @@ pub fn handle_squash(
 
     if tracked_only {
         repo.run_command(&["add", "-u"])
-            .git_context("Failed to stage tracked changes")?;
+            .context("Failed to stage tracked changes")?;
     } else {
         repo.run_command(&["add", "-A"])
-            .git_context("Failed to stage changes")?;
+            .context("Failed to stage changes")?;
     }
 
     // Run pre-commit hook unless explicitly skipped
@@ -187,7 +188,7 @@ pub fn handle_squash(
         repo_name,
         &env.config.commit_generation,
     )
-    .git_context("Failed to generate commit message")?;
+    .context("Failed to generate commit message")?;
 
     // Display the generated commit message
     let formatted_message = generator.format_message_for_display(&commit_message);
@@ -204,7 +205,7 @@ pub fn handle_squash(
 
     // Reset to merge base (soft reset stages all changes, including any already-staged uncommitted changes)
     repo.run_command(&["reset", "--soft", &merge_base])
-        .git_context("Failed to reset to merge base")?;
+        .context("Failed to reset to merge base")?;
 
     // Check if there are actually any changes to commit
     if !repo.has_staged_changes()? {
@@ -217,7 +218,7 @@ pub fn handle_squash(
 
     // Commit with the generated message
     repo.run_command(&["commit", "-m", &commit_message])
-        .git_context("Failed to create squash commit")?;
+        .context("Failed to create squash commit")?;
 
     // Get commit hash for display
     let commit_hash = repo
@@ -237,7 +238,7 @@ pub fn handle_squash(
 
 /// Handle shared rebase workflow (used by `wt beta rebase` and `wt merge`)
 /// Returns true if rebasing occurred, false if already up-to-date
-pub fn handle_rebase(target: Option<&str>) -> Result<bool, GitError> {
+pub fn handle_rebase(target: Option<&str>) -> anyhow::Result<bool> {
     let repo = Repository::current();
 
     // Get target branch (default to default branch if not provided)
@@ -268,30 +269,20 @@ pub fn handle_rebase(target: Option<&str>) -> Result<bool, GitError> {
             && state.starts_with("REBASING")
         {
             // Extract git's stderr output from the error
-            let git_output = match &e {
-                GitError::CommandFailed(msg) => msg.clone(),
-                _ => e.to_string(),
-            };
-            return Err(GitError::RebaseConflict {
-                state,
-                target_branch: target_branch.to_string(),
-                git_output,
-            });
+            let git_output = e.to_string();
+            bail!(
+                "{}",
+                worktrunk::git::rebase_conflict(&target_branch, &git_output)
+            );
         }
         // Not a rebase conflict, return original error
-        return Err(GitError::CommandFailed(format!(
-            "Failed to rebase onto '{}': {}",
-            target_branch, e
-        )));
+        bail!("Failed to rebase onto '{}': {}", target_branch, e);
     }
 
     // Verify rebase completed successfully (safety check for edge cases)
     if let Some(state) = repo.worktree_state()? {
-        return Err(GitError::RebaseConflict {
-            state,
-            target_branch: target_branch.to_string(),
-            git_output: String::new(), // No error output in this edge case
-        });
+        let _ = state; // used for diagnostics
+        bail!("{}", worktrunk::git::rebase_conflict(&target_branch, ""));
     }
 
     // Success
@@ -304,13 +295,13 @@ pub fn handle_rebase(target: Option<&str>) -> Result<bool, GitError> {
 }
 
 /// Handle `wt beta ask-approvals` command - approve all commands in the project
-pub fn handle_standalone_ask_approvals(force: bool, show_all: bool) -> Result<(), GitError> {
+pub fn handle_standalone_ask_approvals(force: bool, show_all: bool) -> anyhow::Result<()> {
     use super::command_approval::approve_command_batch;
     use worktrunk::config::WorktrunkConfig;
 
     let repo = Repository::current();
     let project_id = repo.project_identifier()?;
-    let config = WorktrunkConfig::load().git_context("Failed to load config")?;
+    let config = WorktrunkConfig::load().context("Failed to load config")?;
 
     // Load project config (show helpful error if missing)
     let project_config = repo.require_project_config()?;
@@ -376,10 +367,10 @@ pub fn handle_standalone_ask_approvals(force: bool, show_all: bool) -> Result<()
 }
 
 /// Handle `wt beta clear-approvals` command - clear approved commands
-pub fn handle_standalone_clear_approvals(global: bool) -> Result<(), GitError> {
+pub fn handle_standalone_clear_approvals(global: bool) -> anyhow::Result<()> {
     use worktrunk::config::WorktrunkConfig;
 
-    let mut config = WorktrunkConfig::load().git_context("Failed to load config")?;
+    let mut config = WorktrunkConfig::load().context("Failed to load config")?;
 
     if global {
         // Clear all approvals for all projects
@@ -392,7 +383,7 @@ pub fn handle_standalone_clear_approvals(global: bool) -> Result<(), GitError> {
         }
 
         config.projects.clear();
-        config.save().git_context("Failed to save config")?;
+        config.save().context("Failed to save config")?;
 
         use worktrunk::styling::GREEN;
         crate::output::success(format!(
@@ -424,7 +415,7 @@ pub fn handle_standalone_clear_approvals(global: bool) -> Result<(), GitError> {
 
         config
             .revoke_project(&project_id)
-            .git_context("Failed to clear project approvals")?;
+            .context("Failed to clear project approvals")?;
 
         use worktrunk::styling::GREEN;
         crate::output::success(format!(

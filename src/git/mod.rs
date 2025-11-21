@@ -30,8 +30,15 @@ static HEAVY_OPS_SEMAPHORE: LazyLock<semaphore::Semaphore> =
 
 // Re-exports from submodules
 pub use diff::{DiffStats, LineDiff};
-pub use error::GitError;
-pub use repository::{GitResultExt, Repository, set_base_path};
+pub use error::{
+    WorktrunkError, branch_already_exists, branch_deletion_failed, cannot_remove_main_worktree,
+    conflicting_changes, detached_head, error_message, exit_code, from_io_error,
+    is_command_not_approved, merge_commits_found, no_worktree_found, not_fast_forward,
+    not_interactive, parse_error, push_failed, rebase_conflict, switch_failed, uncommitted_changes,
+    untracked_files, worktree_creation_failed, worktree_missing, worktree_path_exists,
+    worktree_path_occupied, worktree_removal_failed,
+};
+pub use repository::{Repository, set_base_path};
 
 // Re-export parsing helpers for internal use
 pub(crate) use parse::DefaultBranchName;
@@ -84,11 +91,11 @@ pub struct WorktreeList {
 
 impl WorktreeList {
     /// Create from raw worktrees, filtering bare entries and identifying primary.
-    pub(crate) fn from_raw(raw_worktrees: Vec<Worktree>) -> Result<Self, GitError> {
+    pub(crate) fn from_raw(raw_worktrees: Vec<Worktree>) -> anyhow::Result<Self> {
         let worktrees: Vec<_> = raw_worktrees.into_iter().filter(|wt| !wt.bare).collect();
 
         if worktrees.is_empty() {
-            return Err(GitError::message("No worktrees found"));
+            anyhow::bail!("{}", error_message("No worktrees found"));
         }
 
         Ok(Self { worktrees })

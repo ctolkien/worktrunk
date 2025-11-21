@@ -10,8 +10,12 @@ info:
     COLUMNS: "150"
     GIT_AUTHOR_DATE: "2025-01-01T00:00:00Z"
     GIT_COMMITTER_DATE: "2025-01-01T00:00:00Z"
+    GIT_CONFIG_COUNT: "1"
     GIT_CONFIG_GLOBAL: /dev/null
+    GIT_CONFIG_KEY_0: advice.mergeConflict
     GIT_CONFIG_SYSTEM: /dev/null
+    GIT_CONFIG_VALUE_0: "false"
+    GIT_EDITOR: ""
     LANG: C
     LC_ALL: C
     SOURCE_DATE_EPOCH: "1761609600"
@@ -20,7 +24,7 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-No project configuration found
+❌ [31mNo project configuration found[0m
 
 ----- stderr -----
 ❌ [31mNo project configuration found[0m

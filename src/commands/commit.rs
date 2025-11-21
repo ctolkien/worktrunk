@@ -1,5 +1,6 @@
+use anyhow::Context;
 use worktrunk::config::CommitGenerationConfig;
-use worktrunk::git::{GitError, GitResultExt, Repository};
+use worktrunk::git::Repository;
 use worktrunk::styling::{AnstyleStyle, CYAN, GREEN, HINT, format_with_gutter};
 
 use super::command_executor::CommandContext;
@@ -61,7 +62,7 @@ impl<'a> CommitGenerator<'a> {
         result
     }
 
-    pub fn emit_hint_if_needed(&self) -> Result<(), GitError> {
+    pub fn emit_hint_if_needed(&self) -> anyhow::Result<()> {
         if !self.config.is_configured() {
             crate::output::hint(format!(
                 "{HINT}Using fallback commit message. Run 'wt config --help' for LLM setup guide{HINT:#}"
@@ -70,7 +71,7 @@ impl<'a> CommitGenerator<'a> {
         Ok(())
     }
 
-    pub fn commit_staged_changes(&self, show_no_squash_note: bool) -> Result<(), GitError> {
+    pub fn commit_staged_changes(&self, show_no_squash_note: bool) -> anyhow::Result<()> {
         let repo = Repository::current();
 
         let stats_parts = repo.diff_stats_summary(&["diff", "--staged", "--shortstat"]);
@@ -104,7 +105,7 @@ impl<'a> CommitGenerator<'a> {
         crate::output::gutter(format_with_gutter(&formatted_message, "", None))?;
 
         repo.run_command(&["commit", "-m", &commit_message])
-            .git_context("Failed to commit")?;
+            .context("Failed to commit")?;
 
         let commit_hash = repo
             .run_command(&["rev-parse", "--short", "HEAD"])?
@@ -122,7 +123,7 @@ impl<'a> CommitGenerator<'a> {
 
 /// Commit uncommitted changes with the shared commit pipeline.
 impl CommitOptions<'_> {
-    pub fn commit(self) -> Result<(), GitError> {
+    pub fn commit(self) -> anyhow::Result<()> {
         if !self.no_verify
             && let Some(project_config) = self.ctx.repo.load_project_config()?
         {
@@ -138,12 +139,12 @@ impl CommitOptions<'_> {
             self.ctx
                 .repo
                 .run_command(&["add", "-u"])
-                .git_context("Failed to stage tracked changes")?;
+                .context("Failed to stage tracked changes")?;
         } else {
             self.ctx
                 .repo
                 .run_command(&["add", "-A"])
-                .git_context("Failed to stage changes")?;
+                .context("Failed to stage changes")?;
         }
 
         CommitGenerator::new(&self.ctx.config.commit_generation)

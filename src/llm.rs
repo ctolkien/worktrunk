@@ -2,7 +2,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{self, Stdio};
 use worktrunk::config::CommitGenerationConfig;
-use worktrunk::git::{GitError, Repository};
+use worktrunk::git::Repository;
 use worktrunk::path::format_path_for_display;
 
 use minijinja::Environment;
@@ -71,11 +71,7 @@ Commits being combined:
 ///
 /// This is the canonical way to execute LLM commands in this codebase.
 /// All LLM execution should go through this function to maintain consistency.
-fn execute_llm_command(
-    command: &str,
-    args: &[String],
-    prompt: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
+fn execute_llm_command(command: &str, args: &[String], prompt: &str) -> anyhow::Result<String> {
     // Build command args
     let mut cmd = process::Command::new(command);
     cmd.args(args);
@@ -103,13 +99,13 @@ fn execute_llm_command(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("LLM command failed: {}", stderr).into());
+        anyhow::bail!("LLM command failed: {}", stderr);
     }
 
     let message = String::from_utf8_lossy(&output.stdout).trim().to_owned();
 
     if message.is_empty() {
-        return Err("LLM returned empty message".into());
+        anyhow::bail!("LLM returned empty message");
     }
 
     Ok(message)
@@ -121,14 +117,14 @@ fn build_commit_prompt(
     diff: &str,
     recent_commits: Option<&Vec<String>>,
     context: &PromptContext<'_>,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> anyhow::Result<String> {
     // Get template source
     let template = match (&config.template, &config.template_file) {
         (Some(inline), None) => inline.clone(),
         (None, Some(path)) => {
             let expanded_path = PathBuf::from(shellexpand::tilde(path).as_ref());
             std::fs::read_to_string(&expanded_path).map_err(|e| {
-                format!(
+                anyhow::anyhow!(
                     "Failed to read template-file '{}': {}",
                     format_path_for_display(&expanded_path),
                     e
@@ -143,7 +139,7 @@ fn build_commit_prompt(
 
     // Validate non-empty
     if template.trim().is_empty() {
-        return Err("Template is empty".into());
+        anyhow::bail!("Template is empty");
     }
 
     // Render template with minijinja
@@ -166,14 +162,14 @@ fn build_squash_prompt(
     target_branch: &str,
     commits: &[String],
     context: &PromptContext<'_>,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> anyhow::Result<String> {
     // Get template source
     let template = match (&config.squash_template, &config.squash_template_file) {
         (Some(inline), None) => inline.clone(),
         (None, Some(path)) => {
             let expanded_path = PathBuf::from(shellexpand::tilde(path).as_ref());
             std::fs::read_to_string(&expanded_path).map_err(|e| {
-                format!(
+                anyhow::anyhow!(
                     "Failed to read squash-template-file '{}': {}",
                     format_path_for_display(&expanded_path),
                     e
@@ -190,7 +186,7 @@ fn build_squash_prompt(
 
     // Validate non-empty
     if template.trim().is_empty() {
-        return Err("Squash template is empty".into());
+        anyhow::bail!("Squash template is empty");
     }
 
     // Render template with minijinja
@@ -212,7 +208,7 @@ fn build_squash_prompt(
 
 pub fn generate_commit_message(
     commit_generation_config: &CommitGenerationConfig,
-) -> Result<String, GitError> {
+) -> anyhow::Result<String> {
     // Check if commit generation is configured (non-empty command)
     if commit_generation_config.is_configured() {
         let command = commit_generation_config.command.as_ref().unwrap();
@@ -223,7 +219,7 @@ pub fn generate_commit_message(
             commit_generation_config,
         )
         .map_err(|e| {
-            GitError::CommandFailed(format!(
+            anyhow::anyhow!(format!(
                 "Commit generation command '{}' failed: {}",
                 command, e
             ))
@@ -263,7 +259,7 @@ fn try_generate_commit_message(
     command: &str,
     args: &[String],
     config: &CommitGenerationConfig,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> anyhow::Result<String> {
     let repo = Repository::current();
 
     // Get staged diff
@@ -307,7 +303,7 @@ pub fn generate_squash_message(
     current_branch: &str,
     repo_name: &str,
     commit_generation_config: &CommitGenerationConfig,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> anyhow::Result<String> {
     // Check if commit generation is configured (non-empty command)
     if commit_generation_config.is_configured() {
         let command = commit_generation_config.command.as_ref().unwrap();

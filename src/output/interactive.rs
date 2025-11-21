@@ -65,8 +65,13 @@ impl InteractiveOutput {
     }
 
     pub fn error(&mut self, message: String) -> io::Result<()> {
-        // Error messages are already formatted (include ❌ emoji from GitError::Display)
-        println!("{message}");
+        use worktrunk::styling::{ERROR, ERROR_EMOJI};
+        // Add emoji and styling if not already present
+        if message.starts_with(ERROR_EMOJI) {
+            println!("{message}");
+        } else {
+            println!("{ERROR_EMOJI} {ERROR}{message}{ERROR:#}");
+        }
         stdout().flush()?;
         Ok(())
     }

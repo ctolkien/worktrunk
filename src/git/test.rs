@@ -3,7 +3,7 @@
 //! These tests target edge cases and error conditions in git output parsing
 //! that are likely to reveal bugs in real-world usage.
 
-use super::{DefaultBranchName, GitError, LineDiff, Worktree};
+use super::{DefaultBranchName, LineDiff, Worktree};
 
 #[test]
 fn test_parse_worktree_list_empty_output() {
@@ -210,15 +210,12 @@ fn test_parse_worktree_list_worktree_missing_path() {
 
     // Current code: value.ok_or_else(|| GitError::ParseError("worktree line missing path"))
     assert!(result.is_err(), "Worktree without path should error");
-    match result {
-        Err(GitError::ParseError(msg)) => {
-            assert!(
-                msg.contains("missing path"),
-                "Error should mention missing path"
-            );
-        }
-        _ => panic!("Expected ParseError about missing path"),
-    }
+    let err = result.unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("missing path"),
+        "Error should mention missing path, got: {msg}"
+    );
 }
 
 #[test]
@@ -229,15 +226,12 @@ fn test_parse_worktree_list_head_missing_sha() {
 
     // Current code: value.ok_or_else(|| GitError::ParseError("HEAD line missing SHA"))
     assert!(result.is_err(), "HEAD without SHA should error");
-    match result {
-        Err(GitError::ParseError(msg)) => {
-            assert!(
-                msg.contains("missing SHA"),
-                "Error should mention missing SHA"
-            );
-        }
-        _ => panic!("Expected ParseError about missing SHA"),
-    }
+    let err = result.unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("missing SHA"),
+        "Error should mention missing SHA, got: {msg}"
+    );
 }
 
 #[test]
@@ -248,15 +242,12 @@ fn test_parse_worktree_list_branch_missing_ref() {
 
     // Current code: value.ok_or_else(|| GitError::ParseError("branch line missing ref"))
     assert!(result.is_err(), "Branch without ref should error");
-    match result {
-        Err(GitError::ParseError(msg)) => {
-            assert!(
-                msg.contains("missing ref"),
-                "Error should mention missing ref"
-            );
-        }
-        _ => panic!("Expected ParseError about missing ref"),
-    }
+    let err = result.unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("missing ref"),
+        "Error should mention missing ref, got: {msg}"
+    );
 }
 
 // Tests for parse_remote_default_branch
@@ -288,15 +279,12 @@ fn test_parse_remote_default_branch_empty_output() {
     let result = DefaultBranchName::from_remote(output).map(DefaultBranchName::into_string);
 
     assert!(result.is_err(), "Empty output should return an error");
-    match result {
-        Err(GitError::ParseError(msg)) => {
-            assert!(
-                msg.contains("symbolic ref"),
-                "Error should mention symbolic ref"
-            );
-        }
-        _ => panic!("Expected ParseError"),
-    }
+    let err = result.unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("symbolic ref"),
+        "Error should mention symbolic ref, got: {msg}"
+    );
 }
 
 #[test]
@@ -382,15 +370,12 @@ fn test_parse_local_default_branch_empty_output() {
     let result = DefaultBranchName::from_local("origin", "").map(DefaultBranchName::into_string);
 
     assert!(result.is_err(), "Empty output should error");
-    match result {
-        Err(GitError::ParseError(msg)) => {
-            assert!(
-                msg.contains("Empty branch"),
-                "Error should mention empty branch"
-            );
-        }
-        _ => panic!("Expected ParseError about empty branch"),
-    }
+    let err = result.unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("Empty branch"),
+        "Error should mention empty branch, got: {msg}"
+    );
 }
 
 #[test]

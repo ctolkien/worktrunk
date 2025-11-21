@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use worktrunk::git::{GitError, Repository};
+use worktrunk::git::Repository;
 
 /// Spawn a detached background process with output redirected to a log file
 ///
@@ -26,14 +26,14 @@ pub fn spawn_detached(
     command: &str,
     branch: &str,
     name: &str,
-) -> Result<std::path::PathBuf, GitError> {
+) -> anyhow::Result<std::path::PathBuf> {
     // Get the git common directory (shared across all worktrees)
     let git_common_dir = repo.git_common_dir()?;
 
     // Create log directory in the common git directory
     let log_dir = git_common_dir.join("wt-logs");
     fs::create_dir_all(&log_dir)
-        .map_err(|e| GitError::CommandFailed(format!("Failed to create log directory\n   {e}")))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create log directory\n   {e}"))?;
 
     // Generate log filename (no timestamp - overwrites on each run)
     // Format: {branch}-{name}.log (e.g., "feature-post-start-npm.log", "bugfix-remove.log")
@@ -44,7 +44,7 @@ pub fn spawn_detached(
 
     // Create log file
     let log_file = fs::File::create(&log_path)
-        .map_err(|e| GitError::CommandFailed(format!("Failed to create log file\n   {e}")))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create log file\n   {e}"))?;
 
     #[cfg(unix)]
     {
@@ -64,7 +64,7 @@ fn spawn_detached_unix(
     worktree_path: &Path,
     command: &str,
     log_file: fs::File,
-) -> Result<(), GitError> {
+) -> anyhow::Result<()> {
     // Detachment using nohup and background execution (&):
     // - nohup makes the process immune to SIGHUP (continues after parent exits)
     // - sh -c allows complex shell commands with pipes, redirects, etc.
@@ -81,18 +81,16 @@ fn spawn_detached_unix(
         .current_dir(worktree_path)
         .stdin(Stdio::null())
         .stdout(Stdio::from(log_file.try_clone().map_err(|e| {
-            GitError::CommandFailed(format!("Failed to clone log file handle: {}", e))
+            anyhow::anyhow!(format!("Failed to clone log file handle: {}", e))
         })?))
         .stderr(Stdio::from(log_file))
         .spawn()
-        .map_err(|e| {
-            GitError::CommandFailed(format!("Failed to spawn detached process\n   {e}"))
-        })?;
+        .map_err(|e| anyhow::anyhow!(format!("Failed to spawn detached process\n   {e}")))?;
 
     // Wait for the outer shell to exit (immediate, doesn't block on background command)
-    child.wait().map_err(|e| {
-        GitError::CommandFailed(format!("Failed to wait for detachment shell\n   {e}"))
-    })?;
+    child
+        .wait()
+        .map_err(|e| anyhow::anyhow!(format!("Failed to wait for detachment shell\n   {e}")))?;
 
     Ok(())
 }
@@ -102,7 +100,7 @@ fn spawn_detached_windows(
     worktree_path: &Path,
     command: &str,
     log_file: fs::File,
-) -> Result<(), GitError> {
+) -> anyhow::Result<()> {
     use std::os::windows::process::CommandExt;
 
     // CREATE_NEW_PROCESS_GROUP: Creates new process group (0x00000200)
@@ -115,14 +113,12 @@ fn spawn_detached_windows(
         .current_dir(worktree_path)
         .stdin(Stdio::null())
         .stdout(Stdio::from(log_file.try_clone().map_err(|e| {
-            GitError::CommandFailed(format!("Failed to clone log file handle: {}", e))
+            anyhow::anyhow!(format!("Failed to clone log file handle: {}", e))
         })?))
         .stderr(Stdio::from(log_file))
         .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS)
         .spawn()
-        .map_err(|e| {
-            GitError::CommandFailed(format!("Failed to spawn detached process\n   {e}"))
-        })?;
+        .map_err(|e| anyhow::anyhow!(format!("Failed to spawn detached process\n   {e}")))?;
 
     Ok(())
 }

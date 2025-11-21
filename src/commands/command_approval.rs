@@ -2,8 +2,9 @@
 //!
 //! Shared helpers for approving commands declared in project configuration.
 
+use anyhow::Context;
 use worktrunk::config::{Command, WorktrunkConfig};
-use worktrunk::git::{GitError, GitResultExt};
+use worktrunk::git::not_interactive;
 use worktrunk::styling::{
     AnstyleStyle, HINT, HINT_EMOJI, PROGRESS_EMOJI, WARNING, WARNING_BOLD, WARNING_EMOJI, eprint,
     eprintln, format_bash_with_gutter, println, stderr,
@@ -23,7 +24,7 @@ pub fn approve_command_batch(
     config: &WorktrunkConfig,
     force: bool,
     commands_already_filtered: bool,
-) -> Result<bool, GitError> {
+) -> anyhow::Result<bool> {
     let needs_approval: Vec<&Command> = commands
         .iter()
         .filter(|cmd| {
@@ -47,7 +48,7 @@ pub fn approve_command_batch(
 
     // Only save approvals when interactively approved, not when using --force
     if !force {
-        let mut fresh_config = WorktrunkConfig::load().git_context("Failed to reload config")?;
+        let mut fresh_config = WorktrunkConfig::load().context("Failed to reload config")?;
 
         let project_entry = fresh_config
             .projects
@@ -71,7 +72,7 @@ pub fn approve_command_batch(
     Ok(true)
 }
 
-fn prompt_for_batch_approval(commands: &[&Command], project_id: &str) -> Result<bool, GitError> {
+fn prompt_for_batch_approval(commands: &[&Command], project_id: &str) -> anyhow::Result<bool> {
     use std::io::{self, IsTerminal, Write};
 
     let project_name = project_id.split('/').next_back().unwrap_or(project_id);
@@ -106,7 +107,7 @@ fn prompt_for_batch_approval(commands: &[&Command], project_id: &str) -> Result<
     // This happens AFTER showing the commands so they appear in CI/CD logs
     // even when the prompt cannot be displayed (fail-fast principle)
     if !io::stdin().is_terminal() {
-        return Err(GitError::NotInteractive);
+        anyhow::bail!("{}", not_interactive());
     }
 
     // Flush stderr before showing prompt to ensure all output is visible

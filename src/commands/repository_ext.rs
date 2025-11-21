@@ -3,8 +3,9 @@ use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::worktree::RemoveResult;
+use anyhow::{Context, bail};
 use worktrunk::config::ProjectConfig;
-use worktrunk::git::{GitError, GitResultExt, Repository};
+use worktrunk::git::{Repository, conflicting_changes, no_worktree_found, worktree_missing};
 use worktrunk::path::format_path_for_display;
 use worktrunk::styling::{
     CYAN, CYAN_BOLD, ERROR, ERROR_EMOJI, HINT, HINT_BOLD, HINT_EMOJI, WARNING, WARNING_BOLD,
@@ -15,13 +16,13 @@ use worktrunk::styling::{
 /// implementations inside the binary crate.
 pub trait RepositoryCliExt {
     /// Load the project configuration if it exists.
-    fn load_project_config(&self) -> Result<Option<ProjectConfig>, GitError>;
+    fn load_project_config(&self) -> anyhow::Result<Option<ProjectConfig>>;
 
     /// Load the project configuration, emitting a helpful hint if missing.
-    fn require_project_config(&self) -> Result<ProjectConfig, GitError>;
+    fn require_project_config(&self) -> anyhow::Result<ProjectConfig>;
 
     /// Warn about untracked files being auto-staged.
-    fn warn_if_auto_staging_untracked(&self) -> Result<(), GitError>;
+    fn warn_if_auto_staging_untracked(&self) -> anyhow::Result<()>;
 
     /// Remove a worktree identified by branch name.
     fn remove_worktree_by_name(
@@ -29,23 +30,23 @@ pub trait RepositoryCliExt {
         branch_name: &str,
         no_delete_branch: bool,
         force_delete: bool,
-    ) -> Result<RemoveResult, GitError>;
+    ) -> anyhow::Result<RemoveResult>;
 
     /// Prepare the target worktree for push by auto-stashing non-overlapping changes when safe.
     fn prepare_target_worktree(
         &self,
         target_worktree: Option<&PathBuf>,
         target_branch: &str,
-    ) -> Result<Option<TargetWorktreeStash>, GitError>;
+    ) -> anyhow::Result<Option<TargetWorktreeStash>>;
 }
 
 impl RepositoryCliExt for Repository {
-    fn load_project_config(&self) -> Result<Option<ProjectConfig>, GitError> {
+    fn load_project_config(&self) -> anyhow::Result<Option<ProjectConfig>> {
         let repo_root = self.worktree_root()?;
         load_project_config_at(&repo_root)
     }
 
-    fn require_project_config(&self) -> Result<ProjectConfig, GitError> {
+    fn require_project_config(&self) -> anyhow::Result<ProjectConfig> {
         let repo_root = self.worktree_root()?;
         let config_path = repo_root.join(".config").join("wt.toml");
 
@@ -58,17 +59,15 @@ impl RepositoryCliExt for Repository {
                     "{HINT_EMOJI} {HINT}Create a config file at: {HINT_BOLD}{}{HINT_BOLD:#}{HINT:#}",
                     format_path_for_display(&config_path)
                 );
-                Err(GitError::CommandFailed(
-                    "No project configuration found".to_string(),
-                ))
+                Err(anyhow::anyhow!("No project configuration found"))
             }
         }
     }
 
-    fn warn_if_auto_staging_untracked(&self) -> Result<(), GitError> {
+    fn warn_if_auto_staging_untracked(&self) -> anyhow::Result<()> {
         let status = self
             .run_command(&["status", "--porcelain"])
-            .git_context("Failed to get status")?;
+            .context("Failed to get status")?;
         AutoStageWarning::from_status(&status).emit()
     }
 
@@ -77,20 +76,16 @@ impl RepositoryCliExt for Repository {
         branch_name: &str,
         no_delete_branch: bool,
         force_delete: bool,
-    ) -> Result<RemoveResult, GitError> {
+    ) -> anyhow::Result<RemoveResult> {
         let worktree_path = match self.worktree_for_branch(branch_name)? {
             Some(path) => path,
             None => {
-                return Err(GitError::NoWorktreeFound {
-                    branch: branch_name.to_string(),
-                });
+                bail!("{}", no_worktree_found(branch_name));
             }
         };
 
         if !worktree_path.exists() {
-            return Err(GitError::WorktreeMissing {
-                branch: branch_name.to_string(),
-            });
+            bail!("{}", worktree_missing(branch_name));
         }
 
         let target_repo = Repository::at(&worktree_path);
@@ -121,7 +116,7 @@ impl RepositoryCliExt for Repository {
         &self,
         target_worktree: Option<&PathBuf>,
         target_branch: &str,
-    ) -> Result<Option<TargetWorktreeStash>, GitError> {
+    ) -> anyhow::Result<Option<TargetWorktreeStash>> {
         let Some(wt_path) = target_worktree else {
             return Ok(None);
         };
@@ -149,10 +144,7 @@ impl RepositoryCliExt for Repository {
             .collect();
 
         if !overlapping.is_empty() {
-            return Err(GitError::ConflictingChanges {
-                files: overlapping,
-                worktree_path: wt_path.clone(),
-            });
+            bail!("{}", conflicting_changes(&overlapping, wt_path));
         }
 
         let nanos = SystemTime::now()
@@ -194,7 +186,7 @@ impl RepositoryCliExt for Repository {
         }
 
         let Some(stash_ref) = stash_ref else {
-            return Err(GitError::CommandFailed(format!(
+            return Err(anyhow::anyhow!(format!(
                 "Failed to locate autostash entry '{}'",
                 stash_name
             )));
@@ -204,8 +196,8 @@ impl RepositoryCliExt for Repository {
     }
 }
 
-fn load_project_config_at(repo_root: &Path) -> Result<Option<ProjectConfig>, GitError> {
-    ProjectConfig::load(repo_root).git_context("Failed to load project config")
+fn load_project_config_at(repo_root: &Path) -> anyhow::Result<Option<ProjectConfig>> {
+    ProjectConfig::load(repo_root).context("Failed to load project config")
 }
 
 struct AutoStageWarning {
@@ -223,7 +215,7 @@ impl AutoStageWarning {
         Self { files }
     }
 
-    fn emit(&self) -> Result<(), GitError> {
+    fn emit(&self) -> anyhow::Result<()> {
         if self.files.is_empty() {
             return Ok(());
         }
@@ -256,7 +248,7 @@ impl TargetWorktreeStash {
         }
     }
 
-    pub(crate) fn restore(self) -> Result<(), GitError> {
+    pub(crate) fn restore(self) -> anyhow::Result<()> {
         crate::output::progress(format!(
             "{CYAN}Restoring stashed changes in {CYAN_BOLD}{}{CYAN_BOLD:#}{CYAN}...{CYAN:#}",
             format_path_for_display(&self.path)

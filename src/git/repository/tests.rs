@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use super::super::{DefaultBranchName, Worktree, finalize_worktree};
-use super::*;
 
 #[test]
 fn test_parse_worktree_list() {
@@ -177,7 +176,6 @@ fn test_parse_local_default_branch_empty() {
     let result =
         DefaultBranchName::from_local("origin", output).map(DefaultBranchName::into_string);
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), GitError::ParseError(_)));
 }
 
 #[test]
@@ -235,7 +233,6 @@ fn test_parse_remote_default_branch_missing_symref() {
     let output = "85a1ce7c7182540f9c02453441cb3e8bf0ced214\tHEAD\n";
     let result = DefaultBranchName::from_remote(output).map(DefaultBranchName::into_string);
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), GitError::ParseError(_)));
 }
 
 #[test]

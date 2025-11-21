@@ -1,6 +1,6 @@
 use worktrunk::HookType;
 use worktrunk::config::{CommandConfig, CommandPhase, ProjectConfig};
-use worktrunk::git::GitError;
+use worktrunk::git::WorktrunkError;
 use worktrunk::styling::{CYAN, WARNING, WARNING_BOLD, format_bash_with_gutter};
 
 use super::command_executor::{CommandContext, PreparedCommand, prepare_project_commands};
@@ -32,7 +32,7 @@ impl<'a> HookPipeline<'a> {
         phase: CommandPhase,
         auto_trust: bool,
         extra_vars: &[(&str, &str)],
-    ) -> Result<Vec<PreparedCommand>, GitError> {
+    ) -> anyhow::Result<Vec<PreparedCommand>> {
         prepare_project_commands(command_config, &self.ctx, auto_trust, extra_vars, phase)
     }
 
@@ -47,7 +47,7 @@ impl<'a> HookPipeline<'a> {
         label_prefix: &str,
         hook_type: HookType,
         failure_strategy: HookFailureStrategy,
-    ) -> Result<(), GitError> {
+    ) -> anyhow::Result<()> {
         let commands = self.prepare_commands(command_config, phase, auto_trust, extra_vars)?;
         if commands.is_empty() {
             return Ok(());
@@ -65,24 +65,28 @@ impl<'a> HookPipeline<'a> {
             if let Err(err) =
                 execute_command_in_worktree(self.ctx.worktree_path, &prepared.expanded)
             {
-                // Extract raw message for embedding (without formatting from Display impl)
-                let err_msg = match &err {
-                    GitError::ChildProcessExited { message, .. } => message.clone(),
-                    other => other.to_string(),
-                };
-                let exit_code = match &err {
-                    GitError::ChildProcessExited { code, .. } => Some(*code),
-                    _ => None,
-                };
+                // Extract raw message and exit code from error
+                let (err_msg, exit_code) =
+                    if let Some(wt_err) = err.downcast_ref::<WorktrunkError>() {
+                        match wt_err {
+                            WorktrunkError::ChildProcessExited { message, code } => {
+                                (message.clone(), Some(*code))
+                            }
+                            _ => (err.to_string(), None),
+                        }
+                    } else {
+                        (err.to_string(), None)
+                    };
 
                 match &failure_strategy {
                     HookFailureStrategy::FailFast => {
-                        return Err(GitError::HookCommandFailed {
+                        return Err(WorktrunkError::HookCommandFailed {
                             hook_type,
                             command_name: prepared.name.clone(),
                             error: err_msg,
                             exit_code,
-                        });
+                        }
+                        .into());
                     }
                     HookFailureStrategy::Warn => {
                         let message = match &prepared.name {
@@ -108,12 +112,13 @@ impl<'a> HookPipeline<'a> {
         // For Warn strategy with PostMerge: if any command failed, propagate the exit code
         // This matches git's behavior: post-hooks can't stop the operation but affect exit status
         if let Some((error, command_name, exit_code)) = first_failure {
-            return Err(GitError::HookCommandFailed {
+            return Err(WorktrunkError::HookCommandFailed {
                 hook_type,
                 command_name,
                 error,
                 exit_code: Some(exit_code),
-            });
+            }
+            .into());
         }
 
         Ok(())
@@ -127,7 +132,7 @@ impl<'a> HookPipeline<'a> {
         auto_trust: bool,
         extra_vars: &[(&str, &str)],
         label_prefix: &str,
-    ) -> Result<(), GitError> {
+    ) -> anyhow::Result<()> {
         let commands = self.prepare_commands(command_config, phase, auto_trust, extra_vars)?;
         if commands.is_empty() {
             return Ok(());
@@ -168,7 +173,7 @@ impl<'a> HookPipeline<'a> {
         project_config: &ProjectConfig,
         target_branch: Option<&str>,
         auto_trust: bool,
-    ) -> Result<(), GitError> {
+    ) -> anyhow::Result<()> {
         let Some(pre_commit_config) = &project_config.pre_commit_command else {
             return Ok(());
         };

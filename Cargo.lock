@@ -3032,6 +3032,7 @@ dependencies = [
  "ansi-str",
  "anstream",
  "anstyle",
+ "anyhow",
  "askama",
  "chrono",
  "clap",

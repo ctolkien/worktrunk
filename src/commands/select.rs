@@ -1,10 +1,11 @@
+use anyhow::Context;
 use skim::prelude::*;
 use std::borrow::Cow;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use worktrunk::config::WorktrunkConfig;
-use worktrunk::git::{GitError, GitResultExt, Repository};
+use worktrunk::git::Repository;
 
 use super::list::collect;
 use super::list::model::ListItem;
@@ -242,7 +243,7 @@ impl WorktreeSkimItem {
     }
 }
 
-pub fn handle_select() -> Result<(), GitError> {
+pub fn handle_select() -> anyhow::Result<()> {
     let repo = Repository::current();
 
     // Initialize preview mode state file (auto-cleanup on drop)
@@ -338,13 +339,13 @@ pub fn handle_select() -> Result<(), GitError> {
             "1: working | 2: history | 3: diff | ctrl-u/d: scroll | ctrl-/: toggle".to_string(),
         ))
         .build()
-        .map_err(|e| GitError::CommandFailed(format!("Failed to build skim options: {}", e)))?;
+        .map_err(|e| anyhow::anyhow!(format!("Failed to build skim options: {}", e)))?;
 
     // Create item receiver
     let (tx, rx): (SkimItemSender, SkimItemReceiver) = unbounded();
     for item in items {
         tx.send(item)
-            .map_err(|e| GitError::CommandFailed(format!("Failed to send item to skim: {}", e)))?;
+            .map_err(|e| anyhow::anyhow!(format!("Failed to send item to skim: {}", e)))?;
     }
     drop(tx);
 
@@ -361,7 +362,7 @@ pub fn handle_select() -> Result<(), GitError> {
         let identifier = selected.output().to_string();
 
         // Load config
-        let config = WorktrunkConfig::load().git_context("Failed to load config")?;
+        let config = WorktrunkConfig::load().context("Failed to load config")?;
 
         // Switch to the selected worktree
         // handle_switch can handle both branch names and worktree paths

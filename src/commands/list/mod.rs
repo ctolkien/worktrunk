@@ -89,14 +89,14 @@ mod spacing_test;
 // Layout is calculated in collect.rs
 use model::{ListData, ListItem};
 use progressive::RenderMode;
-use worktrunk::git::{GitError, Repository};
+use worktrunk::git::Repository;
 
 pub fn handle_list(
     format: crate::OutputFormat,
     show_branches: bool,
     show_full: bool,
     render_mode: RenderMode,
-) -> Result<(), GitError> {
+) -> anyhow::Result<()> {
     let repo = Repository::current();
 
     let fetch_ci = show_full; // Only fetch CI with --full (expensive)
@@ -128,9 +128,8 @@ pub fn handle_list(
     match format {
         crate::OutputFormat::Json => {
             // Display fields are already computed in collect()
-            let json = serde_json::to_string_pretty(&items).map_err(|e| {
-                GitError::CommandFailed(format!("Failed to serialize to JSON: {}", e))
-            })?;
+            let json = serde_json::to_string_pretty(&items)
+                .map_err(|e| anyhow::anyhow!("Failed to serialize to JSON: {}", e))?;
             crate::output::raw(json)?;
         }
         crate::OutputFormat::Table => {

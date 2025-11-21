@@ -1,6 +1,6 @@
 use worktrunk::HookType;
 use worktrunk::config::{Command, CommandPhase, ProjectConfig};
-use worktrunk::git::{GitError, Repository};
+use worktrunk::git::Repository;
 use worktrunk::path::format_path_for_display;
 use worktrunk::styling::{CYAN, ERROR, ERROR_EMOJI, GREEN_BOLD, HINT, HINT_EMOJI};
 
@@ -29,7 +29,7 @@ impl<'a> MergeCommandCollector<'a> {
     /// Collect all commands that will be executed during merge
     ///
     /// Returns original (unexpanded) commands for approval matching
-    fn collect(self) -> Result<CollectedCommands, GitError> {
+    fn collect(self) -> anyhow::Result<CollectedCommands> {
         let mut all_commands = Vec::new();
         let project_config = match self.repo.load_project_config()? {
             Some(cfg) => cfg,
@@ -67,7 +67,7 @@ pub fn handle_merge(
     no_verify: bool,
     force: bool,
     tracked_only: bool,
-) -> Result<(), GitError> {
+) -> anyhow::Result<()> {
     let env = CommandEnv::current()?;
     let repo = &env.repo;
     let config = &env.config;
@@ -75,12 +75,12 @@ pub fn handle_merge(
 
     // Validate --no-commit: requires clean working tree
     if no_commit && repo.is_dirty()? {
-        return Err(GitError::UncommittedChanges);
+        return Err(anyhow::anyhow!("{}", worktrunk::git::uncommitted_changes()));
     }
 
     // Validate --no-commit flag compatibility
     if no_commit && !no_remove {
-        return Err(GitError::CommandFailed(format!(
+        return Err(anyhow::anyhow!(format!(
             "{ERROR_EMOJI} {ERROR}--no-commit requires --no-remove{ERROR:#}\n\n{HINT_EMOJI} {HINT}Cannot remove active worktree when skipping commit/rebase{HINT:#}"
         )));
     }
@@ -241,7 +241,7 @@ fn format_merge_summary(main_path: Option<&std::path::Path>) -> String {
 }
 
 /// Handle output for merge summary using global output context
-fn handle_merge_summary_output(main_path: Option<&std::path::Path>) -> Result<(), GitError> {
+fn handle_merge_summary_output(main_path: Option<&std::path::Path>) -> anyhow::Result<()> {
     let message = format_merge_summary(main_path);
 
     // Show success message (formatting added by OutputContext)
@@ -262,7 +262,7 @@ pub fn run_pre_merge_commands(
     ctx: &CommandContext,
     target_branch: &str,
     auto_trust: bool,
-) -> Result<(), GitError> {
+) -> anyhow::Result<()> {
     let Some(pre_merge_config) = &project_config.pre_merge_command else {
         return Ok(());
     };
@@ -289,7 +289,7 @@ pub fn execute_post_merge_commands(
     ctx: &CommandContext,
     target_branch: &str,
     auto_trust: bool,
-) -> Result<(), GitError> {
+) -> anyhow::Result<()> {
     // Load project config from the main worktree path directly
     let project_config = match ctx.repo.load_project_config()? {
         Some(cfg) => cfg,

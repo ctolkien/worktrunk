@@ -1,6 +1,7 @@
+use anyhow::Context;
 use etcetera::base_strategy::{BaseStrategy, choose_base_strategy};
 use std::path::PathBuf;
-use worktrunk::git::{GitError, GitResultExt, Repository};
+use worktrunk::git::{Repository, detached_head};
 use worktrunk::path::format_path_for_display;
 use worktrunk::styling::{
     AnstyleStyle, CYAN, GREEN, GREEN_BOLD, HINT, HINT_EMOJI, INFO_EMOJI, SUCCESS_EMOJI,
@@ -11,10 +12,9 @@ use worktrunk::styling::{
 const CONFIG_EXAMPLE: &str = include_str!("../../config.example.toml");
 
 /// Handle the config init command
-pub fn handle_config_init() -> Result<(), GitError> {
-    let config_path = get_global_config_path().ok_or_else(|| {
-        GitError::CommandFailed("Could not determine global config path".to_string())
-    })?;
+pub fn handle_config_init() -> anyhow::Result<()> {
+    let config_path = get_global_config_path()
+        .ok_or_else(|| anyhow::anyhow!("Could not determine global config path"))?;
 
     // Check if file already exists
     if config_path.exists() {
@@ -30,13 +30,12 @@ pub fn handle_config_init() -> Result<(), GitError> {
 
     // Create parent directory if it doesn't exist
     if let Some(parent) = config_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| {
-            GitError::CommandFailed(format!("Failed to create config directory: {}", e))
-        })?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| anyhow::anyhow!("Failed to create config directory: {}", e))?;
     }
 
     // Write the example config
-    std::fs::write(&config_path, CONFIG_EXAMPLE).git_context("Failed to write config file")?;
+    std::fs::write(&config_path, CONFIG_EXAMPLE).context("Failed to write config file")?;
 
     // Success message
     let green_bold = GREEN.bold();
@@ -53,7 +52,7 @@ pub fn handle_config_init() -> Result<(), GitError> {
 }
 
 /// Handle the config list command
-pub fn handle_config_list() -> Result<(), GitError> {
+pub fn handle_config_list() -> anyhow::Result<()> {
     // Display global config
     display_global_config()?;
     println!();
@@ -64,13 +63,12 @@ pub fn handle_config_list() -> Result<(), GitError> {
     Ok(())
 }
 
-fn display_global_config() -> Result<(), GitError> {
+fn display_global_config() -> anyhow::Result<()> {
     let bold = AnstyleStyle::new().bold();
 
     // Get config path
-    let config_path = get_global_config_path().ok_or_else(|| {
-        GitError::CommandFailed("Could not determine global config path".to_string())
-    })?;
+    let config_path = get_global_config_path()
+        .ok_or_else(|| anyhow::anyhow!("Could not determine global config path"))?;
 
     println!(
         "{INFO_EMOJI} Global Config: {bold}{}{bold:#}",
@@ -89,8 +87,7 @@ fn display_global_config() -> Result<(), GitError> {
     }
 
     // Read and display the file contents
-    let contents =
-        std::fs::read_to_string(&config_path).git_context("Failed to read config file")?;
+    let contents = std::fs::read_to_string(&config_path).context("Failed to read config file")?;
 
     if contents.trim().is_empty() {
         println!("{HINT_EMOJI} {HINT}Empty file (using defaults){HINT:#}");
@@ -103,7 +100,7 @@ fn display_global_config() -> Result<(), GitError> {
     Ok(())
 }
 
-fn display_project_config() -> Result<(), GitError> {
+fn display_project_config() -> anyhow::Result<()> {
     let bold = AnstyleStyle::new().bold();
     let dim = AnstyleStyle::new().dimmed();
 
@@ -130,8 +127,7 @@ fn display_project_config() -> Result<(), GitError> {
     }
 
     // Read and display the file contents
-    let contents =
-        std::fs::read_to_string(&config_path).git_context("Failed to read config file")?;
+    let contents = std::fs::read_to_string(&config_path).context("Failed to read config file")?;
 
     if contents.trim().is_empty() {
         println!("{HINT_EMOJI} {HINT}Empty file{HINT:#}");
@@ -167,7 +163,7 @@ fn get_global_config_path() -> Option<PathBuf> {
 }
 
 /// Handle the config refresh-cache command
-pub fn handle_config_refresh_cache() -> Result<(), GitError> {
+pub fn handle_config_refresh_cache() -> anyhow::Result<()> {
     let repo = Repository::current();
 
     // Display progress message
@@ -187,7 +183,7 @@ pub fn handle_config_refresh_cache() -> Result<(), GitError> {
 }
 
 /// Handle the config status set command
-pub fn handle_config_status_set(value: String, branch: Option<String>) -> Result<(), GitError> {
+pub fn handle_config_status_set(value: String, branch: Option<String>) -> anyhow::Result<()> {
     let repo = Repository::current();
 
     // TODO: Worktree-specific status (worktrunk.status with --worktree flag) would allow
@@ -197,9 +193,9 @@ pub fn handle_config_status_set(value: String, branch: Option<String>) -> Result
 
     let branch_name = match branch {
         Some(b) => b,
-        None => repo.current_branch()?.ok_or_else(|| {
-            GitError::CommandFailed("Not on a branch (detached HEAD)".to_string())
-        })?,
+        None => repo
+            .current_branch()?
+            .ok_or_else(|| anyhow::anyhow!("{}", detached_head()))?,
     };
 
     let config_key = format!("worktrunk.status.{}", branch_name);
@@ -214,7 +210,7 @@ pub fn handle_config_status_set(value: String, branch: Option<String>) -> Result
 }
 
 /// Handle the config status unset command
-pub fn handle_config_status_unset(target: String) -> Result<(), GitError> {
+pub fn handle_config_status_unset(target: String) -> anyhow::Result<()> {
     let repo = Repository::current();
 
     if target == "*" {
@@ -242,16 +238,15 @@ pub fn handle_config_status_unset(target: String) -> Result<(), GitError> {
     } else {
         // Clear specific branch status
         let branch_name = if target.is_empty() {
-            repo.current_branch()?.ok_or_else(|| {
-                GitError::CommandFailed("Not on a branch (detached HEAD)".to_string())
-            })?
+            repo.current_branch()?
+                .ok_or_else(|| anyhow::anyhow!("{}", detached_head()))?
         } else {
             target
         };
 
         let config_key = format!("worktrunk.status.{}", branch_name);
         repo.run_command(&["config", "--unset", &config_key])
-            .git_context("Failed to unset status (may not be set)")?;
+            .context("Failed to unset status (may not be set)")?;
 
         let branch_bold = GREEN.bold();
         crate::output::success(format!(
