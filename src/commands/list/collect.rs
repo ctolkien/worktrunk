@@ -427,7 +427,7 @@ fn get_branches_without_worktrees(
     Ok(branches_without_worktrees)
 }
 
-/// Get remote branches from the primary remote that don't have local worktrees.
+/// Get remote branches from all remotes that don't have local worktrees.
 ///
 /// Returns (branch_name, commit_sha) pairs for remote branches.
 /// Filters out branches that already have worktrees (whether the worktree is on the
@@ -436,12 +436,8 @@ fn get_remote_branches(
     repo: &Repository,
     worktrees: &[Worktree],
 ) -> anyhow::Result<Vec<(String, String)>> {
-    // Get all remote branches from primary remote
+    // Get all remote branches from all remotes
     let all_remote_branches = repo.list_remote_branches()?;
-
-    // Get primary remote name for prefix stripping
-    let remote = repo.primary_remote()?;
-    let remote_prefix = format!("{}/", remote);
 
     // Build a set of branch names that have worktrees
     let worktree_branches: std::collections::HashSet<String> = worktrees
@@ -453,13 +449,12 @@ fn get_remote_branches(
     let remote_branches: Vec<_> = all_remote_branches
         .into_iter()
         .filter(|(remote_branch_name, _)| {
-            // Extract local branch name from "<remote>/feature" -> "feature"
-            // Only include branches that have the expected prefix format
-            if let Some(local_name) = remote_branch_name.strip_prefix(&remote_prefix) {
+            // First '/' separates remote from branch: "origin/feature/foo" → "feature/foo"
+            if let Some((_, local_name)) = remote_branch_name.split_once('/') {
                 // Include remote branch if local branch doesn't have a worktree
                 !worktree_branches.contains(local_name)
             } else {
-                // Skip branches that don't have the expected prefix (e.g., just "origin")
+                // Skip branches without a remote prefix
                 false
             }
         })

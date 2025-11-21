@@ -548,7 +548,7 @@ Options:
           Include branches without worktrees
 
       --remotes
-          Include remote branches from primary remote
+          Include remote branches
 
   -v, --verbose
           Show git commands and debug info

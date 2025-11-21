@@ -494,7 +494,7 @@ json\:"JSON output"))' \
 '-C+[Change working directory]:path:_files' \
 '--config=[User config file path]:path:_files' \
 '--branches[Include branches without worktrees]' \
-'--remotes[Include primary remote branches]' \
+'--remotes[Include remote branches]' \
 '--full[Show CI, conflicts, diffs]' \
 '--progressive[Force progressive (or --no-progressive)]' \
 '--no-progressive[Force buffered rendering]' \

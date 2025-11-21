@@ -25,8 +25,8 @@ Options:
   --branches                            
       Include branches without worktrees
 
-  --remotes                          
-      Include primary remote branches
+  --remotes                  
+      Include remote branches
 
   --full                       
       Show CI, conflicts, diffs
