@@ -91,9 +91,10 @@ pub fn shorten_path(path: &Path, prefix: &Path) -> String {
 
 /// Truncate text at word boundary with ellipsis, respecting terminal width
 pub fn truncate_at_word_boundary(text: &str, max_width: usize) -> String {
-    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+    use unicode_width::UnicodeWidthChar;
+    use worktrunk::styling::visual_width;
 
-    if text.width() <= max_width {
+    if visual_width(text) <= max_width {
         return text.to_string();
     }
 
@@ -124,23 +125,8 @@ pub fn truncate_at_word_boundary(text: &str, max_width: usize) -> String {
     format!("{}…", truncated)
 }
 
-/// Get terminal width, defaulting to 80 if detection fails
-pub fn get_terminal_width() -> usize {
-    // Check COLUMNS environment variable first (for testing and scripts)
-    if let Ok(cols) = std::env::var("COLUMNS")
-        && let Ok(width) = cols.parse::<usize>()
-    {
-        return width;
-    }
-
-    // Fall back to actual terminal size
-    terminal_size::terminal_size()
-        .map(|(terminal_size::Width(w), _)| w as usize)
-        .unwrap_or(80)
-}
-
-// Re-export truncate_visible from styling for convenience
-pub use worktrunk::styling::truncate_visible;
+// Re-export from styling for convenience
+pub use worktrunk::styling::{get_terminal_width, truncate_visible};
 
 #[cfg(test)]
 mod tests {

@@ -9,8 +9,8 @@ use unicode_width::UnicodeWidthStr;
 #[cfg(feature = "syntax-highlighting")]
 use super::highlighting::bash_token_style;
 
-/// Default terminal width fallback if detection fails
-const DEFAULT_TERMINAL_WIDTH: usize = 80;
+// Import canonical implementations from parent module
+use super::{get_terminal_width, visual_width};
 
 /// Width overhead added by format_with_gutter()
 ///
@@ -27,29 +27,6 @@ pub const GUTTER_OVERHEAD: usize = 3;
 /// Strip ANSI escape codes from a string
 pub fn strip_ansi_codes(s: &str) -> String {
     s.ansi_strip().into_owned()
-}
-
-/// Calculate visual width of a string, ignoring ANSI escape codes
-fn visual_width(s: &str) -> usize {
-    strip_ansi_codes(s).width()
-}
-
-/// Get terminal width, defaulting to 80 if detection fails
-///
-/// Checks COLUMNS environment variable first (for testing and scripts),
-/// then falls back to actual terminal size detection.
-fn get_terminal_width() -> usize {
-    // Check COLUMNS environment variable first (for testing and scripts)
-    if let Ok(cols) = std::env::var("COLUMNS")
-        && let Ok(width) = cols.parse::<usize>()
-    {
-        return width;
-    }
-
-    // Fall back to actual terminal size
-    terminal_size::terminal_size()
-        .map(|(terminal_size::Width(w), _)| w as usize)
-        .unwrap_or(DEFAULT_TERMINAL_WIDTH)
 }
 
 /// Wraps text at word boundaries to fit within the specified width

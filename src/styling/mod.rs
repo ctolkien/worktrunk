@@ -30,6 +30,36 @@ pub use format::{GUTTER_OVERHEAD, format_bash_with_gutter, format_with_gutter, s
 pub use highlighting::format_toml;
 pub use line::{StyledLine, StyledString, truncate_visible};
 
+/// Default terminal width fallback if detection fails
+const DEFAULT_TERMINAL_WIDTH: usize = 80;
+
+/// Get terminal width, defaulting to 80 if detection fails
+///
+/// Checks COLUMNS environment variable first (for testing and scripts),
+/// then falls back to actual terminal size detection.
+pub fn get_terminal_width() -> usize {
+    // Check COLUMNS environment variable first (for testing and scripts)
+    if let Ok(cols) = std::env::var("COLUMNS")
+        && let Ok(width) = cols.parse::<usize>()
+    {
+        return width;
+    }
+
+    // Fall back to actual terminal size
+    terminal_size::terminal_size()
+        .map(|(terminal_size::Width(w), _)| w as usize)
+        .unwrap_or(DEFAULT_TERMINAL_WIDTH)
+}
+
+/// Calculate visual width of a string, ignoring ANSI escape codes
+///
+/// Uses unicode-width for proper handling of wide characters (CJK, emoji).
+pub fn visual_width(s: &str) -> usize {
+    use ansi_str::AnsiStr;
+    use unicode_width::UnicodeWidthStr;
+    s.ansi_strip().width()
+}
+
 /// Wrap text with an OSC 8 hyperlink
 ///
 /// See: <https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda>
