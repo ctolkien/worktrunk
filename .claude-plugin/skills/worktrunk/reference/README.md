@@ -20,6 +20,8 @@ Worktrunk offers control, transparency & automation for this workflow.
 
 ## Demo
 
+List worktrees, create a worktree, make a trivial change, merge the change:
+
 ![Worktrunk Demo](dev/wt-demo/out/wt-demo.gif)
 
 ## Quick Start
@@ -33,7 +35,7 @@ $ wt switch --create fix-auth
 ✅ Created new worktree for fix-auth from main at ../repo.fix-auth/
 ```
 
-...then do work / have an agent do work. Then, when ready...
+...then do work. Then, when ready...
 
 **Merge it:**
 
@@ -79,23 +81,18 @@ See [Shell Integration](#shell-integration) for details.
 
 ## Design Philosophy
 
-Worktrunk is opinionated! It's not designed to be all things to all people. Its
-choices optimize for parallel AI agent workflow:
+Worktrunk is opinionated! Currently the workflow that best optimizes for zero marginal cost of parallel agents:
 
-- Trunk-based development
-- Lots of short-lived worktrees
-- Terminal-based, both coding agents & shell navigation
-- Inner dev loops are local
-- Linear commit histories
+- Trunk-based — lots of short-lived worktrees, linear commit histories
+- Local — terminal-based agents, local inner dev loops
 
 ...and that means...
 
-- Total focus on zero-cost of additional parallel agents
-- A fairly small surface area: three core commands
-  - Worktrees are addressed by their branch
 - Maximum automation: LLM commit messages, lifecycle hooks, Claude Code hooks
-  - A robust "run auto-merge when 'local-CI' passes" approach
-- Defaults for commits is "everything and squash merge" (but configurable)
+  - A robust "auto-merge when 'local-CI' passes" approach
+- A small surface area: three core commands
+- 1:1 mapping between worktree and branch, worktrees are addressed by their branch
+- Defaults to "stage everything and squash merge" (but configurable)
 - Extreme UI responsiveness; slow ops can't delay fast ones
 - Pluggable; adopting Worktrunk for a portion of a workflow doesn't require
   adopting it for everything. standard `git worktree` commands continue working
@@ -144,13 +141,13 @@ For more details, including custom prompt templates: `wt config --help`
 
 Automate tasks at different points in the worktree lifecycle. Configure hooks in `.config/wt.toml`.
 
-| Hook                    | When                                     | On Failure       |
-| ----------------------- | ---------------------------------------- | ---------------- |
-| **post-create-command** | After worktree created                   | Warn, continue   |
-| **post-start-command**  | After success message (background)       | Warn, continue   |
-| **pre-commit-command**  | Before squash commit created             | Stop merge       |
-| **pre-merge-command**   | After squash, before push                | Stop merge       |
-| **post-merge-command**  | After successful merge                   | Warn, continue   |
+| Hook                    | When                               | On Failure     |
+| ----------------------- | ---------------------------------- | -------------- |
+| **post-create-command** | After worktree created             | Warn, continue |
+| **post-start-command**  | After success message (background) | Warn, continue |
+| **pre-commit-command**  | Before squash commit created       | Stop merge     |
+| **pre-merge-command**   | After squash, before push          | Stop merge     |
+| **post-merge-command**  | After successful merge             | Warn, continue |
 
 ```toml
 # Install dependencies, build setup
@@ -804,17 +801,13 @@ The custom emoji appears directly after the git status symbols.
 <details>
 <summary>Automation with Claude Code Hooks</summary>
 
-Claude Code can automatically set/clear emoji status when coding sessions start and end. This shows which branches have active AI sessions.
-
-**Easy setup:** The Worktrunk repository includes a `.claude-plugin` directory with pre-configured hooks.
+Claude Code can automatically set/clear emoji status when coding sessions start and end.
 
 When using Claude:
 
 - Sets status to `🤖` for the current branch when submitting a prompt (working)
 - Changes to `💬` when Claude needs input (waiting for permission or idle)
 - Clears the status completely when the session ends
-
-**Status from another terminal:**
 
 <!-- Output from: tests/snapshots/integration__integration_tests__list__with_user_status.snap -->
 
@@ -839,31 +832,22 @@ $ wt list
 
 </details>
 
-</details>
+### Customization
 
-### Custom Worktree Paths
+By default, worktrees live as siblings to the main repo (`myapp.feature-x/`).
 
-By default, worktrees live as siblings to the main repo:
-
-```
-myapp/               # main worktree
-myapp.feature-x/     # secondary worktree
-myapp.bugfix-y/      # secondary worktree
-```
-
-Customize the pattern in `~/.config/worktrunk/config.toml`:
-
-```toml
-# Inside the repo (keeps everything contained)
-worktree-path = ".worktrees/{{ branch }}"
-
-# Shared directory with multiple repos
-worktree-path = "../worktrees/{{ main_worktree }}/{{ branch }}"
-```
+Run `wt config --help` for details on customizing paths, commit templates, and more.
 
 ## Status
 
-Worktrunk is in active development. The core features are stable and ready for use. While the project is pre-1.0, the CLI interface and major features are unlikely to change significantly.
+Worktrunk is in active development. The core features are stable and ready for
+use. There may be backward-incompatible changes.
+
+The most helpful way to contribute:
+
+- Use it!
+- Star the repo / tell friends / post about it
+- Find bugs, file reproducible bug reports
 
 <details>
 <summary>Developing</summary>

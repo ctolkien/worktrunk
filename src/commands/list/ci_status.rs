@@ -87,13 +87,17 @@ impl PrStatus {
 
     fn detect_github(branch: &str, local_head: &str, repo_root: &str) -> Option<Self> {
         // Check if gh is available and authenticated
-        if !Command::new("gh")
-            .args(["auth", "status"])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-        {
-            return None;
+        let auth = Command::new("gh").args(["auth", "status"]).output();
+        match auth {
+            Err(e) => {
+                log::debug!("gh not available for {}: {}", branch, e);
+                return None;
+            }
+            Ok(o) if !o.status.success() => {
+                log::debug!("gh not authenticated for {}", branch);
+                return None;
+            }
+            _ => {}
         }
 
         // Use `gh pr list --head` instead of `gh pr view` to handle numeric branch names correctly.
@@ -121,14 +125,32 @@ impl PrStatus {
         // This handles forks correctly (gh will detect upstream repo from git context)
         cmd.current_dir(repo_root);
 
-        let output = cmd.output().ok()?;
+        let output = match cmd.output() {
+            Ok(output) => output,
+            Err(e) => {
+                log::warn!("gh pr list failed to execute for branch {}: {}", branch, e);
+                return None;
+            }
+        };
 
         if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            log::debug!("gh pr list failed for {}: {}", branch, stderr.trim());
             return None;
         }
 
         // gh pr list returns an array, take the first (and only) item
-        let pr_list: Vec<GitHubPrInfo> = serde_json::from_slice(&output.stdout).ok()?;
+        let pr_list: Vec<GitHubPrInfo> = match serde_json::from_slice(&output.stdout) {
+            Ok(list) => list,
+            Err(e) => {
+                log::warn!(
+                    "Failed to parse gh pr list JSON for branch {}: {}",
+                    branch,
+                    e
+                );
+                return None;
+            }
+        };
         let pr_info = pr_list.first()?;
 
         // Only process open PRs
@@ -169,16 +191,38 @@ impl PrStatus {
         }
 
         // Get MR info for the branch
-        let output = Command::new("glab")
+        let output = match Command::new("glab")
             .args(["mr", "view", branch, "--output", "json"])
             .output()
-            .ok()?;
+        {
+            Ok(output) => output,
+            Err(e) => {
+                log::warn!(
+                    "glab mr view failed to execute for branch {}: {}",
+                    branch,
+                    e
+                );
+                return None;
+            }
+        };
 
         if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            log::debug!("glab mr view failed for {}: {}", branch, stderr.trim());
             return None;
         }
 
-        let mr_info: GitLabMrInfo = serde_json::from_slice(&output.stdout).ok()?;
+        let mr_info: GitLabMrInfo = match serde_json::from_slice(&output.stdout) {
+            Ok(info) => info,
+            Err(e) => {
+                log::warn!(
+                    "Failed to parse glab mr view JSON for branch {}: {}",
+                    branch,
+                    e
+                );
+                return None;
+            }
+        };
 
         // Only process open MRs
         if mr_info.state != "opened" {
@@ -212,6 +256,7 @@ impl PrStatus {
 
     fn detect_github_workflow(branch: &str, local_head: &str, repo_root: &str) -> Option<Self> {
         // Check if gh is available and authenticated
+        // Note: We don't log auth failures here since detect_github already logged them
         if !Command::new("gh")
             .args(["auth", "status"])
             .output()
@@ -246,13 +291,31 @@ impl PrStatus {
         // This handles forks correctly (gh will detect upstream repo from git context)
         cmd.current_dir(repo_root);
 
-        let output = cmd.output().ok()?;
+        let output = match cmd.output() {
+            Ok(output) => output,
+            Err(e) => {
+                log::warn!("gh run list failed to execute for branch {}: {}", branch, e);
+                return None;
+            }
+        };
 
         if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            log::debug!("gh run list failed for {}: {}", branch, stderr.trim());
             return None;
         }
 
-        let runs: Vec<GitHubWorkflowRun> = serde_json::from_slice(&output.stdout).ok()?;
+        let runs: Vec<GitHubWorkflowRun> = match serde_json::from_slice(&output.stdout) {
+            Ok(runs) => runs,
+            Err(e) => {
+                log::warn!(
+                    "Failed to parse gh run list JSON for branch {}: {}",
+                    branch,
+                    e
+                );
+                return None;
+            }
+        };
         let run = runs.first()?;
 
         // Check if the workflow run matches our local HEAD commit
@@ -285,18 +348,40 @@ impl PrStatus {
         }
 
         // Get most recent pipeline for the branch using JSON output
-        let output = Command::new("glab")
+        let output = match Command::new("glab")
             .args(["ci", "list", "--per-page", "1", "--output", "json"])
             .env("BRANCH", branch) // glab ci list uses BRANCH env var
             .output()
-            .ok()?;
+        {
+            Ok(output) => output,
+            Err(e) => {
+                log::warn!(
+                    "glab ci list failed to execute for branch {}: {}",
+                    branch,
+                    e
+                );
+                return None;
+            }
+        };
 
         if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            log::debug!("glab ci list failed for {}: {}", branch, stderr.trim());
             return None;
         }
 
         // Parse JSON output
-        let pipelines: Vec<GitLabPipelineList> = serde_json::from_slice(&output.stdout).ok()?;
+        let pipelines: Vec<GitLabPipelineList> = match serde_json::from_slice(&output.stdout) {
+            Ok(pipelines) => pipelines,
+            Err(e) => {
+                log::warn!(
+                    "Failed to parse glab ci list JSON for branch {}: {}",
+                    branch,
+                    e
+                );
+                return None;
+            }
+        };
         let pipeline = pipelines.first()?;
 
         // Check if the pipeline matches our local HEAD commit
