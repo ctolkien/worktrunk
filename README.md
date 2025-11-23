@@ -412,7 +412,6 @@ wt switch --create new-feature --base=^  # Branch from main (default)
 wt switch --create bugfix --base=@       # Branch from current HEAD
 wt remove @                              # Remove current worktree
 ```
-```
 <!-- README:end -->
 
 </details>
