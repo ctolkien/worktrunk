@@ -1685,8 +1685,8 @@ approved-commands = ["echo 'bash background'"]
             export WORKTRUNK_BIN='{}'
             export WORKTRUNK_CONFIG_PATH='{}'
             {}
-            # Check if _wt completion function exists
-            if (( $+functions[_wt] )); then
+            # Check if lazy completion stub is registered
+            if (( $+functions[_wt_lazy_complete] )); then
                 echo "__COMPLETION_REGISTERED__"
             else
                 echo "__NO_COMPLETION__"

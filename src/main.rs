@@ -208,9 +208,7 @@ fn main() {
                     command_name,
                 } => {
                     // Generate shell code to stdout
-                    let mut cli_cmd = cli::build_command();
-                    handle_init(shell, command_name, &mut cli_cmd)
-                        .map_err(|e| anyhow::anyhow!("{}", e))
+                    handle_init(shell, command_name).map_err(|e| anyhow::anyhow!("{}", e))
                 }
                 ConfigShellCommand::Install {
                     shell,

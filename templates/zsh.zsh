@@ -52,10 +52,30 @@ if command -v {{ cmd_prefix }} >/dev/null 2>&1 || [[ -n "${WORKTRUNK_BIN:-}" ]];
         return $result
     }
 
-    # Register Clap-based completions (auto-updates after wt upgrades)
+    # Lazy completion loader - loads real completions on first tab-press
+    # This avoids ~11ms binary invocation at shell startup
+    _wt_lazy_complete() {
+        # Only try to install completions once
+        if [[ -z "${_WT_COMPLETION_LOADED:-}" ]]; then
+            typeset -g _WT_COMPLETION_LOADED=1
+            local completion_script
+            if completion_script=$(COMPLETE=zsh "${_WORKTRUNK_CMD:-{{ cmd_prefix }}}" 2>/dev/null); then
+                eval "$completion_script"
+            else
+                # Failed to load - unregister to prevent future silent failures
+                compdef -d {{ cmd_prefix }} 2>/dev/null
+                return 1
+            fi
+        fi
+
+        # Delegate to real completion function if it was installed
+        if (( $+functions[_clap_dynamic_completer_{{ cmd_prefix }}] )); then
+            _clap_dynamic_completer_{{ cmd_prefix }} "$@"
+        fi
+    }
+
+    # Register stub, but only if compdef is available (compinit was run)
     if (( $+functions[compdef] )); then
-        local completion_script
-        completion_script=$(COMPLETE=zsh "$_WORKTRUNK_CMD" 2>/dev/null)
-        eval "$completion_script"
+        compdef _wt_lazy_complete {{ cmd_prefix }}
     fi
 fi

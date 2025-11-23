@@ -30,11 +30,6 @@ pub enum Shell {
 }
 
 impl Shell {
-    /// Returns true if this shell supports completion generation
-    pub fn supports_completion(&self) -> bool {
-        matches!(self, Self::Bash | Self::Fish | Self::Zsh)
-    }
-
     /// Returns the standard config file paths for this shell
     ///
     /// Returns paths in order of preference. The first existing file should be used.
