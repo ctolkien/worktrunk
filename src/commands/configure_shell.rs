@@ -3,9 +3,7 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use worktrunk::path::format_path_for_display;
 use worktrunk::shell::Shell;
-use worktrunk::styling::{
-    CYAN_BOLD, INFO_EMOJI, PROGRESS_EMOJI, SUCCESS_EMOJI, format_bash_with_gutter,
-};
+use worktrunk::styling::{INFO_EMOJI, PROGRESS_EMOJI, SUCCESS_EMOJI, format_bash_with_gutter};
 
 pub struct ConfigureResult {
     pub shell: Shell,
@@ -372,7 +370,7 @@ fn configure_fish_file(
 fn prompt_for_confirmation(results: &[ConfigureResult]) -> Result<bool, String> {
     use anstyle::Style;
     use std::io::Write;
-    use worktrunk::styling::{HINT_EMOJI, eprint, eprintln};
+    use worktrunk::styling::{INFO_EMOJI, eprint, eprintln};
 
     // CRITICAL: Flush stdout before writing to stderr to prevent stream interleaving
     // In directive mode, flushes both stdout (directives) and stderr (messages)
@@ -381,7 +379,7 @@ fn prompt_for_confirmation(results: &[ConfigureResult]) -> Result<bool, String> 
 
     // Interactive prompts go to stderr so they appear even when stdout is redirected
     eprintln!();
-    eprintln!("{HINT_EMOJI} {CYAN_BOLD}Configuration changes:{CYAN_BOLD:#}");
+    eprintln!("{INFO_EMOJI} Configuration changes:");
     eprintln!();
 
     for result in results {
@@ -407,7 +405,7 @@ fn prompt_for_confirmation(results: &[ConfigureResult]) -> Result<bool, String> 
 
     eprintln!();
     let bold = Style::new().bold();
-    eprint!("{HINT_EMOJI} Proceed? {bold}[y/N]{bold:#} ");
+    eprint!("{INFO_EMOJI} Proceed? {bold}[y/N]{bold:#} ");
     io::stderr().flush().map_err(|e| e.to_string())?;
 
     let mut input = String::new();

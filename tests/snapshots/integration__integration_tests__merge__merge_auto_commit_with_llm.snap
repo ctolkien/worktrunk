@@ -22,7 +22,7 @@ success: true
 exit_code: 0
 ----- stdout -----
 🔄 [36mSquashing 1 commit & working tree changes into a single commit[0m (1 file, [32m+1[0m)...
-💡 Backup created @ [SHA]
+💡 [2mBackup created @ [SHA][0m
 🔄 [36mGenerating squash commit message...[0m
 [107m [0m  [1mfix: improve auth validation logic[0m
 ✅ [32mSquashed @ [2m[SHA][0m

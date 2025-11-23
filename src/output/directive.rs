@@ -37,7 +37,9 @@
 
 use std::io::{self, Write};
 use std::path::Path;
-use worktrunk::styling::{HINT_EMOJI, INFO_EMOJI, PROGRESS_EMOJI, SUCCESS_EMOJI, WARNING_EMOJI};
+use worktrunk::styling::{
+    HINT, HINT_EMOJI, INFO_EMOJI, PROGRESS_EMOJI, SUCCESS_EMOJI, WARNING_EMOJI,
+};
 
 /// Directive output mode for shell integration
 ///
@@ -65,7 +67,8 @@ impl DirectiveOutput {
 
     pub fn hint(&mut self, message: String) -> io::Result<()> {
         // Hint messages go to stderr for real-time streaming (not buffered by shell wrapper)
-        writeln!(io::stderr(), "{HINT_EMOJI} {message}")?;
+        // Hints are always dimmed
+        writeln!(io::stderr(), "{HINT_EMOJI} {HINT}{message}{HINT:#}")?;
         io::stderr().flush()
     }
 

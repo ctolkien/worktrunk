@@ -3,7 +3,8 @@
 use std::io::{self, Write};
 use std::path::Path;
 use worktrunk::styling::{
-    HINT_EMOJI, INFO_EMOJI, PROGRESS_EMOJI, SUCCESS_EMOJI, WARNING_EMOJI, println, stderr, stdout,
+    HINT, HINT_EMOJI, INFO_EMOJI, PROGRESS_EMOJI, SUCCESS_EMOJI, WARNING_EMOJI, println, stderr,
+    stdout,
 };
 
 use super::handlers::execute_streaming;
@@ -37,15 +38,15 @@ impl InteractiveOutput {
     }
 
     pub fn hint(&mut self, message: String) -> io::Result<()> {
-        // Hint messages automatically include the 💡 emoji
-        println!("{HINT_EMOJI} {message}");
+        // Hint messages automatically include the 💡 emoji and dimmed styling
+        println!("{HINT_EMOJI} {HINT}{message}{HINT:#}");
         stdout().flush()?;
         Ok(())
     }
 
     pub fn shell_integration_hint(&mut self, message: String) -> io::Result<()> {
         // Shell integration hints work the same as regular hints in interactive mode
-        println!("{HINT_EMOJI} {message}");
+        println!("{HINT_EMOJI} {HINT}{message}{HINT:#}");
         stdout().flush()?;
         Ok(())
     }
