@@ -69,7 +69,7 @@ if command -v {{ cmd_prefix }} >/dev/null 2>&1 || [[ -n "${WORKTRUNK_BIN:-}" ]];
 
         # Delegate to real completion function if it was installed
         if declare -F _clap_complete_{{ cmd_prefix }} >/dev/null 2>&1; then
-            _clap_complete_{{ cmd_prefix }} "$@"
+            _clap_complete_{{ cmd_prefix }}
         fi
     }
     complete -o nospace -o bashdefault -o nosort -F _wt_lazy_complete {{ cmd_prefix }}

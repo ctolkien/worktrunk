@@ -70,7 +70,7 @@ if command -v {{ cmd_prefix }} >/dev/null 2>&1 || [[ -n "${WORKTRUNK_BIN:-}" ]];
 
         # Delegate to real completion function if it was installed
         if (( $+functions[_clap_dynamic_completer_{{ cmd_prefix }}] )); then
-            _clap_dynamic_completer_{{ cmd_prefix }} "$@"
+            _clap_dynamic_completer_{{ cmd_prefix }}
         fi
     }
 

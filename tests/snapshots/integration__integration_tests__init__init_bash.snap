@@ -181,7 +181,7 @@ wt_exec() {
 
         # Delegate to real completion function if it was installed
         if declare -F _clap_complete_wt >/dev/null 2>&1; then
-            _clap_complete_wt "$@"
+            _clap_complete_wt
         fi
     }
     complete -o nospace -o bashdefault -o nosort -F _wt_lazy_complete wt

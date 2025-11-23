@@ -182,7 +182,7 @@ wt_exec() {
 
         # Delegate to real completion function if it was installed
         if (( $+functions[_clap_dynamic_completer_wt] )); then
-            _clap_dynamic_completer_wt "$@"
+            _clap_dynamic_completer_wt
         fi
     }
 
