@@ -296,6 +296,9 @@ instead of duplicating logic:
 "validate" = "just test lint"
 ```
 
+**Use `^` as shorthand for the default branch** — Works everywhere: `wt switch ^`,
+`wt merge ^`, `--base=^`.
+
 ## All Commands
 
 <details>
