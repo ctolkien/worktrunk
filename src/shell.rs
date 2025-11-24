@@ -1,6 +1,16 @@
 use askama::Template;
 use std::path::PathBuf;
 
+/// Get the user's home directory or return an error
+fn home_dir() -> Result<PathBuf, std::io::Error> {
+    home::home_dir().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Could not determine home directory",
+        )
+    })
+}
+
 /// Supported shells
 ///
 /// Currently supported: bash, fish, zsh
@@ -34,10 +44,10 @@ impl Shell {
     ///
     /// Returns paths in order of preference. The first existing file should be used.
     /// For Fish, the cmd_prefix is used to name the conf.d file.
-    pub fn config_paths(&self, cmd_prefix: &str) -> Vec<PathBuf> {
-        let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    pub fn config_paths(&self, cmd_prefix: &str) -> Result<Vec<PathBuf>, std::io::Error> {
+        let home = home_dir()?;
 
-        match self {
+        Ok(match self {
             Self::Bash => {
                 // Use .bashrc - sourced by interactive shells (login shells should source .bashrc)
                 vec![home.join(".bashrc")]
@@ -89,7 +99,7 @@ impl Shell {
               // Self::Xonsh => {
               //     vec![home.join(".xonshrc")]
               // }
-        }
+        })
     }
 
     /// Returns the line to add to the config file for shell integration
@@ -150,11 +160,11 @@ impl Shell {
     ///
     /// This function is prefix-agnostic - it detects integration patterns regardless
     /// of what cmd_prefix was used during configuration (wt, worktree, etc).
-    pub fn is_integration_configured() -> Option<PathBuf> {
+    pub fn is_integration_configured() -> Result<Option<PathBuf>, std::io::Error> {
         use std::fs;
         use std::io::{BufRead, BufReader};
 
-        let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+        let home = home_dir()?;
 
         // Check common shell config files for integration patterns
         let config_files = vec![
@@ -194,7 +204,7 @@ impl Shell {
                     if (trimmed.starts_with("eval \"$(") || trimmed.starts_with("eval '$("))
                         && trimmed.contains(" init ")
                     {
-                        return Some(path);
+                        return Ok(Some(path));
                     }
                 }
             }
@@ -215,13 +225,13 @@ impl Shell {
                         && content.contains("switch")
                         && content.contains("__WORKTRUNK_CD__")
                     {
-                        return Some(path);
+                        return Ok(Some(path));
                     }
                 }
             }
         }
 
-        None
+        Ok(None)
     }
 
     /// Returns a summary of what the shell integration does for display in confirmation

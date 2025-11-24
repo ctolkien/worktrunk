@@ -101,7 +101,9 @@ fn scan_shell_configs(
     let mut skipped = Vec::new();
 
     for shell in shells {
-        let paths = shell.config_paths(command_name);
+        let paths = shell
+            .config_paths(command_name)
+            .map_err(|e| e.to_string())?;
 
         // Find the first existing config file
         let target_path = paths.iter().find(|p| p.exists());
