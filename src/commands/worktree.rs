@@ -501,23 +501,7 @@ pub fn handle_push(
             .trim()
             .to_string();
 
-        // Get formatted diff stat (full terminal width - no gutter in error display)
-        let term_width = crate::display::get_terminal_width();
-        let files_formatted = repo
-            .run_command(&[
-                "diff",
-                "--color=always",
-                "--stat",
-                &format!("--stat-width={}", term_width),
-                &format!("HEAD...{}", target_branch),
-            ])?
-            .trim_end()
-            .to_string();
-
-        bail!(
-            "{}",
-            not_fast_forward(&target_branch, &commits_formatted, &files_formatted)
-        );
+        bail!("{}", not_fast_forward(&target_branch, &commits_formatted));
     }
 
     // Check for merge commits unless allowed
