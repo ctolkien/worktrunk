@@ -74,7 +74,6 @@ home = "0.5.12"
 
 [target.'cfg(unix)'.dependencies]
 skim = "0.20"
-nix = { version = "0.30", default-features = false, features = ["process", "signal"] }
 
 [build-dependencies]
 vergen-gitcl = { version = "1.0.8", features = ["build"] }
