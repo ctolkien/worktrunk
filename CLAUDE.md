@@ -40,14 +40,19 @@ fn parse_config() { ... }
 # Unit tests (fast, ~200 tests)
 cargo test --lib --bins
 
-# Integration tests (~360 tests, requires bash/zsh/fish shells)
+# Integration tests without shell tests (~300 tests, no external dependencies)
 cargo test --test integration
+
+# Integration tests WITH shell tests (~360 tests, requires bash/zsh/fish)
+cargo test --test integration --features shell-integration-tests
 
 # Run all tests via pre-merge hook (recommended before committing)
 cargo run -- beta run-hook pre-merge
 ```
 
 The pre-merge hook runs the full test suite and is the recommended way to verify changes before committing.
+
+**Shell integration tests** require bash, zsh, and fish. On Linux, run `./dev/setup-claude-code-web.sh` to install them.
 
 ### Claude Code Web Environment
 

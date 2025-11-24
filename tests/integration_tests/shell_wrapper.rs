@@ -31,6 +31,9 @@
 //! In summary: This isn't a case of "should use insta_cmd instead" - the manual execution
 //! is necessary, and file snapshots are the right storage format for escape-code-heavy output.
 
+// All shell integration tests and infrastructure gated by feature flag
+#![cfg(feature = "shell-integration-tests")]
+
 use crate::common::TestRepo;
 use insta::assert_snapshot;
 use insta_cmd::get_cargo_bin;

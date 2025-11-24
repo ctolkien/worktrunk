@@ -24,6 +24,8 @@ consolidate-commits = true
 # This is optional to avoid C compilation issues on some platforms
 default = ["syntax-highlighting"]
 syntax-highlighting = ["dep:tree-sitter", "dep:tree-sitter-bash", "dep:tree-sitter-highlight"]
+# Enable shell integration tests (requires bash, zsh, fish installed on system)
+shell-integration-tests = []
 
 [lib]
 name = "worktrunk"

@@ -1103,6 +1103,23 @@ This disables bash syntax highlighting in command output but keeps all core func
 <details>
 <summary>Developing</summary>
 
+### Running Tests
+
+**Quick tests (no external dependencies):**
+```bash
+cargo test --lib --bins           # Unit tests (~200 tests)
+cargo test --test integration     # Integration tests without shell tests (~300 tests)
+```
+
+**Full integration tests (requires bash, zsh, fish):**
+```bash
+cargo test --test integration --features shell-integration-tests
+```
+
+**Dependencies for shell integration tests:**
+- bash, zsh, fish shells
+- Quick setup: `./dev/setup-claude-code-web.sh` (installs shells on Linux)
+
 ### Releases
 
 Use [cargo-release](https://github.com/crate-ci/cargo-release) to publish new versions:
