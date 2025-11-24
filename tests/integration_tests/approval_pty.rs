@@ -49,7 +49,10 @@ fn exec_in_pty_with_input(
     cmd.env_clear();
     cmd.env(
         "HOME",
-        std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string()),
+        home::home_dir()
+            .expect("HOME directory required")
+            .to_string_lossy()
+            .to_string(),
     );
     cmd.env(
         "PATH",

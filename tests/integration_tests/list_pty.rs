@@ -41,7 +41,10 @@ fn exec_wt_list_in_pty(
     cmd.env_clear();
     cmd.env(
         "HOME",
-        std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string()),
+        home::home_dir()
+            .expect("HOME directory required")
+            .to_string_lossy()
+            .to_string(),
     );
     cmd.env(
         "PATH",

@@ -495,7 +495,10 @@ fn configure_pty_environment(cmd: &mut CommandBuilder, repo: &TestRepo) {
     // Basic environment
     cmd.env(
         "HOME",
-        std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string()),
+        home::home_dir()
+            .expect("HOME directory required")
+            .to_string_lossy()
+            .to_string(),
     );
     cmd.env(
         "PATH",

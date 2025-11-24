@@ -90,6 +90,7 @@ portable-pty = "0.9"
 regex = "1.12"
 vt100 = "0.16"
 fs2 = "0.4"
+home = "0.5.12"
 
 [[bench]]
 name = "completion"
