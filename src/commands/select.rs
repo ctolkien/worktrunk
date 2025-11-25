@@ -3,7 +3,9 @@ use skim::prelude::*;
 use std::borrow::Cow;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::process::{Command, Stdio};
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 use worktrunk::config::WorktrunkConfig;
 use worktrunk::git::Repository;
 
@@ -11,6 +13,158 @@ use super::list::collect;
 use super::list::model::ListItem;
 use super::worktree::handle_switch;
 use crate::output::handle_switch_output;
+
+/// Cached pager command, detected once at startup.
+///
+/// None means no pager should be used (empty config or "cat").
+/// We cache this to avoid running `git config` on every preview render.
+static CACHED_PAGER: OnceLock<Option<String>> = OnceLock::new();
+
+/// Get the cached pager command, initializing if needed.
+fn get_diff_pager() -> Option<&'static String> {
+    CACHED_PAGER
+        .get_or_init(|| {
+            // Returns Some(pager) if valid, None if empty/cat (no pager desired)
+            let parse_pager = |s: &str| -> Option<String> {
+                let trimmed = s.trim();
+                (!trimmed.is_empty() && trimmed != "cat").then(|| trimmed.to_string())
+            };
+
+            // GIT_PAGER takes precedence - if set (even to "cat" or empty), don't fall back
+            if let Ok(pager) = std::env::var("GIT_PAGER") {
+                return parse_pager(&pager);
+            }
+
+            // Fall back to core.pager config
+            Command::new("git")
+                .args(["config", "--get", "core.pager"])
+                .output()
+                .ok()
+                .and_then(|output| {
+                    if output.status.success() {
+                        String::from_utf8(output.stdout)
+                            .ok()
+                            .and_then(|s| parse_pager(&s))
+                    } else {
+                        None
+                    }
+                })
+        })
+        .as_ref()
+}
+
+/// Check if the pager spawns its own internal pager (e.g., less).
+///
+/// Some pagers like delta and bat spawn `less` by default, which hangs in
+/// non-TTY contexts like skim's preview panel. These need `--paging=never`.
+///
+/// TODO: Replace this hardcoded detection with a config option like
+/// `select.pager = "delta --paging=never"` so users can specify their own
+/// pager command with appropriate flags. This would eliminate the need to
+/// maintain a list of pagers that need special handling.
+fn pager_needs_paging_disabled(pager_cmd: &str) -> bool {
+    // Split on whitespace to get the command name, then check basename
+    pager_cmd
+        .split_whitespace()
+        .next()
+        .and_then(|cmd| cmd.rsplit('/').next())
+        // bat is called "batcat" on Debian/Ubuntu
+        .is_some_and(|basename| matches!(basename, "delta" | "bat" | "batcat"))
+}
+
+/// Maximum time to wait for pager to complete.
+///
+/// Pager blocking can freeze skim's event loop, making the UI unresponsive.
+/// If the pager takes longer than this, kill it and fall back to raw diff.
+const PAGER_TIMEOUT: Duration = Duration::from_millis(2000);
+
+/// Run git diff piped directly through the pager as a streaming pipeline.
+///
+/// Runs `git <args> | pager` as a single shell command, avoiding intermediate
+/// buffering. For pagers that spawn their own sub-pager (delta, bat), adds
+/// `--paging=never` to prevent them from spawning less.
+/// Returns None if pipeline fails or times out (caller should fall back to raw diff).
+fn run_git_diff_with_pager(git_args: &[&str], pager_cmd: &str) -> Option<String> {
+    // Some pagers spawn `less` by default which hangs in non-TTY contexts
+    let pager_with_args = if pager_needs_paging_disabled(pager_cmd) {
+        format!("{} --paging=never", pager_cmd)
+    } else {
+        pager_cmd.to_string()
+    };
+
+    // Build shell pipeline: git <args> | pager
+    // Shell-escape args to handle paths with spaces
+    let escaped_args: Vec<String> = git_args.iter().map(|arg| shell_escape(arg)).collect();
+    let pipeline = format!("git {} | {}", escaped_args.join(" "), pager_with_args);
+
+    log::debug!("Running pager pipeline: {}", pipeline);
+
+    // Spawn pipeline
+    let mut child = match Command::new("sh")
+        .arg("-c")
+        .arg(&pipeline)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => {
+            log::debug!("Failed to spawn pager pipeline: {}", e);
+            return None;
+        }
+    };
+
+    // Read output in a thread to avoid blocking
+    let stdout = child.stdout.take()?;
+    let reader_thread = std::thread::spawn(move || {
+        use std::io::Read;
+        let mut stdout = stdout;
+        let mut output = Vec::new();
+        let _ = stdout.read_to_end(&mut output);
+        output
+    });
+
+    // Wait for pipeline with timeout
+    let start = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let output = reader_thread.join().ok()?;
+                if status.success() {
+                    return String::from_utf8(output).ok();
+                } else {
+                    log::debug!("Pager pipeline exited with status: {}", status);
+                    return None;
+                }
+            }
+            Ok(None) => {
+                if start.elapsed() > PAGER_TIMEOUT {
+                    log::debug!("Pager pipeline timed out after {:?}", PAGER_TIMEOUT);
+                    let _ = child.kill();
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => {
+                log::debug!("Failed to wait for pager pipeline: {}", e);
+                let _ = child.kill();
+                return None;
+            }
+        }
+    }
+}
+
+/// Shell-escape a string for use in sh -c commands.
+fn shell_escape(s: &str) -> String {
+    // If it contains special chars, wrap in single quotes and escape existing single quotes
+    if s.chars()
+        .any(|c| c.is_whitespace() || "\"'\\$`!*?[]{}|&;<>()".contains(c))
+    {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    } else {
+        s.to_string()
+    }
+}
 
 /// Preview modes for the interactive selector
 ///
@@ -180,13 +334,16 @@ impl WorktreeSkimItem {
             output.push_str(&stat);
             output.push_str("\n\n");
 
-            // TODO: Re-enable user pager (delta, diff-so-fancy, etc.) for diff preview
-            // Currently disabled because pagers can interfere with skim's TUI rendering.
-            // When re-implementing, test with: GIT_PAGER=delta cargo run -- beta select
-            // Consider: config option to disable pagers specifically for select preview
+            // Build diff args with color
             let mut diff_args = args.to_vec();
             diff_args.push("--color=always");
-            if let Ok(diff) = repo.run_command(&diff_args) {
+
+            // Try streaming through pager first (git diff | pager), fall back to plain diff
+            let diff = get_diff_pager()
+                .and_then(|pager| run_git_diff_with_pager(&diff_args, pager))
+                .or_else(|| repo.run_command(&diff_args).ok());
+
+            if let Some(diff) = diff {
                 output.push_str(&diff);
             }
         } else {
@@ -515,5 +672,31 @@ mod tests {
 
         // Cleanup
         let _ = fs::remove_file(&test_state_path);
+    }
+
+    #[test]
+    fn test_pager_needs_paging_disabled() {
+        // delta - plain command name
+        assert!(pager_needs_paging_disabled("delta"));
+        // delta - with arguments
+        assert!(pager_needs_paging_disabled("delta --side-by-side"));
+        assert!(pager_needs_paging_disabled("delta --paging=always"));
+        // delta - full path
+        assert!(pager_needs_paging_disabled("/usr/bin/delta"));
+        assert!(pager_needs_paging_disabled(
+            "/opt/homebrew/bin/delta --line-numbers"
+        ));
+        // bat - also spawns less by default
+        assert!(pager_needs_paging_disabled("bat"));
+        assert!(pager_needs_paging_disabled("/usr/bin/bat"));
+        assert!(pager_needs_paging_disabled("bat --style=plain"));
+        // Pagers that don't spawn sub-pagers
+        assert!(!pager_needs_paging_disabled("less"));
+        assert!(!pager_needs_paging_disabled("diff-so-fancy"));
+        assert!(!pager_needs_paging_disabled("colordiff"));
+        // Edge cases - similar names but not delta/bat
+        assert!(!pager_needs_paging_disabled("delta-preview"));
+        assert!(!pager_needs_paging_disabled("/path/to/delta-preview"));
+        assert!(pager_needs_paging_disabled("batcat")); // Debian's bat package name
     }
 }
