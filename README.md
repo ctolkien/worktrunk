@@ -14,15 +14,15 @@ Worktrunk is a CLI tool which handles the mechanics of git worktrees. It's
 designed to allow starting many parallel agents, overseeing them, and merging
 their work.
 
+Built for developers running terminal-based AI coding agents — Claude Code,
+Codex CLI, Gemini CLI, Amp, aider — who want each agent on its own branch,
+working in parallel.
+
 Git worktrees let multiple agents work on a single repo without colliding; each
 agent gets a separate directory with their version of the code. But creating
 worktrees, tracking paths & statuses, cleaning up, etc, is manual. Worktrunk
 offers control, transparency & automation for this workflow, letting us scale
 the parallelism of agents.
-
-Built for developers running terminal-based AI coding agents — Claude Code,
-Codex CLI, Gemini CLI, Amp, aider — who want each agent on its own branch,
-working in parallel.
 
 ## Demo
 
@@ -1039,9 +1039,7 @@ Use `--force` to bypass prompts (useful for CI/automation).
 
 ### vs. Branch Switching
 
-`git checkout` forces all work through a single directory. Switching branches means rebuilding artifacts, restarting dev servers, and stashing changes. Only one branch can be active at a time.
-
-Worktrunk gives each branch its own directory with independent build caches, processes, and editor state. Work on multiple branches simultaneously without rebuilding or stashing.
+One directory means one agent at a time. Worktrees remove this constraint — each agent gets its own directory, so five can run in parallel on five branches.
 
 ### vs. Plain `git worktree`
 
