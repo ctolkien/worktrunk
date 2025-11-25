@@ -13,8 +13,6 @@ REPO_ROOT = SCRIPT_DIR.parent
 DEMO_DIR = SCRIPT_DIR / "wt-demo"
 FIXTURES_DIR = DEMO_DIR / "fixtures"
 OUT_DIR = DEMO_DIR / "out"
-DEMO_ROOT = OUT_DIR / ".demo"
-DEMO_HOME = Path(os.environ.get("DEMO_HOME", DEMO_ROOT))
 TAPE_TEMPLATE = DEMO_DIR / "demo.tape"
 TAPE_RENDERED = OUT_DIR / ".rendered.tape"
 STARSHIP_CONFIG = OUT_DIR / "starship.toml"
@@ -22,9 +20,18 @@ OUTPUT_GIF = OUT_DIR / "wt-demo.gif"
 LOG = OUT_DIR / "record.log"
 
 REAL_HOME = Path.home()
-DEMO_WORK_BASE = DEMO_HOME / "w"
-DEMO_REPO = DEMO_WORK_BASE / "acme"
-BARE_REMOTE = DEMO_ROOT / "remote.git"
+
+
+class DemoEnv:
+    """Isolated demo environment with its own repo and home directory."""
+
+    def __init__(self, name: str):
+        self.name = name
+        self.root = OUT_DIR / f".demo-{name}"
+        self.home = self.root
+        self.work_base = self.home / "w"
+        self.repo = self.work_base / "acme"
+        self.bare_remote = self.root / "remote.git"
 
 
 def run(cmd, cwd=None, env=None, check=True, capture=False):
@@ -59,62 +66,62 @@ def commit_dated(repo, message, offset):
     git(["-C", str(repo), "commit", "-qm", message], env=env)
 
 
-def prepare_repo():
+def prepare_repo(env: DemoEnv):
     """Set up the demo repository with branches and worktrees."""
     # Clean previous
-    shutil.rmtree(DEMO_ROOT, ignore_errors=True)
+    shutil.rmtree(env.root, ignore_errors=True)
     legacy = REPO_ROOT / ".demo"
-    if legacy.exists() and legacy != DEMO_ROOT:
+    if legacy.exists():
         shutil.rmtree(legacy)
 
-    DEMO_ROOT.mkdir(parents=True)
-    DEMO_WORK_BASE.mkdir(parents=True)
-    DEMO_REPO.mkdir(parents=True)
+    env.root.mkdir(parents=True)
+    env.work_base.mkdir(parents=True)
+    env.repo.mkdir(parents=True)
 
     # Init bare remote
-    run(["git", "init", "--bare", "-q", str(BARE_REMOTE)])
+    run(["git", "init", "--bare", "-q", str(env.bare_remote)])
 
     # Init main repo
-    git(["-C", str(DEMO_REPO), "init", "-q"])
-    git(["-C", str(DEMO_REPO), "config", "user.name", "Worktrunk Demo"])
-    git(["-C", str(DEMO_REPO), "config", "user.email", "demo@example.com"])
-    git(["-C", str(DEMO_REPO), "config", "commit.gpgsign", "false"])
+    git(["-C", str(env.repo), "init", "-q"])
+    git(["-C", str(env.repo), "config", "user.name", "Worktrunk Demo"])
+    git(["-C", str(env.repo), "config", "user.email", "demo@example.com"])
+    git(["-C", str(env.repo), "config", "commit.gpgsign", "false"])
 
     # Initial commit
-    (DEMO_REPO / "README.md").write_text("# Worktrunk demo\n\nThis repo is generated automatically.\n")
-    git(["-C", str(DEMO_REPO), "add", "README.md"])
-    commit_dated(DEMO_REPO, "Initial demo commit", "7d")
-    git(["-C", str(DEMO_REPO), "branch", "-m", "main"])
-    git(["-C", str(DEMO_REPO), "remote", "add", "origin", str(BARE_REMOTE)])
-    git(["-C", str(DEMO_REPO), "push", "-u", "origin", "main", "-q"])
+    (env.repo / "README.md").write_text("# Worktrunk demo\n\nThis repo is generated automatically.\n")
+    git(["-C", str(env.repo), "add", "README.md"])
+    commit_dated(env.repo, "Initial demo commit", "7d")
+    git(["-C", str(env.repo), "branch", "-m", "main"])
+    git(["-C", str(env.repo), "remote", "add", "origin", str(env.bare_remote)])
+    git(["-C", str(env.repo), "push", "-u", "origin", "main", "-q"])
 
     # Rust project
-    (DEMO_REPO / "Cargo.toml").write_text(
+    (env.repo / "Cargo.toml").write_text(
         "[package]\nname = \"acme\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\n"
     )
-    (DEMO_REPO / "src").mkdir()
-    shutil.copy(FIXTURES_DIR / "lib.rs", DEMO_REPO / "src" / "lib.rs")
-    (DEMO_REPO / ".gitignore").write_text("/target\n")
-    git(["-C", str(DEMO_REPO), "add", ".gitignore", "Cargo.toml", "src/"])
-    commit_dated(DEMO_REPO, "Add Rust project with tests", "6d")
+    (env.repo / "src").mkdir()
+    shutil.copy(FIXTURES_DIR / "lib.rs", env.repo / "src" / "lib.rs")
+    (env.repo / ".gitignore").write_text("/target\n")
+    git(["-C", str(env.repo), "add", ".gitignore", "Cargo.toml", "src/"])
+    commit_dated(env.repo, "Add Rust project with tests", "6d")
 
     # Build to create Cargo.lock
-    run(["cargo", "build", "--release", "-q"], cwd=DEMO_REPO, check=False)
-    git(["-C", str(DEMO_REPO), "add", "Cargo.lock"])
-    commit_dated(DEMO_REPO, "Add Cargo.lock", "6d")
-    git(["-C", str(DEMO_REPO), "push", "-q"])
+    run(["cargo", "build", "--release", "-q"], cwd=env.repo, check=False)
+    git(["-C", str(env.repo), "add", "Cargo.lock"])
+    commit_dated(env.repo, "Add Cargo.lock", "6d")
+    git(["-C", str(env.repo), "push", "-q"])
 
     # Project hooks
-    (DEMO_REPO / ".config").mkdir()
-    (DEMO_REPO / ".config" / "wt.toml").write_text(
+    (env.repo / ".config").mkdir()
+    (env.repo / ".config" / "wt.toml").write_text(
         '[pre-merge]\ntest = "cargo nextest run"\n'
     )
-    git(["-C", str(DEMO_REPO), "add", ".config/wt.toml"])
-    commit_dated(DEMO_REPO, "Add project hooks", "5d")
-    git(["-C", str(DEMO_REPO), "push", "-q"])
+    git(["-C", str(env.repo), "add", ".config/wt.toml"])
+    commit_dated(env.repo, "Add project hooks", "5d")
+    git(["-C", str(env.repo), "push", "-q"])
 
     # Mock gh CLI
-    bin_dir = DEMO_HOME / "bin"
+    bin_dir = env.home / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     gh_mock = bin_dir / "gh"
     shutil.copy(FIXTURES_DIR / "gh-mock.sh", gh_mock)
@@ -124,9 +131,9 @@ def prepare_repo():
     run(["cargo", "build", "--quiet"], cwd=REPO_ROOT)
 
     # User config
-    config_dir = DEMO_HOME / ".config" / "worktrunk"
+    config_dir = env.home / ".config" / "worktrunk"
     config_dir.mkdir(parents=True)
-    project_id = str(BARE_REMOTE).removesuffix(".git")
+    project_id = str(env.bare_remote).removesuffix(".git")
     (config_dir / "config.toml").write_text(f'''[commit-generation]
 command = "llm"
 args = ["-m", "claude-haiku-4.5"]
@@ -136,33 +143,33 @@ approved-commands = ["cargo nextest run"]
 ''')
 
     # Extra branches (no worktrees)
-    git(["-C", str(DEMO_REPO), "branch", "docs/readme"])
-    git(["-C", str(DEMO_REPO), "branch", "spike/search"])
+    git(["-C", str(env.repo), "branch", "docs/readme"])
+    git(["-C", str(env.repo), "branch", "spike/search"])
 
     # Create feature branches
-    create_branch_alpha()
-    create_branch_beta()
+    create_branch_alpha(env)
+    create_branch_beta(env)
 
     # Commit to main after beta so beta is behind
-    readme = DEMO_REPO / "README.md"
+    readme = env.repo / "README.md"
     readme.write_text(readme.read_text() + "# Development\nSee CONTRIBUTING.md for guidelines.\n")
-    (DEMO_REPO / "notes.md").write_text("# Notes\n")
-    git(["-C", str(DEMO_REPO), "add", "README.md", "notes.md"])
-    commit_dated(DEMO_REPO, "docs: add development section", "1d")
-    git(["-C", str(DEMO_REPO), "push", "-q"])
+    (env.repo / "notes.md").write_text("# Notes\n")
+    git(["-C", str(env.repo), "add", "README.md", "notes.md"])
+    commit_dated(env.repo, "docs: add development section", "1d")
+    git(["-C", str(env.repo), "push", "-q"])
 
-    create_branch_hooks()
+    create_branch_hooks(env)
 
 
-def create_branch_alpha():
+def create_branch_alpha(env: DemoEnv):
     """Create alpha branch with large diff and unpushed commits."""
     branch = "alpha"
-    path = DEMO_WORK_BASE / f"acme.{branch}"
+    path = env.work_base / f"acme.{branch}"
 
-    git(["-C", str(DEMO_REPO), "checkout", "-q", "-b", branch, "main"])
+    git(["-C", str(env.repo), "checkout", "-q", "-b", branch, "main"])
 
     # Initial README changes
-    (DEMO_REPO / "README.md").write_text('''# Worktrunk demo
+    (env.repo / "README.md").write_text('''# Worktrunk demo
 
 A demo repository for showcasing worktrunk features.
 
@@ -177,22 +184,22 @@ A demo repository for showcasing worktrunk features.
 
 Run `wt list` to see all worktrees.
 ''')
-    git(["-C", str(DEMO_REPO), "add", "README.md"])
-    commit_dated(DEMO_REPO, "docs: expand README", "3d")
+    git(["-C", str(env.repo), "add", "README.md"])
+    commit_dated(env.repo, "docs: expand README", "3d")
 
     # More commits
-    readme = DEMO_REPO / "README.md"
+    readme = env.repo / "README.md"
     readme.write_text(readme.read_text() + "\n# Contributing\nPRs welcome!\n")
-    git(["-C", str(DEMO_REPO), "add", "README.md"])
-    commit_dated(DEMO_REPO, "docs: add contributing section", "3d")
+    git(["-C", str(env.repo), "add", "README.md"])
+    commit_dated(env.repo, "docs: add contributing section", "3d")
 
     readme.write_text(readme.read_text() + "\n# License\nMIT\n")
-    git(["-C", str(DEMO_REPO), "add", "README.md"])
-    commit_dated(DEMO_REPO, "docs: add license", "3d")
+    git(["-C", str(env.repo), "add", "README.md"])
+    commit_dated(env.repo, "docs: add license", "3d")
 
-    git(["-C", str(DEMO_REPO), "push", "-u", "origin", branch, "-q"])
-    git(["-C", str(DEMO_REPO), "checkout", "-q", "main"])
-    git(["-C", str(DEMO_REPO), "worktree", "add", "-q", str(path), branch])
+    git(["-C", str(env.repo), "push", "-u", "origin", branch, "-q"])
+    git(["-C", str(env.repo), "checkout", "-q", "main"])
+    git(["-C", str(env.repo), "worktree", "add", "-q", str(path), branch])
 
     # Unpushed commit
     readme = path / "README.md"
@@ -205,34 +212,34 @@ Run `wt list` to see all worktrees.
     (path / "scratch.rs").write_text("// scratch\n")
 
 
-def create_branch_beta():
+def create_branch_beta(env: DemoEnv):
     """Create beta branch with staged changes."""
     branch = "beta"
-    path = DEMO_WORK_BASE / f"acme.{branch}"
+    path = env.work_base / f"acme.{branch}"
 
-    git(["-C", str(DEMO_REPO), "checkout", "-q", "-b", branch, "main"])
-    git(["-C", str(DEMO_REPO), "push", "-u", "origin", branch, "-q"])
-    git(["-C", str(DEMO_REPO), "checkout", "-q", "main"])
-    git(["-C", str(DEMO_REPO), "worktree", "add", "-q", str(path), branch])
+    git(["-C", str(env.repo), "checkout", "-q", "-b", branch, "main"])
+    git(["-C", str(env.repo), "push", "-u", "origin", branch, "-q"])
+    git(["-C", str(env.repo), "checkout", "-q", "main"])
+    git(["-C", str(env.repo), "worktree", "add", "-q", str(path), branch])
 
     # Staged new file
     (path / "notes.txt").write_text("# TODO\n- Add caching\n")
     git(["-C", str(path), "add", "notes.txt"])
 
 
-def create_branch_hooks():
+def create_branch_hooks(env: DemoEnv):
     """Create hooks branch with refactored lib.rs."""
     branch = "hooks"
-    path = DEMO_WORK_BASE / f"acme.{branch}"
+    path = env.work_base / f"acme.{branch}"
 
-    git(["-C", str(DEMO_REPO), "checkout", "-q", "-b", branch, "main"])
-    shutil.copy(FIXTURES_DIR / "lib-hooks.rs", DEMO_REPO / "src" / "lib.rs")
-    git(["-C", str(DEMO_REPO), "add", "src/lib.rs"])
-    commit_dated(DEMO_REPO, "feat: add math operations, consolidate tests", "2H")
+    git(["-C", str(env.repo), "checkout", "-q", "-b", branch, "main"])
+    shutil.copy(FIXTURES_DIR / "lib-hooks.rs", env.repo / "src" / "lib.rs")
+    git(["-C", str(env.repo), "add", "src/lib.rs"])
+    commit_dated(env.repo, "feat: add math operations, consolidate tests", "2H")
 
     # No push - no upstream
-    git(["-C", str(DEMO_REPO), "checkout", "-q", "main"])
-    git(["-C", str(DEMO_REPO), "worktree", "add", "-q", str(path), branch])
+    git(["-C", str(env.repo), "checkout", "-q", "main"])
+    git(["-C", str(env.repo), "worktree", "add", "-q", str(path), branch])
 
     # Staged then modified
     lib_rs = path / "src" / "lib.rs"
@@ -241,11 +248,11 @@ def create_branch_hooks():
     lib_rs.write_text(lib_rs.read_text() + "// TODO: add division\n")
 
 
-def render_tape():
+def render_tape(env: DemoEnv):
     """Render the VHS tape template with variables."""
     template = TAPE_TEMPLATE.read_text()
-    rendered = template.replace("{{DEMO_REPO}}", str(DEMO_REPO))
-    rendered = rendered.replace("{{DEMO_HOME}}", str(DEMO_HOME))
+    rendered = template.replace("{{DEMO_REPO}}", str(env.repo))
+    rendered = rendered.replace("{{DEMO_HOME}}", str(env.home))
     rendered = rendered.replace("{{REAL_HOME}}", str(REAL_HOME))
     rendered = rendered.replace("{{STARSHIP_CONFIG}}", str(STARSHIP_CONFIG))
     rendered = rendered.replace("{{OUTPUT_GIF}}", str(OUTPUT_GIF))
@@ -253,15 +260,15 @@ def render_tape():
     TAPE_RENDERED.write_text(rendered)
 
 
-def record_text():
+def record_text(demo_env: DemoEnv):
     """Record text output by running demo commands."""
     # Extract commands from tape
     commands = []
     for line in TAPE_TEMPLATE.read_text().splitlines():
         if line.startswith("Type "):
             cmd = line[5:].strip().strip('"').strip("'")
-            # Skip setup commands
-            if not any(cmd.startswith(p) for p in ["export ", "eval ", "cd ", "clear", "exit"]):
+            # Skip setup commands (fish uses 'set -gx' instead of 'export')
+            if not any(cmd.startswith(p) for p in ["set -gx", "export ", "eval ", "cd ", "clear", "exit", "starship init", "wt config shell init"]):
                 commands.append(cmd)
 
     # Set up environment
@@ -272,10 +279,10 @@ def record_text():
         "COLUMNS": "160",
         "RUSTUP_HOME": str(REAL_HOME / ".rustup"),
         "CARGO_HOME": str(REAL_HOME / ".cargo"),
-        "HOME": str(DEMO_HOME),
-        "PATH": f"{REPO_ROOT}/target/debug:{DEMO_HOME}/bin:{os.environ['PATH']}",
+        "HOME": str(demo_env.home),
+        "PATH": f"{REPO_ROOT}/target/debug:{demo_env.home}/bin:{os.environ['PATH']}",
         "STARSHIP_CONFIG": str(STARSHIP_CONFIG),
-        "STARSHIP_CACHE": str(DEMO_ROOT / "starship-cache"),
+        "STARSHIP_CACHE": str(demo_env.root / "starship-cache"),
         "WT_PROGRESSIVE": "false",
         "NO_COLOR": "1",
         "CLICOLOR": "0",
@@ -284,11 +291,10 @@ def record_text():
         "NEXTEST_NO_FAIL_FAST": "1",
     })
 
-    (DEMO_ROOT / "starship-cache").mkdir(exist_ok=True)
+    (demo_env.root / "starship-cache").mkdir(exist_ok=True)
 
-    # Run commands and capture output using bash with shell init
-    script = '''
-eval "$(wt config shell init bash)" >/dev/null 2>&1
+    # Run commands and capture output using fish with shell init
+    script = '''wt config shell init fish | source
 '''
     for cmd in commands:
         script += f'{cmd}\n'
@@ -296,8 +302,8 @@ eval "$(wt config shell init bash)" >/dev/null 2>&1
             script += 'sleep 2\n'
 
     result = subprocess.run(
-        ["bash", "-c", script],
-        cwd=DEMO_REPO, env=env,
+        ["fish", "-c", script],
+        cwd=demo_env.repo, env=env,
         capture_output=True, text=True
     )
     output = [result.stdout + result.stderr]
@@ -328,9 +334,16 @@ def main():
     # Copy starship config
     shutil.copy(FIXTURES_DIR / "starship.toml", STARSHIP_CONFIG)
 
-    prepare_repo()
-    record_text()
-    render_tape()
+    # Create separate environments for text and VHS recording
+    # so they don't interfere with each other (different LLM-generated commits)
+    text_env = DemoEnv("text")
+    vhs_env = DemoEnv("vhs")
+
+    prepare_repo(text_env)
+    record_text(text_env)
+
+    prepare_repo(vhs_env)
+    render_tape(vhs_env)
     record_vhs()
 
     # Cleanup

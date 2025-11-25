@@ -3,7 +3,7 @@ Output "{{OUTPUT_GIF}}"
 Require wt
 Require git
 
-Set Shell "zsh"
+Set Shell "fish"
 Set FontSize 19
 Set FontFamily "Geist Mono, Berkeley Mono, Fira Code, JetBrains Mono, Menlo, Apple Color Emoji"
 Set Width 1600
@@ -26,13 +26,13 @@ Env NEXTEST_FINAL_STATUS_LEVEL "flaky"
 Env NEXTEST_NO_FAIL_FAST "1"
 
 Hide
-Type "export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8"
+Type "set -gx LANG en_US.UTF-8; set -gx LC_ALL en_US.UTF-8"
 Enter
-Type "export PATH={{TARGET_DEBUG}}:$HOME/bin:$PATH"
+Type "set -gx PATH {{TARGET_DEBUG}} $HOME/bin $PATH"
 Enter
-Type 'eval "$(starship init zsh)" >/dev/null 2>&1'
+Type "starship init fish | source"
 Enter
-Type 'eval "$(wt config shell init zsh)" >/dev/null 2>&1'
+Type "wt config shell init fish | source"
 Enter
 Type "cd $DEMO_REPO"
 Enter
