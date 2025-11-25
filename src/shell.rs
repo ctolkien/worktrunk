@@ -174,10 +174,10 @@ impl Shell {
                 if path.extension().and_then(|s| s.to_str()) == Some("fish")
                     && let Ok(content) = fs::read_to_string(&path)
                 {
-                    // Look for function definitions with switch/remove/merge handling
-                    if content.contains("function ")
-                        && content.contains("switch")
-                        && content.contains("__WORKTRUNK_CD__")
+                    // Look for wt shell integration (new protocol uses wt_exec + eval)
+                    if content.contains("function wt_exec")
+                        && content.contains("--internal")
+                        && content.contains("eval")
                     {
                         return Ok(Some(path));
                     }
