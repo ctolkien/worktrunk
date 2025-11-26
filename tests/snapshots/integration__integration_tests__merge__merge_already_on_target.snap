@@ -15,12 +15,13 @@ info:
     LANG: C
     LC_ALL: C
     SOURCE_DATE_EPOCH: "1761609600"
+    WORKTRUNK_BIN: ""
     WORKTRUNK_CONFIG_PATH: "[TEST_CONFIG]"
 ---
 success: true
 exit_code: 0
 ----- stdout -----
 ⚪ Already up to date with [1mmain[0m (no new commits, no rebase needed)
-⚪ Worktree preserved (--no-remove)
+⚪ Worktree preserved (on main branch)
 
 ----- stderr -----

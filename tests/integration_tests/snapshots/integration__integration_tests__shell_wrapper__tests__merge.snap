@@ -3,4 +3,4 @@ source: tests/integration_tests/shell_wrapper.rs
 expression: output.normalized()
 ---
 ⚪ Already up to date with [1mmain[0m (no new commits, no rebase needed)
-⚪ Worktree preserved (--no-remove)
+⚪ Worktree preserved (on main branch)

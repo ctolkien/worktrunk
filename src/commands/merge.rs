@@ -1,8 +1,7 @@
 use worktrunk::HookType;
 use worktrunk::config::{Command, CommandPhase, ProjectConfig};
 use worktrunk::git::Repository;
-use worktrunk::path::format_path_for_display;
-use worktrunk::styling::{ERROR, ERROR_EMOJI, GREEN_BOLD, HINT, HINT_EMOJI};
+use worktrunk::styling::{ERROR, ERROR_EMOJI, HINT, HINT_EMOJI};
 
 use super::command_approval::approve_command_batch;
 use super::command_executor::CommandContext;
@@ -12,6 +11,16 @@ use super::hooks::{HookFailureStrategy, HookPipeline};
 use super::project_config::collect_commands_for_hooks;
 use super::repository_ext::RepositoryCliExt;
 use super::worktree::{MergeOperations, RemoveResult, handle_push};
+
+/// Reason why a worktree was preserved (not removed) after merge
+enum PreserveReason {
+    /// User explicitly passed --no-remove
+    NoRemoveFlag,
+    /// Running from the main worktree (can't remove main)
+    OnMainBranch,
+    /// Current branch is the same as the target branch
+    AlreadyOnTarget,
+}
 
 /// Context for collecting merge commands
 struct MergeCommandCollector<'a> {
@@ -99,7 +108,8 @@ pub fn handle_merge(
 
     // When current == target or we're in the main worktree, disable remove (can't remove it)
     let in_main = !repo.is_in_worktree().unwrap_or(false);
-    let remove_effective = remove && current_branch != target_branch && !in_main;
+    let on_target = current_branch == target_branch;
+    let remove_effective = remove && !on_target && !in_main;
 
     // Collect and approve all commands upfront for batch permission request
     let (all_commands, project_id) = MergeCommandCollector {
@@ -200,7 +210,15 @@ pub fn handle_merge(
         crate::output::handle_remove_output(&remove_result, Some(&current_branch), true, true)?;
     } else {
         // Print comprehensive summary (worktree preserved)
-        handle_merge_summary_output(None)?;
+        // Priority: main branch > on target > --no-remove flag
+        let reason = if in_main {
+            PreserveReason::OnMainBranch
+        } else if on_target {
+            PreserveReason::AlreadyOnTarget
+        } else {
+            PreserveReason::NoRemoveFlag
+        };
+        handle_merge_summary_output(reason)?;
     }
 
     if verify {
@@ -224,20 +242,13 @@ pub fn handle_merge(
 }
 
 /// Handle output for merge summary using global output context
-fn handle_merge_summary_output(main_path: Option<&std::path::Path>) -> anyhow::Result<()> {
-    use worktrunk::styling::GREEN;
-
-    if let Some(path) = main_path {
-        // Action completed: moved to main worktree
-        crate::output::success(format!(
-            "{GREEN}Returned to main at {GREEN_BOLD}{}{GREEN_BOLD:#}{GREEN:#}",
-            format_path_for_display(path)
-        ))?;
-    } else {
-        // No action: worktree stayed as-is (acknowledging --no-remove flag)
-        crate::output::info("Worktree preserved (--no-remove)")?;
-    }
-
+fn handle_merge_summary_output(reason: PreserveReason) -> anyhow::Result<()> {
+    let message = match reason {
+        PreserveReason::OnMainBranch => "Worktree preserved (on main branch)",
+        PreserveReason::AlreadyOnTarget => "Worktree preserved (already on target)",
+        PreserveReason::NoRemoveFlag => "Worktree preserved (--no-remove)",
+    };
+    crate::output::info(message)?;
     crate::output::flush()?;
 
     Ok(())
