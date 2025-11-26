@@ -8,7 +8,7 @@ Set FontSize 19
 Set FontFamily "Geist Mono, Berkeley Mono, Fira Code, JetBrains Mono, Menlo, Apple Color Emoji"
 Set Width 1600
 Set Height 720
-Set Theme { "name": "GitHub Light Custom", "black": "#8c959f", "red": "#d73a49", "green": "#22863a", "yellow": "#d29922", "blue": "#0969da", "magenta": "#8250df", "cyan": "#1b7c83", "white": "#8c959f", "brightBlack": "#8c959f", "brightRed": "#cb2431", "brightGreen": "#2ea043", "brightYellow": "#f2cc60", "brightBlue": "#218bff", "brightMagenta": "#a475f9", "brightCyan": "#39c5cf", "brightWhite": "#8c959f", "background": "#f6f8fa", "foreground": "#1f2328", "cursor": "#0969da", "selection": "#ddf4ff" }
+Set Theme { "name": "GitHub Light Custom", "black": "#8c959f", "red": "#d73a49", "green": "#22863a", "yellow": "#d29922", "blue": "#0969da", "magenta": "#8250df", "cyan": "#1b7c83", "white": "#8c959f", "brightBlack": "#8c959f", "brightRed": "#cb2431", "brightGreen": "#2ea043", "brightYellow": "#f2cc60", "brightBlue": "#218bff", "brightMagenta": "#a475f9", "brightCyan": "#39c5cf", "brightWhite": "#8c959f", "background": "#f0f2f5", "foreground": "#1f2328", "cursor": "#0969da", "selection": "#ddf4ff" }
 Set Padding 18
 Set LineHeight 1.12
 Set TypingSpeed 28ms
@@ -26,6 +26,8 @@ Env NEXTEST_FINAL_STATUS_LEVEL "flaky"
 Env NEXTEST_NO_FAIL_FAST "1"
 
 Hide
+Type "set -g fish_autosuggestion_enabled 0"
+Enter
 Type "set -gx LANG en_US.UTF-8; set -gx LC_ALL en_US.UTF-8"
 Enter
 Type "set -gx PATH {{TARGET_DEBUG}} $HOME/bin $PATH"
@@ -38,7 +40,9 @@ Type "cd $DEMO_REPO"
 Enter
 Type "clear"
 Enter
+Sleep 500ms
 Show
+Sleep 500ms
 
 Type "wt list"
 Enter
