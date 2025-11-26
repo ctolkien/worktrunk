@@ -197,10 +197,16 @@ complete --keep-order --exclusive --command wt --arguments "(COMPLETE=fish \$WOR
 /// Quote a shell argument if it contains special characters
 fn quote_arg(arg: &str) -> String {
     if arg.contains(' ') || arg.contains(';') || arg.contains('\'') {
-        format!("'{}'", arg.replace('\'', "'\\''"))
+        shell_quote(arg)
     } else {
         arg.to_string()
     }
+}
+
+/// Always quote a string for shell use, properly escaping single quotes.
+/// Handles paths like `/path/to/worktrunk.'∅'/target/debug/wt`
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 /// Build a shell script that sources the wrapper and runs a command
@@ -213,12 +219,16 @@ fn build_shell_script(shell: &str, repo: &TestRepo, subcommand: &str, args: &[&s
     // Don't use 'set -e' in bash/zsh - we want to capture failures and their exit codes.
     // This is tested by test_wrapper_handles_command_failure which verifies
     // that command failures return proper exit codes rather than aborting the script.
+    // Properly quote paths to handle special characters like single quotes
+    let wt_bin_quoted = shell_quote(&wt_bin.display().to_string());
+    let config_path_quoted = shell_quote(&repo.test_config_path().display().to_string());
+
     match shell {
         "fish" => {
-            script.push_str(&format!("set -x WORKTRUNK_BIN '{}'\n", wt_bin.display()));
+            script.push_str(&format!("set -x WORKTRUNK_BIN {}\n", wt_bin_quoted));
             script.push_str(&format!(
-                "set -x WORKTRUNK_CONFIG_PATH '{}'\n",
-                repo.test_config_path().display()
+                "set -x WORKTRUNK_CONFIG_PATH {}\n",
+                config_path_quoted
             ));
             script.push_str("set -x CLICOLOR_FORCE 1\n");
         }
@@ -229,19 +239,19 @@ fn build_shell_script(shell: &str, repo: &TestRepo, subcommand: &str, args: &[&s
             // but compinit is safe since it only sets up completion functions
             script.push_str("autoload -Uz compinit && compinit -i 2>/dev/null\n");
 
-            script.push_str(&format!("export WORKTRUNK_BIN='{}'\n", wt_bin.display()));
+            script.push_str(&format!("export WORKTRUNK_BIN={}\n", wt_bin_quoted));
             script.push_str(&format!(
-                "export WORKTRUNK_CONFIG_PATH='{}'\n",
-                repo.test_config_path().display()
+                "export WORKTRUNK_CONFIG_PATH={}\n",
+                config_path_quoted
             ));
             script.push_str("export CLICOLOR_FORCE=1\n");
         }
         _ => {
             // bash
-            script.push_str(&format!("export WORKTRUNK_BIN='{}'\n", wt_bin.display()));
+            script.push_str(&format!("export WORKTRUNK_BIN={}\n", wt_bin_quoted));
             script.push_str(&format!(
-                "export WORKTRUNK_CONFIG_PATH='{}'\n",
-                repo.test_config_path().display()
+                "export WORKTRUNK_CONFIG_PATH={}\n",
+                config_path_quoted
             ));
             script.push_str("export CLICOLOR_FORCE=1\n");
         }
@@ -1087,9 +1097,18 @@ approved-commands = [
         repo.commit("Initial commit");
         repo.setup_remote("main");
 
-        // Get path to the test fixture script
+        // Copy the fixture script to the test repo to avoid path issues with special characters
+        // (CARGO_MANIFEST_DIR may contain single quotes like worktrunk.'∅' which break shell parsing)
         let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-        let script_path = fixtures_dir.join("mixed-output.sh");
+        let script_content = fs::read(&fixtures_dir.join("mixed-output.sh")).unwrap();
+        let script_path = repo.root_path().join("mixed-output.sh");
+        fs::write(&script_path, &script_content).unwrap();
+        // Make the script executable
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&script_path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
 
         // Create project config with pre-merge commands that output to both stdout and stderr
         let config_dir = repo.root_path().join(".config");
@@ -1506,32 +1525,25 @@ approved-commands = ["echo 'fish background task'"]
         let wrapper_script = generate_wrapper(&repo, shell);
         let mut script = String::new();
 
-        // Set environment variables
+        // Set environment variables (use shell_quote to handle paths with special chars)
+        let wt_bin_quoted = shell_quote(&wt_bin.display().to_string());
+        let config_quoted = shell_quote(&repo.test_config_path().display().to_string());
         match shell {
             "fish" => {
-                script.push_str(&format!("set -x WORKTRUNK_BIN '{}'\n", wt_bin.display()));
-                script.push_str(&format!(
-                    "set -x WORKTRUNK_CONFIG_PATH '{}'\n",
-                    repo.test_config_path().display()
-                ));
+                script.push_str(&format!("set -x WORKTRUNK_BIN {}\n", wt_bin_quoted));
+                script.push_str(&format!("set -x WORKTRUNK_CONFIG_PATH {}\n", config_quoted));
                 script.push_str("set -x CLICOLOR_FORCE 1\n");
             }
             "zsh" => {
                 script.push_str("autoload -Uz compinit && compinit -i 2>/dev/null\n");
-                script.push_str(&format!("export WORKTRUNK_BIN='{}'\n", wt_bin.display()));
-                script.push_str(&format!(
-                    "export WORKTRUNK_CONFIG_PATH='{}'\n",
-                    repo.test_config_path().display()
-                ));
+                script.push_str(&format!("export WORKTRUNK_BIN={}\n", wt_bin_quoted));
+                script.push_str(&format!("export WORKTRUNK_CONFIG_PATH={}\n", config_quoted));
                 script.push_str("export CLICOLOR_FORCE=1\n");
             }
             _ => {
                 // bash
-                script.push_str(&format!("export WORKTRUNK_BIN='{}'\n", wt_bin.display()));
-                script.push_str(&format!(
-                    "export WORKTRUNK_CONFIG_PATH='{}'\n",
-                    repo.test_config_path().display()
-                ));
+                script.push_str(&format!("export WORKTRUNK_BIN={}\n", wt_bin_quoted));
+                script.push_str(&format!("export WORKTRUNK_CONFIG_PATH={}\n", config_quoted));
                 script.push_str("export CLICOLOR_FORCE=1\n");
             }
         }
@@ -1694,14 +1706,14 @@ approved-commands = ["echo 'bash background'"]
         // Build the setup script that defines the wt function
         let wt_bin = get_cargo_bin("wt");
         let wrapper_script = generate_wrapper(&repo, "bash");
+        let wt_bin_quoted = shell_quote(&wt_bin.display().to_string());
+        let config_quoted = shell_quote(&repo.test_config_path().display().to_string());
         let setup_script = format!(
-            "export WORKTRUNK_BIN='{}'\n\
-             export WORKTRUNK_CONFIG_PATH='{}'\n\
+            "export WORKTRUNK_BIN={}\n\
+             export WORKTRUNK_CONFIG_PATH={}\n\
              export CLICOLOR_FORCE=1\n\
              {}",
-            wt_bin.display(),
-            repo.test_config_path().display(),
-            wrapper_script
+            wt_bin_quoted, config_quoted, wrapper_script
         );
 
         let config_path = repo.test_config_path().to_string_lossy().to_string();
@@ -1759,17 +1771,17 @@ approved-commands = ["echo 'bash background'"]
 
         // Script that sources wrapper and checks if completion is registered
         // (completions are inline in the wrapper via lazy loading)
+        let wt_bin_quoted = shell_quote(&wt_bin.display().to_string());
+        let config_quoted = shell_quote(&repo.test_config_path().display().to_string());
         let script = format!(
             r#"
-            export WORKTRUNK_BIN='{}'
-            export WORKTRUNK_CONFIG_PATH='{}'
+            export WORKTRUNK_BIN={}
+            export WORKTRUNK_CONFIG_PATH={}
             {}
             # Check if wt completion is registered
             complete -p wt 2>/dev/null && echo "__COMPLETION_REGISTERED__" || echo "__NO_COMPLETION__"
             "#,
-            wt_bin.display(),
-            repo.test_config_path().display(),
-            wrapper_script
+            wt_bin_quoted, config_quoted, wrapper_script
         );
 
         let final_script = format!("( {} ) 2>&1", script);
@@ -1799,10 +1811,12 @@ approved-commands = ["echo 'bash background'"]
         let completions_script = generate_completions(&repo, "fish");
 
         // Script that sources wrapper, completions, and checks if completion is registered
+        let wt_bin_quoted = shell_quote(&wt_bin.display().to_string());
+        let config_quoted = shell_quote(&repo.test_config_path().display().to_string());
         let script = format!(
             r#"
-            set -x WORKTRUNK_BIN '{}'
-            set -x WORKTRUNK_CONFIG_PATH '{}'
+            set -x WORKTRUNK_BIN {}
+            set -x WORKTRUNK_CONFIG_PATH {}
             {}
             {}
             # Check if wt completions are registered
@@ -1812,10 +1826,7 @@ approved-commands = ["echo 'bash background'"]
                 echo "__NO_COMPLETION__"
             end
             "#,
-            wt_bin.display(),
-            repo.test_config_path().display(),
-            wrapper_script,
-            completions_script
+            wt_bin_quoted, config_quoted, wrapper_script, completions_script
         );
 
         let final_script = format!("begin\n{}\nend 2>&1", script);
@@ -1845,10 +1856,12 @@ approved-commands = ["echo 'bash background'"]
         let wrapper_script = generate_wrapper(&repo, "zsh");
 
         // Script that sources wrapper and checks if wt function exists
+        let wt_bin_quoted = shell_quote(&wt_bin.display().to_string());
+        let config_quoted = shell_quote(&repo.test_config_path().display().to_string());
         let script = format!(
             r#"
-            export WORKTRUNK_BIN='{}'
-            export WORKTRUNK_CONFIG_PATH='{}'
+            export WORKTRUNK_BIN={}
+            export WORKTRUNK_CONFIG_PATH={}
             {}
             # Check if wt wrapper function is defined
             if (( $+functions[wt] )); then
@@ -1857,9 +1870,7 @@ approved-commands = ["echo 'bash background'"]
                 echo "__NO_WRAPPER__"
             fi
             "#,
-            wt_bin.display(),
-            repo.test_config_path().display(),
-            wrapper_script
+            wt_bin_quoted, config_quoted, wrapper_script
         );
 
         let final_script = format!("( {} ) 2>&1", script);
@@ -1945,6 +1956,10 @@ approved-commands = ["echo 'bash background'"]
         let wt_bin = get_cargo_bin("wt");
         let wrapper_script = generate_wrapper(&repo, shell);
 
+        // Use shell_quote to handle paths with special chars (like single quotes)
+        let wt_bin_quoted = shell_quote(&wt_bin.display().to_string());
+        let config_quoted = shell_quote(&repo.test_config_path().display().to_string());
+
         // Script that explicitly removes wt from PATH but sets WORKTRUNK_BIN
         let script = match shell {
             "zsh" => format!(
@@ -1952,46 +1967,40 @@ approved-commands = ["echo 'bash background'"]
                 autoload -Uz compinit && compinit -i 2>/dev/null
                 # Clear PATH to ensure wt is not found via PATH
                 export PATH="/usr/bin:/bin"
-                export WORKTRUNK_BIN='{}'
-                export WORKTRUNK_CONFIG_PATH='{}'
+                export WORKTRUNK_BIN={}
+                export WORKTRUNK_CONFIG_PATH={}
                 export CLICOLOR_FORCE=1
                 {}
                 wt switch --create fallback-test
                 echo "__PWD__ $PWD"
                 "#,
-                wt_bin.display(),
-                repo.test_config_path().display(),
-                wrapper_script
+                wt_bin_quoted, config_quoted, wrapper_script
             ),
             "fish" => format!(
                 r#"
                 # Clear PATH to ensure wt is not found via PATH
                 set -x PATH /usr/bin /bin
-                set -x WORKTRUNK_BIN '{}'
-                set -x WORKTRUNK_CONFIG_PATH '{}'
+                set -x WORKTRUNK_BIN {}
+                set -x WORKTRUNK_CONFIG_PATH {}
                 set -x CLICOLOR_FORCE 1
                 {}
                 wt switch --create fallback-test
                 echo "__PWD__ $PWD"
                 "#,
-                wt_bin.display(),
-                repo.test_config_path().display(),
-                wrapper_script
+                wt_bin_quoted, config_quoted, wrapper_script
             ),
             _ => format!(
                 r#"
                 # Clear PATH to ensure wt is not found via PATH
                 export PATH="/usr/bin:/bin"
-                export WORKTRUNK_BIN='{}'
-                export WORKTRUNK_CONFIG_PATH='{}'
+                export WORKTRUNK_BIN={}
+                export WORKTRUNK_CONFIG_PATH={}
                 export CLICOLOR_FORCE=1
                 {}
                 wt switch --create fallback-test
                 echo "__PWD__ $PWD"
                 "#,
-                wt_bin.display(),
-                repo.test_config_path().display(),
-                wrapper_script
+                wt_bin_quoted, config_quoted, wrapper_script
             ),
         };
 

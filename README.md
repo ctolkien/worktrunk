@@ -716,7 +716,7 @@ Options:
 
 ## Status Symbols
 
-Order: `+!? ✖⚠≡∅ ↻⋈ ↑↓↕ ⇡⇣⇅ ⎇⌫⊠`
+Order: `+!? ✖⚠≡_ ↻⋈ ↑↓↕ ⇡⇣⇅ ⎇⌫⊠`
 
 - `+` Staged files (ready to commit)
 - `!` Modified files (unstaged changes)
@@ -724,7 +724,7 @@ Order: `+!? ✖⚠≡∅ ↻⋈ ↑↓↕ ⇡⇣⇅ ⎇⌫⊠`
 - `✖` **Merge conflicts** - unresolved conflicts in working tree (fix before continuing)
 - `⚠` **Would conflict** - merging into main would fail
 - `≡` Working tree matches main (identical contents, regardless of commit history)
-- `∅` No commits (no commits ahead AND no uncommitted changes)
+- `_` No commits (no commits ahead AND no uncommitted changes)
 - `↻` Rebase in progress
 - `⋈` Merge in progress
 - `↑` Ahead of main branch
@@ -737,7 +737,7 @@ Order: `+!? ✖⚠≡∅ ↻⋈ ↑↓↕ ⇡⇣⇅ ⎇⌫⊠`
 - `⌫` Prunable worktree (directory missing, can be pruned)
 - `⊠` Locked worktree (protected from auto-removal)
 
-*Rows are dimmed when there's no marginal contribution (≡ matches main OR ∅ no commits).*
+*Rows are dimmed when there's no marginal contribution (≡ matches main OR _ no commits).*
 
 ## JSON Output
 
@@ -933,10 +933,10 @@ git config worktrunk.status.feature-x "💬"
 $ wt list
   Branch             Status         HEAD±    main↕  Path                      Remote⇅  Commit    Age   Message
 @ main                   ^                          ./repo                             f0879504  1d    Initial commit
-+ clean-no-status       ∅                           ./repo.clean-no-status             f0879504  1d    Initial commit
-+ clean-with-status     ∅   💬                      ./repo.clean-with-status           f0879504  1d    Initial commit
++ clean-no-status       _                           ./repo.clean-no-status             f0879504  1d    Initial commit
++ clean-with-status     _   💬                      ./repo.clean-with-status           f0879504  1d    Initial commit
 + dirty-no-status     !           +1   -1           ./repo.dirty-no-status             f0879504  1d    Initial commit
-+ dirty-with-status    ?∅   🤖                      ./repo.dirty-with-status           f0879504  1d    Initial commit
++ dirty-with-status    ?_   🤖                      ./repo.dirty-with-status           f0879504  1d    Initial commit
 
 ⚪ Showing 5 worktrees, 1 with changes
 ```
@@ -962,10 +962,10 @@ When using Claude:
 $ wt list
   Branch             Status         HEAD±    main↕  Path                      Remote⇅  Commit    Age   Message
 @ main                   ^                          ./repo                             f0879504  1d    Initial commit
-+ clean-no-status       ∅                           ./repo.clean-no-status             f0879504  1d    Initial commit
-+ clean-with-status     ∅   💬                      ./repo.clean-with-status           f0879504  1d    Initial commit
++ clean-no-status       _                           ./repo.clean-no-status             f0879504  1d    Initial commit
++ clean-with-status     _   💬                      ./repo.clean-with-status           f0879504  1d    Initial commit
 + dirty-no-status     !           +1   -1           ./repo.dirty-no-status             f0879504  1d    Initial commit
-+ dirty-with-status    ?∅   🤖                      ./repo.dirty-with-status           f0879504  1d    Initial commit
++ dirty-with-status    ?_   🤖                      ./repo.dirty-with-status           f0879504  1d    Initial commit
 
 ⚪ Showing 5 worktrees, 1 with changes
 ```

@@ -611,7 +611,7 @@ Docs: <https://llm.datasette.io/> | <https://github.com/sigoden/aichat>
 
 ## Status Symbols
 
-Order: `+!? ✖⚠≡∅ ↻⋈ ↑↓↕ ⇡⇣⇅ ⎇⌫⊠`
+Order: `+!? ✖⚠≡_ ↻⋈ ↑↓↕ ⇡⇣⇅ ⎇⌫⊠`
 
 - `+` Staged files (ready to commit)
 - `!` Modified files (unstaged changes)
@@ -619,7 +619,7 @@ Order: `+!? ✖⚠≡∅ ↻⋈ ↑↓↕ ⇡⇣⇅ ⎇⌫⊠`
 - `✖` **Merge conflicts** - unresolved conflicts in working tree (fix before continuing)
 - `⚠` **Would conflict** - merging into main would fail
 - `≡` Working tree matches main (identical contents, regardless of commit history)
-- `∅` No commits (no commits ahead AND no uncommitted changes)
+- `_` No commits (no commits ahead AND no uncommitted changes)
 - `↻` Rebase in progress
 - `⋈` Merge in progress
 - `↑` Ahead of main branch
@@ -632,7 +632,7 @@ Order: `+!? ✖⚠≡∅ ↻⋈ ↑↓↕ ⇡⇣⇅ ⎇⌫⊠`
 - `⌫` Prunable worktree (directory missing, can be pruned)
 - `⊠` Locked worktree (protected from auto-removal)
 
-*Rows are dimmed when there's no marginal contribution (≡ matches main OR ∅ no commits).*
+*Rows are dimmed when there's no marginal contribution (≡ matches main OR _ no commits).*
 
 ## JSON Output
 

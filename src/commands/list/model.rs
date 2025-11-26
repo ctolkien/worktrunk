@@ -720,7 +720,7 @@ impl serde::Serialize for WorktreeState {
 /// 3. Merge (⋈) - active operation
 /// 4. MergeTreeConflicts (⚠) - potential problem
 /// 5. MatchesMain (≡) - removable
-/// 6. NoCommits (∅) - removable
+/// 6. NoCommits (_) - removable
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, strum::IntoStaticStr)]
 pub enum BranchOpState {
     #[strum(serialize = "")]
@@ -750,7 +750,7 @@ impl std::fmt::Display for BranchOpState {
             Self::Merge => write!(f, "⋈"),
             Self::MergeTreeConflicts => write!(f, "⚠"),
             Self::MatchesMain => write!(f, "≡"),
-            Self::NoCommits => write!(f, "∅"),
+            Self::NoCommits => write!(f, "_"),
         }
     }
 }
@@ -819,7 +819,7 @@ impl PositionMask {
             1, // STAGED: + (1 char)
             1, // MODIFIED: ! (1 char)
             1, // UNTRACKED: ? (1 char)
-            1, // BRANCH_OP_STATE: ✖↻⋈⚠≡∅ (1 char, priority: conflicts > rebase > merge > merge-tree > no-commits > matches)
+            1, // BRANCH_OP_STATE: ✖↻⋈⚠≡_ (1 char, priority: conflicts > rebase > merge > merge-tree > no-commits > matches)
             1, // MAIN_DIVERGENCE: ^, ↑, ↓, ↕ (1 char)
             1, // UPSTREAM_DIVERGENCE: ⇡, ⇣, ⇅ (1 char)
             1, // WORKTREE_STATE: ⎇ for branches, ⚐⌫⊠ for worktrees (priority: path_mismatch > prunable > locked)
@@ -837,7 +837,7 @@ impl PositionMask {
 ///
 /// Symbols are categorized to enable vertical alignment in table output:
 /// - Working tree: +, !, ? (staged, modified, untracked - priority order)
-/// - Branch/op state: ✖, ↻, ⋈, ⚠, ≡, ∅ (combined position with priority)
+/// - Branch/op state: ✖, ↻, ⋈, ⚠, ≡, _ (combined position with priority)
 /// - Main divergence: ^, ↑, ↓, ↕
 /// - Upstream divergence: ⇡, ⇣, ⇅
 /// - Worktree state: ⎇ for branches, ⚐⌫⊠ for worktrees (priority-only)
@@ -846,13 +846,13 @@ impl PositionMask {
 /// ## Mutual Exclusivity
 ///
 /// **Combined with priority (branch state + git operation):**
-/// Priority: ✖ > ↻ > ⋈ > ⚠ > ≡ > ∅
+/// Priority: ✖ > ↻ > ⋈ > ⚠ > ≡ > _
 /// - ✖: Actual conflicts (must resolve)
 /// - ↻: Rebase in progress
 /// - ⋈: Merge in progress
 /// - ⚠: Merge-tree conflicts (potential problem)
 /// - ≡: Matches main (removable)
-/// - ∅: No commits (removable)
+/// - _: No commits (removable)
 ///
 /// **Mutually exclusive (enforced by type system):**
 /// - ^ vs ↑ vs ↓ vs ↕: Main divergence (MainDivergence enum)
@@ -867,7 +867,7 @@ impl PositionMask {
 #[derive(Debug, Clone, Default)]
 pub struct StatusSymbols {
     /// Combined branch and operation state (mutually exclusive with priority)
-    /// Priority: Conflicts (✖) > Rebase (↻) > Merge (⋈) > MergeTreeConflicts (⚠) > MatchesMain (≡) > NoCommits (∅)
+    /// Priority: Conflicts (✖) > Rebase (↻) > Merge (⋈) > MergeTreeConflicts (⚠) > MatchesMain (≡) > NoCommits (_)
     pub(crate) branch_op_state: BranchOpState,
 
     /// Worktree state: ⎇ for branches, ⚐⌫⊠ for worktrees (priority: path_mismatch > prunable > locked)

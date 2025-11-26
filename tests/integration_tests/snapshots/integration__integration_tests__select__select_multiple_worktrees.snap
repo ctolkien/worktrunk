@@ -5,8 +5,8 @@ expression: normalized
 > [QUERY]                                                     │[PREVIEW_HEADER]
     Branch       Status         HEAD±    main↕  Path        │ctrl-u/d: scroll
 > @ main             ^                          ./repo    ..│
-  + feature-one     ∅                           ./repo.fea..│⚪ No uncommitted changes
-  + feature-two     ∅                           ./repo.fea..│
+  + feature-one     _                           ./repo.fea..│⚪ No uncommitted changes
+  + feature-two     _                           ./repo.fea..│
                                                             │
                                                             │
                                                             │

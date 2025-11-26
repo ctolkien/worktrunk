@@ -156,13 +156,13 @@ exit_code: 0
     },
     "status_symbols": {
       "working_tree": "",
-      "branch_op_state": "∅",
+      "branch_op_state": "_",
       "main_divergence": "↓",
       "upstream_divergence": "",
       "worktree_state": ""
     },
     "commits_display": "/u001b[2m/u001b[31m↓2/u001b[0m",
-    "status_line": "feature-behind  /u001b[2m∅/u001b[0m  /u001b[2m/u001b[31m↓2/u001b[0m",
+    "status_line": "feature-behind  /u001b[2m_/u001b[0m  /u001b[2m/u001b[31m↓2/u001b[0m",
     "type": "worktree",
     "path": "[REPO].feature-behind",
     "bare": false,

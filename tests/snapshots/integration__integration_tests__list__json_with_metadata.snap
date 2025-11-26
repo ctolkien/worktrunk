@@ -105,12 +105,12 @@ exit_code: 0
     },
     "status_symbols": {
       "working_tree": "",
-      "branch_op_state": "∅",
+      "branch_op_state": "_",
       "main_divergence": "",
       "upstream_divergence": "",
       "worktree_state": ""
     },
-    "status_line": "feature-detached  /u001b[2m∅/u001b[0m",
+    "status_line": "feature-detached  /u001b[2m_/u001b[0m",
     "type": "worktree",
     "path": "[REPO].feature-detached",
     "bare": false,
@@ -156,12 +156,12 @@ exit_code: 0
     },
     "status_symbols": {
       "working_tree": "",
-      "branch_op_state": "∅",
+      "branch_op_state": "_",
       "main_divergence": "",
       "upstream_divergence": "",
       "worktree_state": "⊠"
     },
-    "status_line": "locked-feature  /u001b[2m∅/u001b[0m/u001b[33m⊠/u001b[0m",
+    "status_line": "locked-feature  /u001b[2m_/u001b[0m/u001b[33m⊠/u001b[0m",
     "type": "worktree",
     "path": "[REPO].locked-feature",
     "bare": false,

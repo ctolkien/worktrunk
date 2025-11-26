@@ -76,7 +76,7 @@ Global Options:
 
 [32mStatus Symbols[0m
 
-Order: [2m+!? ✖⚠≡∅ ↻⋈ ↑↓↕ ⇡⇣⇅ ⎇⌫⊠[0m
+Order: [2m+!? ✖⚠≡_ ↻⋈ ↑↓↕ ⇡⇣⇅ ⎇⌫⊠[0m
 
 - [2m+[0m Staged files (ready to commit)
 - [2m![0m Modified files (unstaged changes)
@@ -84,7 +84,7 @@ Order: [2m+!? ✖⚠≡∅ ↻⋈ ↑↓↕ ⇡⇣⇅ ⎇⌫⊠[0m
 - [2m✖[0m [1mMerge conflicts[0m - unresolved conflicts in working tree (fix before continuing)
 - [2m⚠[0m [1mWould conflict[0m - merging into main would fail
 - [2m≡[0m Working tree matches main (identical contents, regardless of commit history)
-- [2m∅[0m No commits (no commits ahead AND no uncommitted changes)
+- [2m_[0m No commits (no commits ahead AND no uncommitted changes)
 - [2m↻[0m Rebase in progress
 - [2m⋈[0m Merge in progress
 - [2m↑[0m Ahead of main branch
@@ -97,7 +97,7 @@ Order: [2m+!? ✖⚠≡∅ ↻⋈ ↑↓↕ ⇡⇣⇅ ⎇⌫⊠[0m
 - [2m⌫[0m Prunable worktree (directory missing, can be pruned)
 - [2m⊠[0m Locked worktree (protected from auto-removal)
 
-*Rows are dimmed when there's no marginal contribution (≡ matches main OR ∅ no commits).*
+*Rows are dimmed when there's no marginal contribution (≡ matches main OR _ no commits).*
 
 [32mJSON Output[0m
 

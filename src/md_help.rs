@@ -122,7 +122,7 @@ fn colorize_status_symbols(text: &str) -> String {
             "≡ Working tree matches",
             &format!("{hint}≡{hint:#} Working tree matches"),
         )
-        .replace("∅ No commits", &format!("{hint}∅{hint:#} No commits"))
+        .replace("_ No commits", &format!("{hint}_{hint:#} No commits"))
         .replace(
             "· Branch without",
             &format!("{hint}·{hint:#} Branch without"),
