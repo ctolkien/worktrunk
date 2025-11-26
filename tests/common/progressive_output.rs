@@ -104,10 +104,12 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::io::Read;
 use std::time::{Duration, Instant};
 
-/// Time to wait for final output to flush after child process exits
-const FINAL_OUTPUT_FLUSH_MS: u64 = 50;
+/// Maximum time to spend draining remaining PTY data after child exits.
+/// Long timeout ensures reliability on slow CI; fast polling ensures quick completion.
+const FINAL_DRAIN_TIMEOUT_MS: u64 = 5000;
 
-/// Polling interval when waiting for output or child process exit
+/// Polling interval when waiting for output or child process exit.
+/// Short interval ensures tests complete quickly when data is available.
 const OUTPUT_POLL_INTERVAL_MS: u64 = 10;
 
 /// Strategy for capturing progressive output snapshots
@@ -425,16 +427,25 @@ pub fn capture_progressive_output(
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 // Check if child exited
                 if let Ok(Some(_)) = child.try_wait() {
-                    // Give it a moment to flush final output
-                    std::thread::sleep(Duration::from_millis(FINAL_OUTPUT_FLUSH_MS));
-
-                    // Read any remaining data
+                    // Drain remaining PTY data with long timeout but fast polling.
+                    // Long timeout (5s) ensures reliability on slow CI machines.
+                    // Fast polling (10ms) ensures quick completion when data is available.
+                    let drain_start = Instant::now();
                     loop {
                         match reader.read(&mut temp_buf) {
                             Ok(0) => break,
                             Ok(n) => {
                                 total_bytes += n;
                                 parser.process(&temp_buf[..n]);
+                            }
+                            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                // PTY may still have buffered data; retry with timeout
+                                if drain_start.elapsed()
+                                    > Duration::from_millis(FINAL_DRAIN_TIMEOUT_MS)
+                                {
+                                    break;
+                                }
+                                std::thread::sleep(Duration::from_millis(OUTPUT_POLL_INTERVAL_MS));
                             }
                             Err(_) => break,
                         }

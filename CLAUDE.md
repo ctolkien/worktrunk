@@ -519,9 +519,33 @@ Users can clean up old logs manually or use a git hook. No automatic cleanup is 
 
 ## Testing Guidelines
 
-### Timing Tests: Poll with Long Timeouts
+### Timing Tests: Long Timeouts with Fast Polling
 
-Tests waiting for background operations must **poll with long timeouts**, never use fixed sleeps. Use the helpers in `tests/common/mod.rs`:
+**Core principle:** Use long timeouts (5+ seconds) for reliability on slow CI, but poll frequently (10-50ms) so tests complete quickly when things work.
+
+This achieves both goals:
+- **No flaky failures** on slow machines - generous timeout accommodates worst-case
+- **Fast tests** on normal machines - frequent polling means no unnecessary waiting
+
+```rust
+// ✅ GOOD: Long timeout, fast polling
+let timeout = Duration::from_secs(5);
+let poll_interval = Duration::from_millis(10);
+let start = Instant::now();
+while start.elapsed() < timeout {
+    if condition_met() { break; }
+    thread::sleep(poll_interval);
+}
+
+// ❌ BAD: Fixed sleep (always slow, might still fail)
+thread::sleep(Duration::from_millis(500));
+assert!(condition_met());
+
+// ❌ BAD: Short timeout (flaky on slow CI)
+let timeout = Duration::from_millis(100);
+```
+
+Use the helpers in `tests/common/mod.rs`:
 
 ```rust
 use crate::common::{wait_for_file, wait_for_file_count};
