@@ -182,6 +182,7 @@ Six canonical message patterns with their emojis:
 3. **Errors**: ❌ + red text (failures, invalid states)
 4. **Warnings**: 🟡 + yellow text (non-blocking issues)
 5. **Hints**: 💡 + dimmed text (actionable suggestions, tips for user)
+   - Keep hints uniformly dimmed - don't use `HINT_BOLD` for emphasis (bold+dim renders inconsistently across terminals)
 6. **Info**: ⚪ + unstyled text (neutral status, system feedback, metadata)
    - Use `output::info()` for primary status (unstyled)
    - Add `HINT` style manually for supplementary/dimmed metadata
@@ -265,7 +266,7 @@ Style constants defined in `src/styling/constants.rs`:
 - `WARNING`: Yellow (warnings)
 - `WARNING_BOLD`: Yellow + bold
 - `HINT`: Dimmed (hints, secondary information)
-- `HINT_BOLD`: Dimmed + bold
+- `HINT_BOLD`: Dimmed + bold (avoid - bold+dim renders inconsistently)
 - `CURRENT`: Magenta + bold (current worktree)
 - `ADDITION`: Green (diffs, additions)
 - `DELETION`: Red (diffs, deletions)
