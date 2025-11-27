@@ -1067,12 +1067,21 @@ impl Repository {
         Ok(branch)
     }
 
+    /// Check if two refs have identical tree content (same files/directories).
+    /// Returns true when content is identical even if commit history differs.
+    ///
+    /// Useful for detecting squash merges or rebases where the content has been
+    /// integrated but commit ancestry doesn't show the relationship.
+    pub fn trees_match(&self, ref1: &str, ref2: &str) -> anyhow::Result<bool> {
+        let tree1 = self.rev_parse_tree(&format!("{ref1}^{{tree}}"))?;
+        let tree2 = self.rev_parse_tree(&format!("{ref2}^{{tree}}"))?;
+        Ok(tree1 == tree2)
+    }
+
     /// Check if HEAD's tree SHA matches a branch's tree SHA.
     /// Returns true when content is identical even if commit history differs.
     pub fn head_tree_matches_branch(&self, branch: &str) -> anyhow::Result<bool> {
-        let head_tree = self.rev_parse_tree("HEAD^{tree}")?;
-        let branch_tree = self.rev_parse_tree(&format!("{branch}^{{tree}}"))?;
-        Ok(head_tree == branch_tree)
+        self.trees_match("HEAD", branch)
     }
 
     fn rev_parse_tree(&self, spec: &str) -> anyhow::Result<String> {
