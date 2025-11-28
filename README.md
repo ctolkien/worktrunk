@@ -39,6 +39,13 @@ Currently, Worktrunk:
 ...there's no need to use the more advanced features to get the simpler
 benefits, and everything is fully compatible with standard git worktrees.
 
+To contribute:
+
+- Star the repo
+- Tell a friend
+- Install it, use it, post feedback
+- Post about it on socials
+
 ## Demo
 
 ![Worktrunk Demo](dev/wt-demo/out/wt-demo.gif)
