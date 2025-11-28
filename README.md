@@ -1179,17 +1179,6 @@ Add to `~/.claude/settings.json`:
 
 </details>
 
-## Project Status
-
-Worktrunk is in active development. The core features are stable and ready for
-use. There may be backward-incompatible changes.
-
-The most helpful way to contribute:
-
-- Use it!
-- Star the repo / tell friends / post about it
-- Find bugs, file reproducible bug reports
-
 ## FAQ
 
 <details>
