@@ -3,6 +3,17 @@
 //! This module contains the implementation of cell-by-cell progressive rendering.
 //! Git operations run in parallel and send updates as they complete.
 //!
+//! ## Invariant: Every task must send exactly one message
+//!
+//! Each `spawn_*` function increments `cell_count` after being called. The
+//! `drain_cell_updates` loop waits until all senders are dropped, which only
+//! happens after all spawned threads complete. If a spawn function doesn't send
+//! a message (e.g., due to an early return or failed condition), the message
+//! count won't match the cell count, causing an infinite hang.
+//!
+//! **Always send a message**, even when conditions aren't met or errors occur.
+//! Use default values rather than skipping the send.
+//!
 //! TODO(error-handling): Current implementation silently swallows git errors
 //! and logs warnings to stderr. Consider whether failures should:
 //! - Propagate to user (fail-fast)
@@ -78,8 +89,8 @@ fn spawn_ahead_behind<'scope>(
     ctx: &TaskContext,
     tx: Sender<CellUpdate>,
 ) {
+    let item_idx = ctx.item_idx;
     if let Some(base) = ctx.default_branch.as_deref() {
-        let item_idx = ctx.item_idx;
         let sha = ctx.commit_sha.clone();
         let path = ctx.repo_path.clone();
         let base = base.to_string();
@@ -97,6 +108,12 @@ fn spawn_ahead_behind<'scope>(
                 counts: AheadBehind { ahead, behind },
             });
         });
+    } else {
+        // Always send a message to match the cell_count increment
+        let _ = tx.send(CellUpdate::AheadBehind {
+            item_idx,
+            counts: AheadBehind::default(),
+        });
     }
 }
 
@@ -106,8 +123,8 @@ fn spawn_committed_trees_match<'scope>(
     ctx: &TaskContext,
     tx: Sender<CellUpdate>,
 ) {
+    let item_idx = ctx.item_idx;
     if let Some(base) = ctx.default_branch.as_deref() {
-        let item_idx = ctx.item_idx;
         let path = ctx.repo_path.clone();
         let base = base.to_string();
         s.spawn(move || {
@@ -118,6 +135,12 @@ fn spawn_committed_trees_match<'scope>(
                 committed_trees_match,
             });
         });
+    } else {
+        // Always send a message to match the cell_count increment
+        let _ = tx.send(CellUpdate::CommittedTreesMatch {
+            item_idx,
+            committed_trees_match: false,
+        });
     }
 }
 
@@ -127,8 +150,8 @@ fn spawn_branch_diff<'scope>(
     ctx: &TaskContext,
     tx: Sender<CellUpdate>,
 ) {
+    let item_idx = ctx.item_idx;
     if let Some(base) = ctx.default_branch.as_deref() {
-        let item_idx = ctx.item_idx;
         let sha = ctx.commit_sha.clone();
         let path = ctx.repo_path.clone();
         let base = base.to_string();
@@ -145,6 +168,12 @@ fn spawn_branch_diff<'scope>(
                 item_idx,
                 branch_diff: BranchDiffTotals { diff },
             });
+        });
+    } else {
+        // Always send a message to match the cell_count increment
+        let _ = tx.send(CellUpdate::BranchDiff {
+            item_idx,
+            branch_diff: BranchDiffTotals::default(),
         });
     }
 }
