@@ -58,9 +58,21 @@ Global Options:
 
 [32mOperation[0m
 
+### Worktree resolution
+
+Arguments are resolved using [1mpath-first lookup[0m:
+
+1. Compute the expected path for the argument (using the configured path template)
+2. If a worktree exists at that path, switch to it (regardless of what branch it's on)
+3. Otherwise, treat the argument as a branch name
+
+[1mExample[0m: If [2mrepo.foo/[0m exists but is on branch [2mbar[0m:
+- [2mwt switch foo[0m switches to [2mrepo.foo/[0m (the [2mbar[0m branch worktree)
+- [2mwt switch bar[0m also works (falls back to branch lookup)
+
 ### Switching to Existing Worktree
 
-- If worktree exists for branch, changes directory via shell integration
+- If worktree exists at expected path or for branch, changes directory via shell integration
 - No hooks run
 - No branch creation
 

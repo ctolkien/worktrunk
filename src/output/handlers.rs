@@ -293,6 +293,25 @@ fn build_remove_command(
     }
 }
 
+/// Build the shell command for background worktree removal (no branch)
+fn build_remove_command_no_branch(worktree_path: &std::path::Path) -> String {
+    use shell_escape::escape;
+
+    let worktree_path_str = worktree_path.to_string_lossy();
+    let worktree_escaped = escape(worktree_path_str.as_ref().into());
+
+    // Stop fsmonitor daemon first (best effort - ignore errors)
+    let stop_fsmonitor = format!(
+        "git -C {} fsmonitor--daemon stop 2>/dev/null || true",
+        worktree_escaped
+    );
+
+    format!(
+        "{} && git worktree remove {}",
+        stop_fsmonitor, worktree_escaped
+    )
+}
+
 /// Handle output for a remove operation
 pub fn handle_remove_output(
     result: &RemoveResult,
@@ -312,7 +331,7 @@ pub fn handle_remove_output(
             main_path,
             worktree_path,
             *changed_directory,
-            branch_name,
+            branch_name.as_deref(),
             *no_delete_branch,
             *force_delete,
             target_branch.as_deref(),
@@ -370,7 +389,7 @@ fn handle_removed_worktree_output(
     main_path: &std::path::Path,
     worktree_path: &std::path::Path,
     changed_directory: bool,
-    branch_name: &str,
+    branch_name: Option<&str>,
     no_delete_branch: bool,
     force_delete: bool,
     target_branch: Option<&str>,
@@ -384,6 +403,32 @@ fn handle_removed_worktree_output(
     }
 
     let repo = worktrunk::git::Repository::current();
+
+    // Handle detached HEAD case (no branch known)
+    let Some(branch_name) = branch_name else {
+        // No branch associated - just remove the worktree
+        if background {
+            super::progress(
+                "Removing worktree in background (detached HEAD, no branch to delete)",
+            )?;
+            let remove_command = build_remove_command_no_branch(worktree_path);
+            spawn_detached(&repo, main_path, &remove_command, "detached", "remove")?;
+        } else {
+            let target_repo = worktrunk::git::Repository::at(worktree_path);
+            let _ = target_repo.run_command(&["fsmonitor--daemon", "stop"]);
+            if let Err(err) = repo.remove_worktree(worktree_path) {
+                return Err(GitError::WorktreeRemovalFailed {
+                    branch: "(detached)".into(),
+                    path: worktree_path.to_path_buf(),
+                    error: err.to_string(),
+                }
+                .into());
+            }
+            super::success("Removed worktree (detached HEAD, no branch to delete)")?;
+        }
+        super::flush()?;
+        return Ok(());
+    };
 
     if background {
         // Background mode: spawn detached process

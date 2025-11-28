@@ -30,6 +30,18 @@ pub trait RepositoryCliExt {
         force_delete: bool,
     ) -> anyhow::Result<RemoveResult>;
 
+    /// Remove the current worktree (handles detached HEAD state).
+    ///
+    /// This method removes the worktree we're currently in, even if HEAD is detached.
+    /// It finds the branch from:
+    /// 1. The worktree's metadata (if not detached)
+    /// 2. The reflog (if detached from a branch)
+    fn remove_current_worktree(
+        &self,
+        no_delete_branch: bool,
+        force_delete: bool,
+    ) -> anyhow::Result<RemoveResult>;
+
     /// Prepare the target worktree for push by auto-stashing non-overlapping changes when safe.
     fn prepare_target_worktree(
         &self,
@@ -110,7 +122,42 @@ impl RepositoryCliExt for Repository {
             main_path,
             worktree_path,
             changed_directory,
-            branch_name: branch_name.to_string(),
+            branch_name: Some(branch_name.to_string()),
+            no_delete_branch,
+            force_delete,
+            target_branch: None,
+        })
+    }
+
+    fn remove_current_worktree(
+        &self,
+        no_delete_branch: bool,
+        force_delete: bool,
+    ) -> anyhow::Result<RemoveResult> {
+        // Get current worktree path
+        let current_path = self.worktree_root()?;
+
+        // Find this worktree in the list to get its metadata
+        let worktrees = self.list_worktrees()?;
+        let current_wt = worktrees
+            .worktrees
+            .iter()
+            .find(|wt| wt.path == current_path);
+
+        // Get branch name if available (None for detached HEAD)
+        let branch_name = current_wt.and_then(|wt| wt.branch.clone());
+
+        // Ensure the working tree is clean
+        self.ensure_clean_working_tree(Some("remove worktree"))?;
+
+        // Get main worktree path (we're removing current, so we'll cd to main)
+        let main_path = worktrees.main().path.clone();
+
+        Ok(RemoveResult::RemovedWorktree {
+            main_path,
+            worktree_path: current_path,
+            changed_directory: true,
+            branch_name,
             no_delete_branch,
             force_delete,
             target_branch: None,

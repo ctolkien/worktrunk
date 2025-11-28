@@ -1,11 +1,9 @@
 ---
-source: tests/integration_tests/switch.rs
+source: tests/integration_tests/remove.rs
 info:
   program: wt
   args:
-    - switch
-    - "--create"
-    - occupied-branch
+    - remove
   env:
     CLICOLOR_FORCE: "1"
     COLUMNS: "150"
@@ -14,18 +12,15 @@ info:
     GIT_CONFIG_GLOBAL: "[TEST_GIT_CONFIG]"
     GIT_CONFIG_SYSTEM: /dev/null
     GIT_EDITOR: ""
-    HOME: "[TEST_HOME]"
     LANG: C
     LC_ALL: C
     SOURCE_DATE_EPOCH: "1735776000"
     WORKTRUNK_BIN: ""
     WORKTRUNK_CONFIG_PATH: "[TEST_CONFIG]"
 ---
-success: false
-exit_code: 1
+success: true
+exit_code: 0
 ----- stdout -----
 
 ----- stderr -----
-❌ [31mDirectory already exists: [1m[REPO]/../repo.occupied-branch[39m[22m
-
-💡 [2mRemove the directory or use a different branch name[22m
+🔄 [36mRemoving worktree in background (detached HEAD, no branch to delete)[39m

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
@@ -9,6 +9,27 @@ use super::{
     BranchCategory, CompletionBranch, DefaultBranchName, DiffStats, GitError, LineDiff,
     SwitchHistory, Worktree, WorktreeList,
 };
+
+/// Result of resolving a worktree name.
+///
+/// Used by `resolve_worktree` to handle different resolution outcomes:
+/// - A worktree exists (with optional branch for detached HEAD)
+/// - Only a branch exists (no worktree)
+#[derive(Debug, Clone)]
+pub enum ResolvedWorktree {
+    /// A worktree was found
+    Worktree {
+        /// The filesystem path to the worktree
+        path: PathBuf,
+        /// The branch name, if known (None for detached HEAD)
+        branch: Option<String>,
+    },
+    /// Only a branch exists (no worktree)
+    BranchOnly {
+        /// The branch name
+        branch: String,
+    },
+}
 
 /// Global base path for repository operations, set by -C flag
 static BASE_PATH: OnceLock<PathBuf> = OnceLock::new();
@@ -343,6 +364,50 @@ impl Repository {
             }
             "^" => self.default_branch(),
             _ => Ok(name.to_string()),
+        }
+    }
+
+    /// Resolve a worktree by name, returning its path and branch (if known).
+    ///
+    /// Unlike `resolve_worktree_name` which returns a branch name, this returns
+    /// the worktree path directly. This is useful for commands like `wt remove`
+    /// that operate on worktrees, not branches.
+    ///
+    /// # Arguments
+    /// * `name` - The worktree name to resolve:
+    ///   - "@" for current worktree (works even in detached HEAD)
+    ///   - "-" for previous branch's worktree
+    ///   - "^" for main/default branch's worktree
+    ///   - any other string is treated as a branch name
+    ///
+    /// # Returns
+    /// - `Worktree { path, branch }` if a worktree exists
+    /// - `BranchOnly { branch }` if only the branch exists (no worktree)
+    /// - `Err` if neither worktree nor branch exists
+    pub fn resolve_worktree(&self, name: &str) -> anyhow::Result<ResolvedWorktree> {
+        match name {
+            "@" => {
+                // Current worktree by path - works even in detached HEAD
+                let path = self.worktree_root()?;
+                let worktrees = self.list_worktrees()?;
+                let branch = worktrees
+                    .worktrees
+                    .iter()
+                    .find(|wt| wt.path == path)
+                    .and_then(|wt| wt.branch.clone());
+                Ok(ResolvedWorktree::Worktree { path, branch })
+            }
+            _ => {
+                // Resolve to branch name first, then find its worktree
+                let branch = self.resolve_worktree_name(name)?;
+                match self.worktree_for_branch(&branch)? {
+                    Some(path) => Ok(ResolvedWorktree::Worktree {
+                        path,
+                        branch: Some(branch),
+                    }),
+                    None => Ok(ResolvedWorktree::BranchOnly { branch }),
+                }
+            }
         }
     }
 
@@ -1059,6 +1124,24 @@ impl Repository {
             .iter()
             .find(|wt| wt.branch.as_deref() == Some(branch))
             .map(|wt| wt.path.clone()))
+    }
+
+    /// Find the worktree at a given path, returning its branch if known.
+    ///
+    /// Returns `Some((path, branch))` if a worktree exists at the path,
+    /// where `branch` is `None` for detached HEAD worktrees.
+    pub fn worktree_at_path(
+        &self,
+        path: &Path,
+    ) -> anyhow::Result<Option<(PathBuf, Option<String>)>> {
+        let worktrees = self.list_worktrees()?;
+        let canonical_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+
+        Ok(worktrees
+            .worktrees
+            .iter()
+            .find(|wt| wt.path.canonicalize().unwrap_or_else(|_| wt.path.clone()) == canonical_path)
+            .map(|wt| (wt.path.clone(), wt.branch.clone())))
     }
 
     /// Get branches that don't have worktrees (available for switch).

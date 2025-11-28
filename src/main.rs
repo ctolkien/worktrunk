@@ -1,6 +1,7 @@
 use anyhow::Context;
 use clap::FromArgMatches;
 use color_print::cformat;
+use std::path::PathBuf;
 use std::process;
 use worktrunk::config::{WorktrunkConfig, set_config_path};
 use worktrunk::git::{Repository, exit_code, is_command_not_approved, set_base_path};
@@ -26,9 +27,10 @@ use commands::{
     ConfigAction, RebaseResult, SquashResult, handle_cache_clear, handle_cache_refresh,
     handle_cache_show, handle_config_create, handle_config_show, handle_config_status_set,
     handle_config_status_unset, handle_configure_shell, handle_init, handle_list, handle_merge,
-    handle_rebase, handle_remove, handle_squash, handle_standalone_add_approvals,
-    handle_standalone_clear_approvals, handle_standalone_commit, handle_standalone_run_hook,
-    handle_switch, handle_unconfigure_shell,
+    handle_rebase, handle_remove, handle_remove_by_path, handle_remove_current, handle_squash,
+    handle_standalone_add_approvals, handle_standalone_clear_approvals, handle_standalone_commit,
+    handle_standalone_run_hook, handle_switch, handle_unconfigure_shell,
+    resolve_worktree_path_first,
 };
 use output::{execute_user_command, handle_remove_output, handle_switch_output};
 
@@ -677,66 +679,86 @@ fn main() {
             delete_branch,
             force_delete,
             background,
-        } => (|| -> anyhow::Result<()> {
-            // Validate conflicting flags
-            if !delete_branch && force_delete {
-                return Err(worktrunk::git::GitError::Other {
-                    message: "Cannot use --force-delete with --no-delete-branch".into(),
-                }
-                .into());
-            }
-
-            let repo = Repository::current();
-
-            if worktrees.is_empty() {
-                // No worktrees specified, remove current worktree
-                let current_branch = repo.resolve_worktree_name("@")?;
-                let result =
-                    handle_remove(&current_branch, !delete_branch, force_delete, background)?;
-                handle_remove_output(&result, None, background)
-            } else {
-                // When removing multiple worktrees, we need to handle the current worktree last
-                // to avoid deleting the directory we're currently in
-                let current_worktree = repo.worktree_root().ok();
-
-                // Partition worktrees into current and others, storing resolved names
-                let mut others = Vec::new();
-                let mut current = None;
-
-                for worktree_name in &worktrees {
-                    // Resolve "@" to current branch (fail fast on errors like detached HEAD)
-                    let resolved = repo.resolve_worktree_name(worktree_name)?;
-
-                    // Check if this is the current worktree by comparing branch names
-                    if let Ok(Some(worktree_path)) = repo.worktree_for_branch(&resolved) {
-                        if Some(&worktree_path) == current_worktree.as_ref() {
-                            current = Some(resolved);
-                        } else {
-                            others.push(resolved);
-                        }
-                    } else {
-                        // Worktree doesn't exist or branch not found, will error when we try to remove
-                        others.push(resolved);
+        } => WorktrunkConfig::load()
+            .context("Failed to load config")
+            .and_then(|config| {
+                // Validate conflicting flags
+                if !delete_branch && force_delete {
+                    return Err(worktrunk::git::GitError::Other {
+                        message: "Cannot use --force-delete with --no-delete-branch".into(),
                     }
+                    .into());
                 }
 
-                // Remove others first, then current last
-                // Progress messages shown by handle_remove_output for all cases
-                for resolved in &others {
-                    let result = handle_remove(resolved, !delete_branch, force_delete, background)?;
-                    handle_remove_output(&result, Some(resolved), background)?;
-                }
+                if worktrees.is_empty() {
+                    // No worktrees specified, remove current worktree
+                    // Uses path-based removal to handle detached HEAD state
+                    let result = handle_remove_current(!delete_branch, force_delete, background)?;
+                    handle_remove_output(&result, None, background)
+                } else {
+                    use worktrunk::git::ResolvedWorktree;
 
-                // Remove current worktree last (if it was in the list)
-                if let Some(resolved) = current {
-                    let result =
-                        handle_remove(&resolved, !delete_branch, force_delete, background)?;
-                    handle_remove_output(&result, Some(&resolved), background)?;
-                }
+                    let repo = Repository::current();
+                    // When removing multiple worktrees, we need to handle the current worktree last
+                    // to avoid deleting the directory we're currently in
+                    let current_worktree = repo.worktree_root().ok();
 
-                Ok(())
-            }
-        })(),
+                    // Partition worktrees into current, others, and branch-only using path-first
+                    // resolution, which checks expected path before falling back to branch lookup
+                    let mut others = Vec::new();
+                    let mut branch_only = Vec::new();
+                    let mut current: Option<(PathBuf, Option<String>)> = None;
+
+                    for worktree_name in &worktrees {
+                        match resolve_worktree_path_first(&repo, worktree_name, &config)? {
+                            ResolvedWorktree::Worktree { path, branch } => {
+                                if Some(&path) == current_worktree.as_ref() {
+                                    current = Some((path, branch));
+                                } else {
+                                    others.push((path, branch));
+                                }
+                            }
+                            ResolvedWorktree::BranchOnly { branch } => {
+                                branch_only.push(branch);
+                            }
+                        }
+                    }
+
+                    // Remove other worktrees first
+                    for (path, branch) in &others {
+                        if let Some(branch_name) = branch {
+                            let result = handle_remove(
+                                branch_name,
+                                !delete_branch,
+                                force_delete,
+                                background,
+                            )?;
+                            handle_remove_output(&result, Some(branch_name), background)?;
+                        } else {
+                            // Non-current worktree is detached - remove by path (no branch to delete)
+                            let result =
+                                handle_remove_by_path(path, None, force_delete, background)?;
+                            handle_remove_output(&result, None, background)?;
+                        }
+                    }
+
+                    // Handle branch-only cases (no worktree)
+                    for branch in &branch_only {
+                        let result =
+                            handle_remove(branch, !delete_branch, force_delete, background)?;
+                        handle_remove_output(&result, Some(branch), background)?;
+                    }
+
+                    // Remove current worktree last (if it was in the list)
+                    if let Some((_path, branch)) = current {
+                        let result =
+                            handle_remove_current(!delete_branch, force_delete, background)?;
+                        handle_remove_output(&result, branch.as_deref(), background)?;
+                    }
+
+                    Ok(())
+                }
+            }),
         Commands::Merge {
             target,
             squash,

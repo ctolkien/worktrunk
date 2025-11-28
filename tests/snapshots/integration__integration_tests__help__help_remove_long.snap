@@ -62,6 +62,27 @@ Removes worktree directory, git metadata, and branch. Requires clean working tre
 - Removes specified worktree(s) and branches
 - Current worktree removed last (switches to main first)
 
+### Worktree resolution
+
+Arguments are resolved to worktrees using [1mpath-first lookup[0m:
+
+1. Compute the expected path for the argument (using the configured path template)
+2. If a worktree exists at that path, use it (regardless of what branch it's on)
+3. Otherwise, treat the argument as a branch name
+
+[1mExample[0m: If [2mrepo.foo/[0m exists but is on branch [2mbar[0m:
+- [2mwt remove foo[0m removes [2mrepo.foo/[0m and the [2mbar[0m branch
+- [2mwt remove bar[0m also works (falls back to branch lookup)
+
+[1mConflict detection[0m: If path [2mrepo.foo/[0m has a worktree on branch [2mbar[0m, but
+branch [2mfoo[0m has a different worktree at [2mrepo.bar/[0m, an error is raised.
+
+[1mSpecial arguments[0m:
+
+- [2m@[0m - current worktree (by path, works in detached HEAD)
+- [2m-[0m - previous worktree (from switch history)
+- [2m^[0m - main/default branch worktree
+
 ### Branch deletion
 
 By default, branches are deleted only when their content has been integrated:

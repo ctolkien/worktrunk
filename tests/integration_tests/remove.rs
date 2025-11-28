@@ -330,6 +330,50 @@ fn test_remove_branch_only_force_delete() {
     );
 }
 
+/// Test that remove works from a detached HEAD state in a worktree.
+///
+/// When in detached HEAD, we should still be able to remove the current worktree
+/// using path-based removal (no branch deletion).
+#[test]
+fn test_remove_from_detached_head_in_worktree() {
+    let mut repo = setup_remove_repo();
+
+    let worktree_path = repo.add_worktree("feature-detached");
+
+    // Detach HEAD in the worktree
+    repo.detach_head_in_worktree("feature-detached");
+
+    // Run remove from within the detached worktree (should still work)
+    snapshot_remove(
+        "remove_from_detached_head_in_worktree",
+        &repo,
+        &[],
+        Some(&worktree_path),
+    );
+}
+
+/// Test that `wt remove @` works from a detached HEAD state in a worktree.
+///
+/// This should behave identically to `wt remove` (no args) - path-based removal
+/// without branch deletion. The `@` symbol refers to the current worktree.
+#[test]
+fn test_remove_at_from_detached_head_in_worktree() {
+    let mut repo = setup_remove_repo();
+
+    let worktree_path = repo.add_worktree("feature-detached-at");
+
+    // Detach HEAD in the worktree
+    repo.detach_head_in_worktree("feature-detached-at");
+
+    // Run `wt remove @` from within the detached worktree (should behave same as no args)
+    snapshot_remove(
+        "remove_at_from_detached_head_in_worktree",
+        &repo,
+        &["@"],
+        Some(&worktree_path),
+    );
+}
+
 /// Test that a branch with matching tree content (but not an ancestor) is deleted.
 ///
 /// This simulates a squash merge workflow where:

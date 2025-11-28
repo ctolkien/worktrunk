@@ -736,9 +736,21 @@ jq '.[] | select(.is_current == true)'
     /// Switch to a worktree
     #[command(after_long_help = r#"## Operation
 
+### Worktree resolution
+
+Arguments are resolved using **path-first lookup**:
+
+1. Compute the expected path for the argument (using the configured path template)
+2. If a worktree exists at that path, switch to it (regardless of what branch it's on)
+3. Otherwise, treat the argument as a branch name
+
+**Example**: If `repo.foo/` exists but is on branch `bar`:
+- `wt switch foo` switches to `repo.foo/` (the `bar` branch worktree)
+- `wt switch bar` also works (falls back to branch lookup)
+
 ### Switching to Existing Worktree
 
-- If worktree exists for branch, changes directory via shell integration
+- If worktree exists at expected path or for branch, changes directory via shell integration
 - No hooks run
 - No branch creation
 
@@ -865,6 +877,27 @@ Removes worktree directory, git metadata, and branch. Requires clean working tre
 
 - Removes specified worktree(s) and branches
 - Current worktree removed last (switches to main first)
+
+### Worktree resolution
+
+Arguments are resolved to worktrees using **path-first lookup**:
+
+1. Compute the expected path for the argument (using the configured path template)
+2. If a worktree exists at that path, use it (regardless of what branch it's on)
+3. Otherwise, treat the argument as a branch name
+
+**Example**: If `repo.foo/` exists but is on branch `bar`:
+- `wt remove foo` removes `repo.foo/` and the `bar` branch
+- `wt remove bar` also works (falls back to branch lookup)
+
+**Conflict detection**: If path `repo.foo/` has a worktree on branch `bar`, but
+branch `foo` has a different worktree at `repo.bar/`, an error is raised.
+
+**Special arguments**:
+
+- `@` - current worktree (by path, works in detached HEAD)
+- `-` - previous worktree (from switch history)
+- `^` - main/default branch worktree
 
 ### Branch deletion
 

@@ -113,12 +113,117 @@ use color_print::cformat;
 use std::path::PathBuf;
 use worktrunk::HookType;
 use worktrunk::config::{CommandPhase, WorktrunkConfig};
-use worktrunk::git::{GitError, Repository, is_command_not_approved};
+use worktrunk::git::{GitError, Repository, ResolvedWorktree, is_command_not_approved};
 use worktrunk::styling::format_with_gutter;
 
 use super::command_executor::CommandContext;
 use super::hooks::{HookFailureStrategy, HookPipeline};
 use super::repository_ext::RepositoryCliExt;
+
+/// Resolve a worktree argument using path-first lookup.
+///
+/// Resolution order:
+/// 1. Special symbols ("@", "-", "^") are handled specially
+/// 2. Compute expected path for the argument using config template
+/// 3. If a worktree exists at that path, return it (regardless of branch)
+/// 4. Otherwise, look up by branch name (standard fallback)
+///
+/// Conflict detection: If expected path has a worktree on branch X, but argument
+/// matches branch Y which has a worktree elsewhere, an error is raised.
+///
+/// This allows `wt remove foo` to target the worktree at `repo.foo/` even if
+/// that worktree is on a different branch.
+pub fn resolve_worktree_path_first(
+    repo: &Repository,
+    name: &str,
+    config: &WorktrunkConfig,
+) -> anyhow::Result<ResolvedWorktree> {
+    // Special symbols bypass path-first lookup
+    match name {
+        "@" => {
+            // Current worktree by path - works even in detached HEAD
+            let path = repo.worktree_root()?;
+            let worktrees = repo.list_worktrees()?;
+            let branch = worktrees
+                .worktrees
+                .iter()
+                .find(|wt| wt.path == path)
+                .and_then(|wt| wt.branch.clone());
+            return Ok(ResolvedWorktree::Worktree { path, branch });
+        }
+        "-" | "^" => {
+            // These resolve to branch names, use standard branch-based lookup
+            return repo.resolve_worktree(name);
+        }
+        _ => {}
+    }
+
+    // Compute expected path for this argument
+    let expected_path = compute_worktree_path(repo, name, config)?;
+
+    // Check if a worktree exists at the expected path
+    if let Some((path, branch_at_path)) = repo.worktree_at_path(&expected_path)? {
+        // Worktree exists at expected path - check for ambiguity
+        // If the argument also matches a different branch with a worktree elsewhere,
+        // that's ambiguous and we should error
+        // Note: resolve_worktree_name won't fail with DetachedHead here because "@"
+        // was already handled in the early return above
+        let branch = repo.resolve_worktree_name(name)?;
+        if branch_at_path.as_deref() != Some(&branch) {
+            // The worktree at expected path is on a different branch than the argument
+            if let Some(other_path) = repo.worktree_for_branch(&branch)? {
+                // And the argument matches a branch that has a worktree elsewhere
+                // This is ambiguous - error to prevent confusion
+                return Err(GitError::WorktreePathMismatch {
+                    branch,
+                    expected_path,
+                    actual_path: other_path,
+                }
+                .into());
+            }
+        }
+        return Ok(ResolvedWorktree::Worktree {
+            path,
+            branch: branch_at_path,
+        });
+    }
+
+    // No worktree at expected path - fall back to branch-based lookup
+    // This handles cases like manually-created worktrees at non-standard paths
+    let branch = repo.resolve_worktree_name(name)?;
+    match repo.worktree_for_branch(&branch)? {
+        Some(path) => Ok(ResolvedWorktree::Worktree {
+            path,
+            branch: Some(branch),
+        }),
+        None => Ok(ResolvedWorktree::BranchOnly { branch }),
+    }
+}
+
+/// Compute the expected worktree path for a branch name.
+fn compute_worktree_path(
+    repo: &Repository,
+    branch: &str,
+    config: &WorktrunkConfig,
+) -> anyhow::Result<PathBuf> {
+    let repo_root = repo.worktree_base()?;
+    let repo_name = repo_root
+        .file_name()
+        .ok_or_else(|| anyhow::anyhow!("Repository path has no filename: {}", repo_root.display()))?
+        .to_str()
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Repository path contains invalid UTF-8: {}",
+                repo_root.display()
+            )
+        })?;
+
+    let relative_path = config
+        .format_path(repo_name, branch)
+        .map_err(|e| anyhow::anyhow!("Failed to format worktree path: {}", e))?;
+
+    Ok(repo_root.join(relative_path))
+}
 
 /// Flags indicating which merge operations occurred
 #[derive(Debug, Clone, Copy)]
@@ -165,7 +270,8 @@ pub enum RemoveResult {
         main_path: PathBuf,
         worktree_path: PathBuf,
         changed_directory: bool,
-        branch_name: String,
+        /// Branch name, if known. None for detached HEAD state.
+        branch_name: Option<String>,
         no_delete_branch: bool,
         force_delete: bool,
         target_branch: Option<String>,
@@ -247,33 +353,41 @@ pub fn handle_switch(
         crate::output::warning("--base flag is only used with --create, ignoring")?;
     }
 
-    // Check if worktree already exists for this branch
+    // Compute expected worktree path for this branch
+    let expected_path = compute_worktree_path(&repo, &resolved_branch, config)?;
+
+    // Helper to build switch result for an existing worktree
+    let switch_to_existing = |path: PathBuf, branch: String| -> (SwitchResult, String) {
+        let canonical_path = path.canonicalize().unwrap_or(path);
+        let current_dir = std::env::current_dir()
+            .ok()
+            .and_then(|p| p.canonicalize().ok());
+        let already_at_worktree = current_dir
+            .as_ref()
+            .map(|cur| cur == &canonical_path)
+            .unwrap_or(false);
+
+        let result = if already_at_worktree {
+            SwitchResult::AlreadyAt(canonical_path)
+        } else {
+            SwitchResult::Existing(canonical_path)
+        };
+        (result, branch)
+    };
+
+    // Path-first lookup: check if a worktree exists at the expected path
+    if let Some((existing_path, path_branch)) = repo.worktree_at_path(&expected_path)? {
+        // Worktree exists at expected path - switch to it regardless of its branch
+        let _ = repo.record_switch_history(&new_current, new_previous.as_deref());
+        let actual_branch = path_branch.unwrap_or_else(|| resolved_branch.clone());
+        return Ok(switch_to_existing(existing_path, actual_branch));
+    }
+
+    // Fallback: check if branch has a worktree at a different path
     match repo.worktree_for_branch(&resolved_branch)? {
         Some(existing_path) if existing_path.exists() => {
-            // Record successful switch in history for `wt switch -` support
             let _ = repo.record_switch_history(&new_current, new_previous.as_deref());
-
-            // Canonicalize the path for cleaner display
-            let canonical_existing_path = existing_path.canonicalize().unwrap_or(existing_path);
-
-            // Check if we're already at this worktree
-            let current_dir = std::env::current_dir()
-                .ok()
-                .and_then(|p| p.canonicalize().ok());
-
-            let already_at_worktree = current_dir
-                .as_ref()
-                .map(|cur| cur == &canonical_existing_path)
-                .unwrap_or(false);
-
-            return Ok((
-                if already_at_worktree {
-                    SwitchResult::AlreadyAt(canonical_existing_path)
-                } else {
-                    SwitchResult::Existing(canonical_existing_path)
-                },
-                resolved_branch,
-            ));
+            return Ok(switch_to_existing(existing_path, resolved_branch));
         }
         Some(_) => {
             return Err(GitError::WorktreeMissing {
@@ -284,37 +398,14 @@ pub fn handle_switch(
         None => {}
     }
 
-    // No existing worktree, create one (or reuse target path if available)
-    let repo_root = repo.worktree_base()?;
+    // No existing worktree at expected path or for branch - will create one
+    let worktree_path = expected_path;
 
-    let repo_name = repo_root
-        .file_name()
-        .ok_or_else(|| anyhow::anyhow!("Repository path has no filename: {}", repo_root.display()))?
-        .to_str()
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Repository path contains invalid UTF-8: {}",
-                repo_root.display()
-            )
-        })?;
-
-    let worktree_path = repo_root.join(
-        config
-            .format_path(repo_name, &resolved_branch)
-            .map_err(|e| anyhow::anyhow!("Failed to format worktree path: {}", e))?,
-    );
-
-    // If the target path already exists but no worktree is registered for this branch,
+    // If the target path already exists but is NOT a worktree (e.g., stale directory),
     // surface a helpful error instead of letting git fail with "already exists".
-    if repo.worktree_for_branch(&resolved_branch)?.is_none() && worktree_path.exists() {
-        let occupant = Repository::at(&worktree_path)
-            .current_branch()
-            .ok()
-            .flatten();
-        return Err(GitError::WorktreePathOccupied {
-            branch: resolved_branch.clone(),
+    if worktree_path.exists() {
+        return Err(GitError::WorktreePathExists {
             path: worktree_path,
-            occupant,
         }
         .into());
     }
@@ -455,6 +546,63 @@ pub fn handle_remove(
     }
 
     repo.remove_worktree_by_name(worktree_name, no_delete_branch, force_delete)
+}
+
+/// Handle removing the current worktree (supports detached HEAD state).
+///
+/// This is the path-based removal that handles the "@" shorthand, including
+/// when HEAD is detached.
+pub fn handle_remove_current(
+    no_delete_branch: bool,
+    force_delete: bool,
+    background: bool,
+) -> anyhow::Result<RemoveResult> {
+    let repo = Repository::current();
+
+    // Show progress (unless running in background - output handler will show command)
+    if !background {
+        crate::output::progress(cformat!("<cyan>Removing current worktree...</>"))?;
+    }
+
+    repo.remove_current_worktree(no_delete_branch, force_delete)
+}
+
+/// Handle removing a worktree by path (for detached non-current worktrees).
+///
+/// This is used when a worktree is in detached HEAD state and we're not
+/// currently in it. We can still remove the worktree, we just don't know
+/// which branch (if any) to delete.
+pub fn handle_remove_by_path(
+    path: &std::path::Path,
+    branch: Option<String>,
+    force_delete: bool,
+    background: bool,
+) -> anyhow::Result<RemoveResult> {
+    let repo = Repository::current();
+
+    if !background {
+        crate::output::progress(cformat!(
+            "<cyan>Removing worktree at <bold>{}</>...</>",
+            worktrunk::path::format_path_for_display(path)
+        ))?;
+    }
+
+    // Check that the worktree is clean
+    let target_repo = Repository::at(path);
+    target_repo.ensure_clean_working_tree(Some("remove worktree"))?;
+
+    // We're not in this worktree, so no directory change needed
+    let current_path = repo.worktree_root()?;
+
+    Ok(RemoveResult::RemovedWorktree {
+        main_path: current_path,
+        worktree_path: path.to_path_buf(),
+        changed_directory: false,
+        branch_name: branch,
+        no_delete_branch: true, // Can't delete branch for detached worktree
+        force_delete,
+        target_branch: None,
+    })
 }
 
 impl<'a> CommandContext<'a> {

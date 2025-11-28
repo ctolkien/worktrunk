@@ -216,7 +216,7 @@ pub fn handle_merge(
             main_path: destination_path.clone(),
             worktree_path: worktree_root,
             changed_directory: true,
-            branch_name: current_branch.clone(),
+            branch_name: Some(current_branch.clone()),
             no_delete_branch: false,
             force_delete: false,
             target_branch: Some(target_branch.clone()),

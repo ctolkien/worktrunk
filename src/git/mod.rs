@@ -39,7 +39,7 @@ pub use error::{
     exit_code,
     is_command_not_approved,
 };
-pub use repository::{Repository, set_base_path};
+pub use repository::{Repository, ResolvedWorktree, set_base_path};
 
 /// Category of branch for completion display
 #[derive(Debug, Clone, PartialEq)]

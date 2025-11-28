@@ -65,6 +65,11 @@ pub enum GitError {
     WorktreePathExists {
         path: PathBuf,
     },
+    WorktreePathMismatch {
+        branch: String,
+        expected_path: PathBuf,
+        actual_path: PathBuf,
+    },
     WorktreeCreationFailed {
         branch: String,
         base_branch: Option<String>,
@@ -190,6 +195,19 @@ impl std::fmt::Display for GitError {
                 cwrite!(
                     f,
                     "{ERROR_EMOJI} <red>Directory already exists: <bold>{path_display}</></>\n\n{HINT_EMOJI} <dim>Remove the directory or use a different branch name</>"
+                )
+            }
+
+            GitError::WorktreePathMismatch {
+                branch,
+                expected_path,
+                actual_path,
+            } => {
+                let expected = format_path_for_display(expected_path);
+                let actual = format_path_for_display(actual_path);
+                cwrite!(
+                    f,
+                    "{ERROR_EMOJI} <red>Ambiguous: <bold>{expected}</> has a worktree on a different branch, but branch <bold>{branch}</> exists at <bold>{actual}</></>\n\n{HINT_EMOJI} <dim>Use 'wt list' to see worktree-branch mappings</>"
                 )
             }
 
