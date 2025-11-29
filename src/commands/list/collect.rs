@@ -138,9 +138,46 @@ enum DrainResult {
     TimedOut {
         /// Number of cell updates received before timeout
         received_count: usize,
-        /// Sample of items that had incomplete data (item_idx, branch_name, received_cells)
-        incomplete_items: Vec<(usize, String, Vec<&'static str>)>,
+        /// Items with missing cells: (item_idx, branch_name, missing_cell_types)
+        items_with_missing: Vec<(usize, String, Vec<&'static str>)>,
     },
+}
+
+/// Tracks expected cell types per item for timeout diagnostics.
+///
+/// Populated at spawn time so we know exactly which cells to expect,
+/// without hardcoding cell lists that could drift from the spawn functions.
+#[derive(Default)]
+pub(super) struct ExpectedCells {
+    inner: std::sync::Mutex<std::collections::HashMap<usize, Vec<&'static str>>>,
+}
+
+impl ExpectedCells {
+    /// Record that we expect a cell of the given type for the given item.
+    /// Called immediately after spawning each cell task.
+    pub fn expect(&self, item_idx: usize, cell_type: &'static str) {
+        self.inner
+            .lock()
+            .unwrap()
+            .entry(item_idx)
+            .or_default()
+            .push(cell_type);
+    }
+
+    /// Total number of expected cells (for progress display).
+    pub fn count(&self) -> usize {
+        self.inner.lock().unwrap().values().map(|v| v.len()).sum()
+    }
+
+    /// Expected cells for a specific item.
+    fn cells_for(&self, item_idx: usize) -> Vec<&'static str> {
+        self.inner
+            .lock()
+            .unwrap()
+            .get(&item_idx)
+            .cloned()
+            .unwrap_or_default()
+    }
 }
 
 /// Drain cell updates from the channel and apply them to items.
@@ -159,6 +196,7 @@ enum DrainResult {
 fn drain_cell_updates(
     rx: chan::Receiver<CellUpdate>,
     items: &mut [ListItem],
+    expected_cells: &ExpectedCells,
     mut on_update: impl FnMut(usize, &mut ListItem, &StatusContext),
 ) -> DrainResult {
     use std::collections::HashMap;
@@ -184,32 +222,45 @@ fn drain_cell_updates(
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            // Deadline exceeded - build diagnostic info
+            // Deadline exceeded - build diagnostic info showing MISSING cells
             let received_count: usize = received_by_item.values().map(|v| v.len()).sum();
 
-            // Find items that likely have incomplete data (received some but not all cells)
-            // We show items that received between 1 and 9 cells as "incomplete"
-            // (full worktree = 10 cells, full branch = 7 cells)
-            let mut incomplete_items: Vec<(usize, String, Vec<&'static str>)> = received_by_item
-                .into_iter()
-                .filter(|(_, cells)| cells.len() < 7) // Incomplete if fewer than branch minimum
-                .take(5)
-                .map(|(item_idx, cells)| {
-                    let name = if item_idx < items.len() {
-                        items[item_idx].branch.clone().unwrap_or_else(|| {
-                            items[item_idx].head[..8.min(items[item_idx].head.len())].to_string()
-                        })
-                    } else {
-                        format!("item_{item_idx}")
-                    };
-                    (item_idx, name, cells)
-                })
-                .collect();
-            incomplete_items.sort_by_key(|(idx, _, _)| *idx);
+            // Find items with missing cells by comparing received vs expected
+            let mut items_with_missing: Vec<(usize, String, Vec<&'static str>)> = Vec::new();
+
+            for (item_idx, item) in items.iter().enumerate() {
+                // Get expected cells for this item (populated at spawn time)
+                let expected = expected_cells.cells_for(item_idx);
+
+                // Get received cells for this item (empty vec if none received)
+                let received = received_by_item
+                    .get(&item_idx)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]);
+
+                // Find missing cells
+                let missing: Vec<&'static str> = expected
+                    .iter()
+                    .filter(|&cell| !received.contains(cell))
+                    .copied()
+                    .collect();
+
+                if !missing.is_empty() {
+                    let name = item
+                        .branch
+                        .clone()
+                        .unwrap_or_else(|| item.head[..8.min(item.head.len())].to_string());
+                    items_with_missing.push((item_idx, name, missing));
+                }
+            }
+
+            // Sort by item index and limit to first 5
+            items_with_missing.sort_by_key(|(idx, _, _)| *idx);
+            items_with_missing.truncate(5);
 
             return DrainResult::TimedOut {
                 received_count,
-                incomplete_items,
+                items_with_missing,
             };
         }
 
@@ -522,8 +573,8 @@ pub fn collect(
         check_merge_tree_conflicts,
     };
 
-    // Counter for total cells - incremented as spawns are queued
-    let cell_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    // Track expected cells per item - populated as spawns are queued
+    let expected_cells = std::sync::Arc::new(ExpectedCells::default());
     let num_worktrees = all_items
         .iter()
         .filter(|item| item.worktree_data().is_some())
@@ -592,7 +643,7 @@ pub fn collect(
     let sorted_worktrees_clone = sorted_worktrees.clone();
     let tx_worktrees = tx.clone();
     let default_branch_clone = default_branch.clone();
-    let cell_count_wt = cell_count.clone();
+    let expected_cells_wt = expected_cells.clone();
     std::thread::spawn(move || {
         sorted_worktrees_clone
             .par_iter()
@@ -606,7 +657,7 @@ pub fn collect(
                     &default_branch_clone,
                     &options,
                     tx_worktrees.clone(),
-                    &cell_count_wt,
+                    &expected_cells_wt,
                 );
             });
     });
@@ -635,7 +686,7 @@ pub fn collect(
         let main_path = main_worktree.path.clone();
         let tx_branches = tx.clone();
         let default_branch_clone = default_branch.clone();
-        let cell_count_br = cell_count.clone();
+        let expected_cells_br = expected_cells.clone();
         std::thread::spawn(move || {
             all_branches
                 .par_iter()
@@ -648,7 +699,7 @@ pub fn collect(
                         &default_branch_clone,
                         &options,
                         tx_branches.clone(),
-                        &cell_count_br,
+                        &expected_cells_br,
                     );
                 });
         });
@@ -661,64 +712,69 @@ pub fn collect(
     let mut completed_cells = 0;
 
     // Drain cell updates with conditional progressive rendering
-    let drain_result = drain_cell_updates(rx, &mut all_items, |item_idx, item, ctx| {
-        // Compute/recompute status symbols as data arrives (both modes)
-        // This is idempotent and updates status as new data (like upstream) arrives
-        let item_default_branch = if item.is_main() {
-            None
-        } else {
-            Some(default_branch.as_str())
-        };
-        item.compute_status_symbols(
-            item_default_branch,
-            ctx.has_merge_tree_conflicts,
-            ctx.user_status.clone(),
-            ctx.working_tree_symbols.as_deref(),
-            ctx.has_conflicts,
-        );
-
-        // Progressive mode only: update UI
-        if let Some(ref mut table) = progressive_table {
-            use anstyle::Style;
-            let dim = Style::new().dimmed();
-
-            completed_cells += 1;
-            let total_cells = cell_count.load(std::sync::atomic::Ordering::Relaxed);
-
-            // Update footer progress
-            let footer_msg = format!(
-                "{INFO_EMOJI} {dim}{footer_base} ({completed_cells}/{total_cells} cells loaded){dim:#}"
+    let drain_result = drain_cell_updates(
+        rx,
+        &mut all_items,
+        &expected_cells,
+        |item_idx, item, ctx| {
+            // Compute/recompute status symbols as data arrives (both modes)
+            // This is idempotent and updates status as new data (like upstream) arrives
+            let item_default_branch = if item.is_main() {
+                None
+            } else {
+                Some(default_branch.as_str())
+            };
+            item.compute_status_symbols(
+                item_default_branch,
+                ctx.has_merge_tree_conflicts,
+                ctx.user_status.clone(),
+                ctx.working_tree_symbols.as_deref(),
+                ctx.has_conflicts,
             );
-            if let Err(e) = table.update_footer(footer_msg) {
-                log::debug!("Progressive footer update failed: {}", e);
-            }
 
-            // Re-render the row with caching (now includes status if computed)
-            let rendered = layout.format_list_item_line(item, previous_branch.as_deref());
+            // Progressive mode only: update UI
+            if let Some(ref mut table) = progressive_table {
+                use anstyle::Style;
+                let dim = Style::new().dimmed();
 
-            // Compare using full line so changes beyond the clamp (e.g., CI) still refresh.
-            if rendered != last_rendered_lines[item_idx] {
-                last_rendered_lines[item_idx] = rendered.clone();
-                if let Err(e) = table.update_row(item_idx, rendered) {
-                    log::debug!("Progressive row update failed: {}", e);
+                completed_cells += 1;
+                let total_cells = expected_cells.count();
+
+                // Update footer progress
+                let footer_msg = format!(
+                    "{INFO_EMOJI} {dim}{footer_base} ({completed_cells}/{total_cells} cells loaded){dim:#}"
+                );
+                if let Err(e) = table.update_footer(footer_msg) {
+                    log::debug!("Progressive footer update failed: {}", e);
+                }
+
+                // Re-render the row with caching (now includes status if computed)
+                let rendered = layout.format_list_item_line(item, previous_branch.as_deref());
+
+                // Compare using full line so changes beyond the clamp (e.g., CI) still refresh.
+                if rendered != last_rendered_lines[item_idx] {
+                    last_rendered_lines[item_idx] = rendered.clone();
+                    if let Err(e) = table.update_row(item_idx, rendered) {
+                        log::debug!("Progressive row update failed: {}", e);
+                    }
                 }
             }
-        }
-    });
+        },
+    );
 
     // Handle timeout if it occurred
     if let DrainResult::TimedOut {
         received_count,
-        incomplete_items,
+        items_with_missing,
     } = drain_result
     {
-        // Build diagnostic message showing what we received (not what's missing)
+        // Build diagnostic message showing what's MISSING (more useful for debugging)
         let mut diag = format!("wt list timed out after 30s ({received_count} cells received)");
 
-        if !incomplete_items.is_empty() {
-            diag.push_str("\nIncomplete items:");
-            for (_, name, cells) in &incomplete_items {
-                diag.push_str(&format!("\n  - {name}: received {}", cells.join(", ")));
+        if !items_with_missing.is_empty() {
+            diag.push_str("\nMissing cells:");
+            for (_, name, missing) in &items_with_missing {
+                diag.push_str(&format!("\n  - {name}: {}", missing.join(", ")));
             }
         }
 
@@ -885,7 +941,6 @@ pub fn populate_items(
     options: CollectOptions,
 ) -> anyhow::Result<()> {
     use std::sync::Arc;
-    use std::sync::atomic::AtomicUsize;
 
     if items.is_empty() {
         return Ok(());
@@ -894,8 +949,8 @@ pub fn populate_items(
     // Create channel for cell updates
     let (tx, rx) = chan::unbounded();
 
-    // Counter for cells (not used for progress, but required by spawn functions)
-    let cell_count = Arc::new(AtomicUsize::new(0));
+    // Track expected cells per item (populated at spawn time)
+    let expected_cells = Arc::new(ExpectedCells::default());
 
     // Collect worktree info: (index, path, head, branch)
     let worktree_info: Vec<_> = items
@@ -915,6 +970,7 @@ pub fn populate_items(
 
     // Spawn collection in background thread
     let default_branch_clone = default_branch.to_string();
+    let expected_cells_clone = expected_cells.clone();
     std::thread::spawn(move || {
         for (idx, path, head, branch) in worktree_info {
             // Create a minimal Worktree struct for the collection function
@@ -933,13 +989,13 @@ pub fn populate_items(
                 &default_branch_clone,
                 &options,
                 tx.clone(),
-                &cell_count,
+                &expected_cells_clone,
             );
         }
     });
 
     // Drain cell updates (blocking until all complete)
-    let drain_result = drain_cell_updates(rx, items, |_item_idx, item, ctx| {
+    let drain_result = drain_cell_updates(rx, items, &expected_cells, |_item_idx, item, ctx| {
         // Compute status symbols as data arrives (same logic as in collect())
         let item_default_branch = if item.is_main() {
             None

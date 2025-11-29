@@ -5,11 +5,11 @@
 //!
 //! ## Invariant: Every task must send exactly one message
 //!
-//! Each `spawn_*` function increments `cell_count` after being called. The
-//! `drain_cell_updates` loop waits until all senders are dropped, which only
+//! Each `spawn_*` function records its expected cell via `expected_cells.expect()`.
+//! The `drain_cell_updates` loop waits until all senders are dropped, which only
 //! happens after all spawned threads complete. If a spawn function doesn't send
-//! a message (e.g., due to an early return or failed condition), the message
-//! count won't match the cell count, causing an infinite hang.
+//! a message (e.g., due to an early return or failed condition), the timeout
+//! diagnostic will show that cell as missing.
 //!
 //! **Always send a message**, even when conditions aren't met or errors occur.
 //! Use default values rather than skipping the send.
@@ -23,13 +23,12 @@
 use crossbeam_channel::Sender;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use worktrunk::git::{LineDiff, Repository, Worktree};
 use worktrunk::path::format_path_for_display;
 use worktrunk::styling::eprintln;
 
 use super::ci_status::PrStatus;
-use super::collect::{CellUpdate, detect_git_operation};
+use super::collect::{CellUpdate, ExpectedCells, detect_git_operation};
 use super::model::{AheadBehind, BranchDiffTotals, CommitDetails, UpstreamStatus};
 
 /// Options for controlling what data to collect.
@@ -53,7 +52,9 @@ fn spawn_commit_details<'scope>(
     s: &'scope std::thread::Scope<'scope, '_>,
     ctx: &TaskContext,
     tx: Sender<CellUpdate>,
+    expected_cells: &Arc<ExpectedCells>,
 ) {
+    expected_cells.expect(ctx.item_idx, "commit_details");
     let item_idx = ctx.item_idx;
     let sha = ctx.commit_sha.clone();
     let path = ctx.repo_path.clone();
@@ -88,7 +89,9 @@ fn spawn_ahead_behind<'scope>(
     s: &'scope std::thread::Scope<'scope, '_>,
     ctx: &TaskContext,
     tx: Sender<CellUpdate>,
+    expected_cells: &Arc<ExpectedCells>,
 ) {
+    expected_cells.expect(ctx.item_idx, "ahead_behind");
     let item_idx = ctx.item_idx;
     if let Some(base) = ctx.default_branch.as_deref() {
         let sha = ctx.commit_sha.clone();
@@ -122,7 +125,9 @@ fn spawn_committed_trees_match<'scope>(
     s: &'scope std::thread::Scope<'scope, '_>,
     ctx: &TaskContext,
     tx: Sender<CellUpdate>,
+    expected_cells: &Arc<ExpectedCells>,
 ) {
+    expected_cells.expect(ctx.item_idx, "committed_trees_match");
     let item_idx = ctx.item_idx;
     if let Some(base) = ctx.default_branch.as_deref() {
         let path = ctx.repo_path.clone();
@@ -149,7 +154,9 @@ fn spawn_branch_diff<'scope>(
     s: &'scope std::thread::Scope<'scope, '_>,
     ctx: &TaskContext,
     tx: Sender<CellUpdate>,
+    expected_cells: &Arc<ExpectedCells>,
 ) {
+    expected_cells.expect(ctx.item_idx, "branch_diff");
     let item_idx = ctx.item_idx;
     if let Some(base) = ctx.default_branch.as_deref() {
         let sha = ctx.commit_sha.clone();
@@ -183,7 +190,9 @@ fn spawn_working_tree_diff<'scope>(
     s: &'scope std::thread::Scope<'scope, '_>,
     ctx: &TaskContext,
     tx: Sender<CellUpdate>,
+    expected_cells: &Arc<ExpectedCells>,
 ) {
+    expected_cells.expect(ctx.item_idx, "working_tree_diff");
     let item_idx = ctx.item_idx;
     let path = ctx.repo_path.clone();
     let base = ctx.default_branch.clone();
@@ -238,7 +247,9 @@ fn spawn_merge_tree_conflicts<'scope>(
     ctx: &TaskContext,
     check_merge_tree_conflicts: bool,
     tx: Sender<CellUpdate>,
+    expected_cells: &Arc<ExpectedCells>,
 ) {
+    expected_cells.expect(ctx.item_idx, "merge_tree_conflicts");
     let item_idx = ctx.item_idx;
     if check_merge_tree_conflicts && let Some(base) = ctx.default_branch.as_deref() {
         let sha = ctx.commit_sha.clone();
@@ -267,7 +278,9 @@ fn spawn_worktree_state<'scope>(
     s: &'scope std::thread::Scope<'scope, '_>,
     ctx: &TaskContext,
     tx: Sender<CellUpdate>,
+    expected_cells: &Arc<ExpectedCells>,
 ) {
+    expected_cells.expect(ctx.item_idx, "git_operation");
     let item_idx = ctx.item_idx;
     let path = ctx.repo_path.clone();
     s.spawn(move || {
@@ -285,7 +298,9 @@ fn spawn_user_status<'scope>(
     s: &'scope std::thread::Scope<'scope, '_>,
     ctx: &TaskContext,
     tx: Sender<CellUpdate>,
+    expected_cells: &Arc<ExpectedCells>,
 ) {
+    expected_cells.expect(ctx.item_idx, "user_status");
     let item_idx = ctx.item_idx;
     let path = ctx.repo_path.clone();
     let branch = ctx.branch.clone();
@@ -305,7 +320,9 @@ fn spawn_upstream<'scope>(
     ctx: &TaskContext,
     verbose_errors: bool,
     tx: Sender<CellUpdate>,
+    expected_cells: &Arc<ExpectedCells>,
 ) {
+    expected_cells.expect(ctx.item_idx, "upstream");
     let item_idx = ctx.item_idx;
     let branch = ctx.branch.clone();
     let sha = ctx.commit_sha.clone();
@@ -358,7 +375,9 @@ fn spawn_ci_status<'scope>(
     ctx: &TaskContext,
     fetch_ci: bool,
     tx: Sender<CellUpdate>,
+    expected_cells: &Arc<ExpectedCells>,
 ) {
+    expected_cells.expect(ctx.item_idx, "ci_status");
     let item_idx = ctx.item_idx;
 
     if !fetch_ci {
@@ -392,16 +411,17 @@ fn spawn_ci_status<'scope>(
 
 /// Collect worktree data progressively, sending cell updates as each task completes.
 ///
-/// Spawns 9 parallel git operations:
+/// Spawns 10 parallel git operations:
 /// 1. Commit details (timestamp, message)
 /// 2. Ahead/behind counts
-/// 3. Branch diff stats
-/// 4. Working tree diff + status symbols
-/// 5. Conflicts check
-/// 6. Worktree state detection
-/// 7. User status from git config
-/// 8. Upstream tracking status
-/// 9. CI/PR status
+/// 3. Committed trees match (same tree SHA as default branch)
+/// 4. Branch diff stats
+/// 5. Working tree diff + status symbols
+/// 6. Merge-tree conflicts check
+/// 7. Worktree state detection
+/// 8. User status from git config
+/// 9. Upstream tracking status
+/// 10. CI/PR status
 ///
 /// Each task sends a CellUpdate when it completes, enabling progressive UI updates.
 /// Errors are handled with TODO for simplicity (simplest thing for now).
@@ -411,7 +431,7 @@ pub fn collect_worktree_progressive(
     default_branch: &str,
     options: &CollectOptions,
     tx: Sender<CellUpdate>,
-    cell_count: &Arc<AtomicUsize>,
+    expected_cells: &Arc<ExpectedCells>,
 ) {
     let ctx = TaskContext {
         repo_path: wt.path.clone(),
@@ -422,26 +442,22 @@ pub fn collect_worktree_progressive(
     };
 
     std::thread::scope(|s| {
-        spawn_commit_details(s, &ctx, tx.clone());
-        cell_count.fetch_add(1, Ordering::Relaxed);
-        spawn_ahead_behind(s, &ctx, tx.clone());
-        cell_count.fetch_add(1, Ordering::Relaxed);
-        spawn_committed_trees_match(s, &ctx, tx.clone());
-        cell_count.fetch_add(1, Ordering::Relaxed);
-        spawn_branch_diff(s, &ctx, tx.clone());
-        cell_count.fetch_add(1, Ordering::Relaxed);
-        spawn_working_tree_diff(s, &ctx, tx.clone());
-        cell_count.fetch_add(1, Ordering::Relaxed);
-        spawn_merge_tree_conflicts(s, &ctx, options.check_merge_tree_conflicts, tx.clone());
-        cell_count.fetch_add(1, Ordering::Relaxed);
-        spawn_worktree_state(s, &ctx, tx.clone());
-        cell_count.fetch_add(1, Ordering::Relaxed);
-        spawn_user_status(s, &ctx, tx.clone());
-        cell_count.fetch_add(1, Ordering::Relaxed);
-        spawn_upstream(s, &ctx, true, tx.clone());
-        cell_count.fetch_add(1, Ordering::Relaxed);
-        spawn_ci_status(s, &ctx, options.fetch_ci, tx);
-        cell_count.fetch_add(1, Ordering::Relaxed);
+        spawn_commit_details(s, &ctx, tx.clone(), expected_cells);
+        spawn_ahead_behind(s, &ctx, tx.clone(), expected_cells);
+        spawn_committed_trees_match(s, &ctx, tx.clone(), expected_cells);
+        spawn_branch_diff(s, &ctx, tx.clone(), expected_cells);
+        spawn_working_tree_diff(s, &ctx, tx.clone(), expected_cells);
+        spawn_merge_tree_conflicts(
+            s,
+            &ctx,
+            options.check_merge_tree_conflicts,
+            tx.clone(),
+            expected_cells,
+        );
+        spawn_worktree_state(s, &ctx, tx.clone(), expected_cells);
+        spawn_user_status(s, &ctx, tx.clone(), expected_cells);
+        spawn_upstream(s, &ctx, true, tx.clone(), expected_cells);
+        spawn_ci_status(s, &ctx, options.fetch_ci, tx, expected_cells);
     });
 }
 
@@ -515,13 +531,14 @@ fn parse_status_for_symbols(status_output: &str) -> (String, bool, bool) {
 
 /// Collect branch data progressively, sending cell updates as each task completes.
 ///
-/// Spawns 6 parallel git operations (similar to worktrees but without working tree operations):
+/// Spawns 7 parallel git operations (similar to worktrees but without working tree operations):
 /// 1. Commit details (timestamp, message)
 /// 2. Ahead/behind counts
-/// 3. Branch diff stats
-/// 4. Upstream tracking status
-/// 5. Conflicts check
-/// 6. CI/PR status
+/// 3. Committed trees match (same tree SHA as default branch)
+/// 4. Branch diff stats
+/// 5. Upstream tracking status
+/// 6. Merge-tree conflicts check
+/// 7. CI/PR status
 #[allow(clippy::too_many_arguments)]
 pub fn collect_branch_progressive(
     branch_name: &str,
@@ -531,7 +548,7 @@ pub fn collect_branch_progressive(
     default_branch: &str,
     options: &CollectOptions,
     tx: Sender<CellUpdate>,
-    cell_count: &Arc<AtomicUsize>,
+    expected_cells: &Arc<ExpectedCells>,
 ) {
     let ctx = TaskContext {
         repo_path: repo_path.to_path_buf(),
@@ -542,19 +559,18 @@ pub fn collect_branch_progressive(
     };
 
     std::thread::scope(|s| {
-        spawn_commit_details(s, &ctx, tx.clone());
-        cell_count.fetch_add(1, Ordering::Relaxed);
-        spawn_ahead_behind(s, &ctx, tx.clone());
-        cell_count.fetch_add(1, Ordering::Relaxed);
-        spawn_committed_trees_match(s, &ctx, tx.clone());
-        cell_count.fetch_add(1, Ordering::Relaxed);
-        spawn_branch_diff(s, &ctx, tx.clone());
-        cell_count.fetch_add(1, Ordering::Relaxed);
-        spawn_upstream(s, &ctx, false, tx.clone());
-        cell_count.fetch_add(1, Ordering::Relaxed);
-        spawn_merge_tree_conflicts(s, &ctx, options.check_merge_tree_conflicts, tx.clone());
-        cell_count.fetch_add(1, Ordering::Relaxed);
-        spawn_ci_status(s, &ctx, options.fetch_ci, tx);
-        cell_count.fetch_add(1, Ordering::Relaxed);
+        spawn_commit_details(s, &ctx, tx.clone(), expected_cells);
+        spawn_ahead_behind(s, &ctx, tx.clone(), expected_cells);
+        spawn_committed_trees_match(s, &ctx, tx.clone(), expected_cells);
+        spawn_branch_diff(s, &ctx, tx.clone(), expected_cells);
+        spawn_upstream(s, &ctx, false, tx.clone(), expected_cells);
+        spawn_merge_tree_conflicts(
+            s,
+            &ctx,
+            options.check_merge_tree_conflicts,
+            tx.clone(),
+            expected_cells,
+        );
+        spawn_ci_status(s, &ctx, options.fetch_ci, tx, expected_cells);
     });
 }
