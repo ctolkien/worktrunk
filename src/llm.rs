@@ -1,3 +1,4 @@
+use anyhow::Context;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{self, Stdio};
@@ -100,15 +101,19 @@ fn execute_llm_command(command: &str, args: &[String], prompt: &str) -> anyhow::
         log::debug!("    {}", line);
     }
 
-    let mut child = cmd.spawn()?;
+    let mut child = cmd.spawn().context("Failed to spawn LLM command")?;
 
     // Write prompt to stdin
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(prompt.as_bytes())?;
+        stdin
+            .write_all(prompt.as_bytes())
+            .context("Failed to write prompt to LLM stdin")?;
         // stdin is dropped here, closing the pipe
     }
 
-    let output = child.wait_with_output()?;
+    let output = child
+        .wait_with_output()
+        .context("Failed to wait for LLM output")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

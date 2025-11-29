@@ -220,7 +220,7 @@ fn compute_worktree_path(
 
     let relative_path = config
         .format_path(repo_name, branch)
-        .map_err(|e| anyhow::anyhow!("Failed to format worktree path: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to format worktree path: {e}"))?;
 
     Ok(repo_root.join(relative_path))
 }

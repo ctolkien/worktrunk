@@ -30,8 +30,7 @@ impl CommandEnv {
     /// Used in error messages when the environment can't be loaded.
     pub fn for_action(action: &str) -> anyhow::Result<Self> {
         let repo = Repository::current();
-        let worktree_path = std::env::current_dir()
-            .map_err(|e| anyhow::anyhow!("Failed to get current directory: {}", e))?;
+        let worktree_path = std::env::current_dir().context("Failed to get current directory")?;
         let branch = repo.require_current_branch(action)?;
         let config = WorktrunkConfig::load().context("Failed to load config")?;
         let repo_root = repo.worktree_base()?;

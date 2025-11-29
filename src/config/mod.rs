@@ -77,11 +77,7 @@ mod tests {
     fn test_format_worktree_path() {
         let config = WorktrunkConfig {
             worktree_path: "{{ main_worktree }}.{{ branch }}".to_string(),
-            commit_generation: CommitGenerationConfig::default(),
-            projects: std::collections::BTreeMap::new(),
-            list: None,
-            commit: None,
-            merge: None,
+            ..Default::default()
         };
         assert_eq!(
             config.format_path("myproject", "feature-x").unwrap(),
@@ -93,11 +89,7 @@ mod tests {
     fn test_format_worktree_path_custom_template() {
         let config = WorktrunkConfig {
             worktree_path: "{{ main_worktree }}-{{ branch }}".to_string(),
-            commit_generation: CommitGenerationConfig::default(),
-            projects: std::collections::BTreeMap::new(),
-            list: None,
-            commit: None,
-            merge: None,
+            ..Default::default()
         };
         assert_eq!(
             config.format_path("myproject", "feature-x").unwrap(),
@@ -109,11 +101,7 @@ mod tests {
     fn test_format_worktree_path_only_branch() {
         let config = WorktrunkConfig {
             worktree_path: ".worktrees/{{ main_worktree }}/{{ branch }}".to_string(),
-            commit_generation: CommitGenerationConfig::default(),
-            projects: std::collections::BTreeMap::new(),
-            list: None,
-            commit: None,
-            merge: None,
+            ..Default::default()
         };
         assert_eq!(
             config.format_path("myproject", "feature-x").unwrap(),
@@ -126,11 +114,7 @@ mod tests {
         // Slashes should be replaced with dashes to prevent directory traversal
         let config = WorktrunkConfig {
             worktree_path: "{{ main_worktree }}.{{ branch }}".to_string(),
-            commit_generation: CommitGenerationConfig::default(),
-            projects: std::collections::BTreeMap::new(),
-            list: None,
-            commit: None,
-            merge: None,
+            ..Default::default()
         };
         assert_eq!(
             config.format_path("myproject", "feature/foo").unwrap(),
@@ -142,11 +126,7 @@ mod tests {
     fn test_format_worktree_path_with_multiple_slashes() {
         let config = WorktrunkConfig {
             worktree_path: ".worktrees/{{ main_worktree }}/{{ branch }}".to_string(),
-            commit_generation: CommitGenerationConfig::default(),
-            projects: std::collections::BTreeMap::new(),
-            list: None,
-            commit: None,
-            merge: None,
+            ..Default::default()
         };
         assert_eq!(
             config.format_path("myproject", "feature/sub/task").unwrap(),
@@ -159,11 +139,7 @@ mod tests {
         // Windows-style path separators should also be sanitized
         let config = WorktrunkConfig {
             worktree_path: ".worktrees/{{ main_worktree }}/{{ branch }}".to_string(),
-            commit_generation: CommitGenerationConfig::default(),
-            projects: std::collections::BTreeMap::new(),
-            list: None,
-            commit: None,
-            merge: None,
+            ..Default::default()
         };
         assert_eq!(
             config.format_path("myproject", "feature\\foo").unwrap(),

@@ -10,18 +10,6 @@ use std::sync::OnceLock;
 #[cfg(not(test))]
 use etcetera::base_strategy::{BaseStrategy, choose_base_strategy};
 
-/// Valid top-level keys for user config
-// TODO: Replace with #[serde(flatten)] HashMap<String, toml::Value> on the struct
-// to capture unknown fields automatically during deserialization
-const VALID_USER_KEYS: &[&str] = &[
-    "worktree-path",
-    "commit-generation",
-    "projects",
-    "list",
-    "commit",
-    "merge",
-];
-
 /// Global override for config path, set via --config CLI flag
 static CONFIG_PATH: OnceLock<PathBuf> = OnceLock::new();
 
@@ -96,7 +84,7 @@ pub enum StageMode {
 /// `__` separator for nested fields (e.g., `WORKTRUNK_COMMIT_GENERATION__COMMAND`).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WorktrunkConfig {
-    #[serde(rename = "worktree-path")]
+    #[serde(rename = "worktree-path", default = "default_worktree_path")]
     pub worktree_path: String,
 
     #[serde(default, rename = "commit-generation")]
@@ -118,6 +106,10 @@ pub struct WorktrunkConfig {
     /// Configuration for the `wt merge` command
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merge: Option<MergeConfig>,
+
+    /// Captures unknown fields for validation warnings
+    #[serde(flatten, default, skip_serializing)]
+    pub(crate) unknown: std::collections::HashMap<String, toml::Value>,
 }
 
 /// Configuration for commit message generation
@@ -238,15 +230,21 @@ pub struct MergeConfig {
     pub verify: Option<bool>,
 }
 
+/// Default worktree path template (used by serde)
+fn default_worktree_path() -> String {
+    "../{{ main_worktree }}.{{ branch }}".to_string()
+}
+
 impl Default for WorktrunkConfig {
     fn default() -> Self {
         Self {
-            worktree_path: "../{{ main_worktree }}.{{ branch }}".to_string(),
+            worktree_path: default_worktree_path(),
             commit_generation: CommitGenerationConfig::default(),
             projects: std::collections::BTreeMap::new(),
             list: None,
             commit: None,
             merge: None,
+            unknown: std::collections::HashMap::new(),
         }
     }
 }
@@ -569,14 +567,12 @@ pub fn get_config_path() -> Option<PathBuf> {
 /// Find unknown keys in user config TOML content
 ///
 /// Returns a list of unrecognized top-level keys that will be silently ignored.
+/// Uses serde deserialization with flatten to automatically detect unknown fields.
 pub fn find_unknown_keys(contents: &str) -> Vec<String> {
-    let Ok(table) = contents.parse::<toml::Table>() else {
+    // Deserialize into WorktrunkConfig - unknown fields are captured in the `unknown` map
+    let Ok(config) = toml::from_str::<WorktrunkConfig>(contents) else {
         return vec![];
     };
 
-    table
-        .keys()
-        .filter(|key| !VALID_USER_KEYS.contains(&key.as_str()))
-        .cloned()
-        .collect()
+    config.unknown.into_keys().collect()
 }

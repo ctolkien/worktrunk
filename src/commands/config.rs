@@ -62,8 +62,7 @@ pub fn handle_config_create() -> anyhow::Result<()> {
 
     // Create parent directory if it doesn't exist
     if let Some(parent) = config_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| anyhow::anyhow!("Failed to create config directory: {}", e))?;
+        std::fs::create_dir_all(parent).context("Failed to create config directory")?;
     }
 
     // Write the example config with all values commented out

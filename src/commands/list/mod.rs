@@ -130,6 +130,7 @@ pub(crate) mod render;
 mod spacing_test;
 
 // Layout is calculated in collect.rs
+use anyhow::Context;
 use model::{ListData, ListItem};
 use progressive::RenderMode;
 use worktrunk::git::Repository;
@@ -178,8 +179,8 @@ pub fn handle_list(
     match format {
         crate::OutputFormat::Json => {
             // Display fields are already computed in collect()
-            let json = serde_json::to_string_pretty(&items)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize to JSON: {}", e))?;
+            let json =
+                serde_json::to_string_pretty(&items).context("Failed to serialize to JSON")?;
             crate::output::data(json)?;
         }
         crate::OutputFormat::Table => {

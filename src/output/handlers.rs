@@ -307,18 +307,14 @@ pub fn execute_user_command(command: &str) -> anyhow::Result<()> {
 
 /// Build shell command for background worktree removal
 ///
-/// `should_delete_branch` indicates whether to delete the branch after removing the worktree.
+/// `branch_to_delete` is the branch to delete after removing the worktree.
+/// Pass `None` for detached HEAD or when branch should be retained.
 /// This decision is computed upfront (checking if branch is merged) before spawning the background process.
-fn build_remove_command(
-    worktree_path: &std::path::Path,
-    branch_name: &str,
-    should_delete_branch: bool,
-) -> String {
+fn build_remove_command(worktree_path: &std::path::Path, branch_to_delete: Option<&str>) -> String {
     use shell_escape::escape;
 
     let worktree_path_str = worktree_path.to_string_lossy();
     let worktree_escaped = escape(worktree_path_str.as_ref().into());
-    let branch_escaped = escape(branch_name.into());
 
     // Stop fsmonitor daemon first (best effort - ignore errors)
     // This prevents zombie daemons from accumulating when using builtin fsmonitor
@@ -327,38 +323,21 @@ fn build_remove_command(
         worktree_escaped
     );
 
-    if should_delete_branch {
-        // Stop fsmonitor, remove worktree, and delete branch
-        format!(
-            "{} && git worktree remove {} && git branch -D {}",
-            stop_fsmonitor, worktree_escaped, branch_escaped
-        )
-    } else {
-        // Stop fsmonitor and remove the worktree
-        format!(
-            "{} && git worktree remove {}",
-            stop_fsmonitor, worktree_escaped
-        )
+    match branch_to_delete {
+        Some(branch_name) => {
+            let branch_escaped = escape(branch_name.into());
+            format!(
+                "{} && git worktree remove {} && git branch -D {}",
+                stop_fsmonitor, worktree_escaped, branch_escaped
+            )
+        }
+        None => {
+            format!(
+                "{} && git worktree remove {}",
+                stop_fsmonitor, worktree_escaped
+            )
+        }
     }
-}
-
-/// Build the shell command for background worktree removal (no branch)
-fn build_remove_command_no_branch(worktree_path: &std::path::Path) -> String {
-    use shell_escape::escape;
-
-    let worktree_path_str = worktree_path.to_string_lossy();
-    let worktree_escaped = escape(worktree_path_str.as_ref().into());
-
-    // Stop fsmonitor daemon first (best effort - ignore errors)
-    let stop_fsmonitor = format!(
-        "git -C {} fsmonitor--daemon stop 2>/dev/null || true",
-        worktree_escaped
-    );
-
-    format!(
-        "{} && git worktree remove {}",
-        stop_fsmonitor, worktree_escaped
-    )
 }
 
 /// Handle output for a remove operation
@@ -460,7 +439,7 @@ fn handle_removed_worktree_output(
             super::progress(
                 "Removing worktree in background (detached HEAD, no branch to delete)",
             )?;
-            let remove_command = build_remove_command_no_branch(worktree_path);
+            let remove_command = build_remove_command(worktree_path, None);
             spawn_detached(&repo, main_path, &remove_command, "detached", "remove")?;
         } else {
             let target_repo = worktrunk::git::Repository::at(worktree_path);
@@ -531,7 +510,8 @@ fn handle_removed_worktree_output(
         super::progress(action)?;
 
         // Build command with the decision we already made
-        let remove_command = build_remove_command(worktree_path, branch_name, should_delete_branch);
+        let remove_command =
+            build_remove_command(worktree_path, should_delete_branch.then_some(branch_name));
 
         // Spawn the removal in background - runs from main_path (where we cd'd to)
         spawn_detached(&repo, main_path, &remove_command, branch_name, "remove")?;

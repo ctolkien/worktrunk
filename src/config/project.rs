@@ -7,17 +7,6 @@ use serde::{Deserialize, Serialize};
 
 use super::commands::CommandConfig;
 
-/// Valid top-level keys for project config
-// TODO: Replace with #[serde(flatten)] HashMap<String, toml::Value> on the struct
-// to capture unknown fields automatically during deserialization
-const VALID_PROJECT_KEYS: &[&str] = &[
-    "post-create",
-    "post-start",
-    "pre-commit",
-    "pre-merge",
-    "post-merge",
-];
-
 /// Project-specific configuration with hooks.
 ///
 /// This config is stored at `<repo>/.config/wt.toml` within the repository and
@@ -74,6 +63,10 @@ pub struct ProjectConfig {
     /// Available template variables: `{{ repo }}`, `{{ branch }}`, `{{ worktree }}`, `{{ repo_root }}`, `{{ target }}`
     #[serde(default, rename = "post-merge")]
     pub post_merge: Option<CommandConfig>,
+
+    /// Captures unknown fields for validation warnings
+    #[serde(flatten, default, skip_serializing)]
+    unknown: std::collections::HashMap<String, toml::Value>,
 }
 
 impl ProjectConfig {
@@ -99,14 +92,12 @@ impl ProjectConfig {
 /// Find unknown keys in project config TOML content
 ///
 /// Returns a list of unrecognized top-level keys that will be silently ignored.
+/// Uses serde deserialization with flatten to automatically detect unknown fields.
 pub fn find_unknown_keys(contents: &str) -> Vec<String> {
-    let Ok(table) = contents.parse::<toml::Table>() else {
+    // Deserialize into ProjectConfig - unknown fields are captured in the `unknown` map
+    let Ok(config) = toml::from_str::<ProjectConfig>(contents) else {
         return vec![];
     };
 
-    table
-        .keys()
-        .filter(|key| !VALID_PROJECT_KEYS.contains(&key.as_str()))
-        .cloned()
-        .collect()
+    config.unknown.into_keys().collect()
 }
