@@ -1092,6 +1092,44 @@ impl Repository {
         Ok(!clean_merge)
     }
 
+    /// Check if merging a branch into target would add anything (not already integrated).
+    ///
+    /// Uses `git merge-tree` to simulate merging the branch into the target. If the
+    /// resulting tree matches the target's tree, then merging would add nothing,
+    /// meaning the branch's content is already integrated.
+    ///
+    /// This handles cases that simple tree comparison misses:
+    /// - Squash-merged branches where main has advanced with additional commits
+    /// - Rebased branches where the base has moved forward
+    ///
+    /// Returns:
+    /// - `Ok(true)` if merging would change the target (branch has unintegrated changes)
+    /// - `Ok(false)` if merging would NOT change target (branch is already integrated)
+    /// - `Ok(true)` if merge would have conflicts (conservative: treat as not integrated)
+    /// - `Err` if git commands fail
+    pub fn would_merge_add_to_target(&self, branch: &str, target: &str) -> anyhow::Result<bool> {
+        // Simulate merging branch into target
+        // On conflict, merge-tree exits non-zero and we can't get a clean tree
+        let merge_result = self.run_command(&["merge-tree", "--write-tree", target, branch]);
+
+        let Ok(merge_tree) = merge_result else {
+            // merge-tree failed (likely conflicts) - conservatively treat as having changes
+            return Ok(true);
+        };
+
+        let merge_tree = merge_tree.trim();
+        if merge_tree.is_empty() {
+            // Empty output is unexpected - treat as having changes
+            return Ok(true);
+        }
+
+        // Get target's tree for comparison
+        let target_tree = self.rev_parse_tree(&format!("{target}^{{tree}}"))?;
+
+        // If merge result differs from target's tree, merging would add something
+        Ok(merge_tree != target_tree)
+    }
+
     /// Get commit subjects (first line of commit message) from a range.
     pub fn commit_subjects(&self, range: &str) -> anyhow::Result<Vec<String>> {
         let output = self.run_command(&["log", "--format=%s", range])?;

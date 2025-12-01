@@ -52,6 +52,9 @@ enum IntegrationReason {
     NoMarginalContribution,
     /// Branch's tree SHA matches target's tree SHA (squash merge/rebase)
     ContentsMatch,
+    /// Merge simulation shows branch would add nothing to target
+    /// (squash merge where target has since advanced)
+    MergeAddsNothing,
 }
 
 /// Check if a branch's content has been integrated into the target.
@@ -59,6 +62,7 @@ enum IntegrationReason {
 /// Returns the reason if the branch is safe to delete:
 /// - `NoMarginalContribution`: The branch has no marginal contribution to target (ancestor, merged back, etc.)
 /// - `ContentsMatch`: The branch's tree SHA matches the target's tree SHA (squash merge/rebase)
+/// - `MergeAddsNothing`: Merge simulation shows branch would add nothing (squash + target advanced)
 ///
 /// Returns None if neither condition is met, or if an error occurs (e.g., invalid refs).
 /// This fail-safe default prevents accidental branch deletion when integration cannot
@@ -80,6 +84,16 @@ fn get_integration_reason(
     // Check if tree content matches (handles squash merge/rebase)
     if repo.trees_match(branch_name, target).unwrap_or(false) {
         return Some(IntegrationReason::ContentsMatch);
+    }
+
+    // Check via merge simulation: would merging this branch into target add anything?
+    // This handles squash-merged branches where target has since advanced.
+    // If merge would NOT add anything, the branch's content is already in target.
+    if !repo
+        .would_merge_add_to_target(branch_name, target)
+        .unwrap_or(true)
+    {
+        return Some(IntegrationReason::MergeAddsNothing);
     }
 
     None
@@ -164,6 +178,9 @@ fn get_flag_note(
                 format!(" (already in {target})")
             }
             Some(Some(IntegrationReason::ContentsMatch)) => format!(" (files match {target})"),
+            Some(Some(IntegrationReason::MergeAddsNothing)) => {
+                format!(" (all changes in {target})")
+            }
             Some(None) | None => String::new(),
         }
     } else {
@@ -395,14 +412,23 @@ fn handle_branch_only_output(
     }
 
     let repo = worktrunk::git::Repository::current();
-    let result = delete_branch_if_safe(&repo, branch_name, "HEAD", force_delete);
+
+    // Get default branch for integration check and reason display
+    // Falls back to HEAD if default branch can't be determined
+    let default_branch = repo.default_branch().ok();
+    let check_target = default_branch.as_deref().unwrap_or("HEAD");
+
+    let result = delete_branch_if_safe(&repo, branch_name, check_target, force_delete);
     let integration_reason = handle_branch_deletion_result(result, branch_name)?;
 
     if integration_reason.is_some() {
-        let flag_note = get_flag_note(no_delete_branch, force_delete, integration_reason, None);
-        super::success(cformat!(
-            "<green>Removed branch <bold>{branch_name}</>{flag_note}</>"
-        ))?;
+        let flag_note = get_flag_note(
+            no_delete_branch,
+            force_delete,
+            integration_reason,
+            default_branch.as_deref(),
+        );
+        super::success(cformat!("Removed branch <bold>{branch_name}</>{flag_note}"))?;
     }
 
     super::flush()?;
