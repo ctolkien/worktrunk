@@ -520,7 +520,7 @@ with the same fields in the same order as Status Symbols above:
 - `git_operation`: `""` | `"Rebase"` | `"Merge"`
 - `main_divergence`: `""` | `"Ahead"` | `"Behind"` | `"Diverged"`
 - `upstream_divergence`: `""` | `"Ahead"` | `"Behind"` | `"Diverged"`
-- `user_status`: string (optional)
+- `user_marker`: string (optional)
 
 **`status_symbols`** - Unicode symbols for display (same fields, plus `worktree_attrs`: ⎇/⌫/⊠)
 
@@ -571,7 +571,7 @@ Commands:
   create     Create user configuration file
   show       Show configuration files & locations
   cache      Manage caches (CI status, default branch)
-  status     Manage branch status markers
+  var        Get or set runtime variables (stored in git config)
   approvals  Manage command approvals
 
 Options:

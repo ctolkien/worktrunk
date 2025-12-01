@@ -25,18 +25,18 @@ use commands::handle_select;
 use commands::worktree::{SwitchResult, handle_push};
 use commands::{
     ConfigAction, RebaseResult, SquashResult, handle_cache_clear, handle_cache_refresh,
-    handle_cache_show, handle_config_create, handle_config_show, handle_config_status_set,
-    handle_config_status_unset, handle_configure_shell, handle_init, handle_list, handle_merge,
-    handle_rebase, handle_remove, handle_remove_by_path, handle_remove_current, handle_squash,
-    handle_standalone_add_approvals, handle_standalone_clear_approvals, handle_standalone_commit,
-    handle_standalone_run_hook, handle_switch, handle_unconfigure_shell,
+    handle_cache_show, handle_config_create, handle_config_show, handle_configure_shell,
+    handle_init, handle_list, handle_merge, handle_rebase, handle_remove, handle_remove_by_path,
+    handle_remove_current, handle_squash, handle_standalone_add_approvals,
+    handle_standalone_clear_approvals, handle_standalone_commit, handle_standalone_run_hook,
+    handle_switch, handle_unconfigure_shell, handle_var_clear, handle_var_get, handle_var_set,
     resolve_worktree_path_first,
 };
 use output::{execute_user_command, handle_remove_output, handle_switch_output};
 
 use cli::{
     ApprovalsCommand, CacheCommand, Cli, Commands, ConfigCommand, ConfigShellCommand,
-    ListSubcommand, StatusAction, StepCommand,
+    ListSubcommand, StepCommand, VarCommand,
 };
 use worktrunk::HookType;
 
@@ -530,9 +530,14 @@ fn main() {
                 CacheCommand::Clear { cache_type } => handle_cache_clear(cache_type),
                 CacheCommand::Refresh => handle_cache_refresh(),
             },
-            ConfigCommand::Status { action } => match action {
-                StatusAction::Set { value, branch } => handle_config_status_set(value, branch),
-                StatusAction::Unset { target } => handle_config_status_unset(target),
+            ConfigCommand::Var { action } => match action {
+                VarCommand::Get {
+                    key,
+                    refresh,
+                    branch,
+                } => handle_var_get(&key, refresh, branch),
+                VarCommand::Set { key, value, branch } => handle_var_set(&key, value, branch),
+                VarCommand::Clear { key, branch, all } => handle_var_clear(&key, branch, all),
             },
             ConfigCommand::Approvals { action } => match action {
                 ApprovalsCommand::Add { force, all } => handle_standalone_add_approvals(force, all),

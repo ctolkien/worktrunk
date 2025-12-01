@@ -294,10 +294,36 @@ If a config file doesn't exist, shows defaults that would be used."#
         action: CacheCommand,
     },
 
-    /// Manage branch status markers
-    Status {
+    /// Get or set runtime variables (stored in git config)
+    #[command(
+        after_long_help = r#"Variables are runtime values stored in git config, separate from
+configuration files. Use `wt config show` to view file-based configuration.
+
+## Available Variables
+
+- **default-branch**: The repository's default branch (read-only, cached)
+- **marker**: Custom status marker for a branch (shown in `wt list`)
+
+## Examples
+
+Get the default branch:
+```console
+wt config var get default-branch
+```
+
+Set a marker for current branch:
+```console
+wt config var set marker "🚧 WIP"
+```
+
+Clear markers:
+```console
+wt config var clear marker --all
+```"#
+    )]
+    Var {
         #[command(subcommand)]
-        action: StatusAction,
+        action: VarCommand,
     },
 
     /// Manage command approvals
@@ -343,35 +369,6 @@ wt config approvals clear --global
 }
 
 #[derive(Subcommand)]
-pub enum StatusAction {
-    /// Set status emoji for branch
-    #[command(
-        after_long_help = r#"Sets a custom status marker that appears in `wt list` output.
-
-Use emojis or short text to indicate work state (e.g., 🚧 WIP, ✅ ready, 🔒 blocked).
-Stored in git config under `worktrunk.status.<branch>`."#
-    )]
-    Set {
-        /// Status emoji to display
-        value: String,
-
-        /// Target branch (defaults to current)
-        #[arg(long, add = crate::completion::branch_value_completer())]
-        branch: Option<String>,
-    },
-
-    /// Clear status emoji
-    #[command(
-        after_long_help = r#"Removes status marker from branch(es). Use '*' to clear all statuses."#
-    )]
-    Unset {
-        /// Branch or '*' for all
-        #[arg(default_value = "", add = crate::completion::branch_value_completer())]
-        target: String,
-    },
-}
-
-#[derive(Subcommand)]
 pub enum CacheCommand {
     /// Show cached data
     #[command(after_long_help = r#"Shows all cached data including:
@@ -397,6 +394,125 @@ Use when the remote default branch has changed. The cached value is used by
 `wt merge`, `wt list`, and other commands that reference the default branch."#
     )]
     Refresh,
+}
+
+#[derive(Subcommand)]
+pub enum VarCommand {
+    /// Get a variable value
+    #[command(after_long_help = r#"Variables:
+
+- **default-branch**: The repository's default branch (main, master, etc.)
+- **marker**: Custom status marker for a branch (shown in `wt list`)
+- **ci-status**: CI/PR status for a branch (passed, running, failed, conflicts, noci)
+
+## Examples
+
+Get the default branch:
+```console
+wt config var get default-branch
+```
+
+Force refresh from remote:
+```console
+wt config var get default-branch --refresh
+```
+
+Get marker for current branch:
+```console
+wt config var get marker
+```
+
+Get marker for a specific branch:
+```console
+wt config var get marker --branch=feature
+```
+
+Get CI status for current branch:
+```console
+wt config var get ci-status
+```
+
+Force refresh CI status (bypass cache):
+```console
+wt config var get ci-status --refresh
+```"#)]
+    Get {
+        /// Variable: 'default-branch', 'marker', or 'ci-status'
+        #[arg(value_parser = ["default-branch", "marker", "ci-status"])]
+        key: String,
+
+        /// Force refresh (for cached variables)
+        #[arg(long)]
+        refresh: bool,
+
+        /// Target branch (for branch-scoped variables)
+        #[arg(long, add = crate::completion::branch_value_completer())]
+        branch: Option<String>,
+    },
+
+    /// Set a variable value
+    #[command(after_long_help = r#"Variables:
+
+- **marker**: Custom status marker displayed in `wt list` output
+
+## Examples
+
+Set marker for current branch:
+```console
+wt config var set marker "🚧 WIP"
+```
+
+Set marker for a specific branch:
+```console
+wt config var set marker "✅ ready" --branch=feature
+```"#)]
+    Set {
+        /// Variable: 'marker'
+        #[arg(value_parser = ["marker"])]
+        key: String,
+
+        /// Value to set
+        value: String,
+
+        /// Target branch (defaults to current)
+        #[arg(long, add = crate::completion::branch_value_completer())]
+        branch: Option<String>,
+    },
+
+    /// Clear a variable value
+    #[command(after_long_help = r#"Variables:
+
+- **marker**: Custom status marker for a branch
+
+## Examples
+
+Clear marker for current branch:
+```console
+wt config var clear marker
+```
+
+Clear marker for a specific branch:
+```console
+wt config var clear marker --branch=feature
+```
+
+Clear all markers:
+```console
+wt config var clear marker --all
+```"#)]
+    Clear {
+        /// Variable: 'marker'
+        #[arg(value_parser = ["marker"])]
+        key: String,
+
+        /// Target branch (defaults to current)
+        #[arg(long, add = crate::completion::branch_value_completer(), conflicts_with = "all")]
+        branch: Option<String>,
+
+        /// Clear all values
+        #[arg(long)]
+        all: bool,
+    },
 }
 
 /// Workflow building blocks
@@ -665,7 +781,7 @@ with the same fields in the same order as Status Symbols above:
 - `git_operation`: `\"\"` | `\"Rebase\"` | `\"Merge\"`
 - `main_divergence`: `\"\"` | `\"Ahead\"` | `\"Behind\"` | `\"Diverged\"`
 - `upstream_divergence`: `\"\"` | `\"Ahead\"` | `\"Behind\"` | `\"Diverged\"`
-- `user_status`: string (optional)
+- `user_marker`: string (optional)
 
 **`status_symbols`** - Unicode symbols for display (same fields, plus `worktree_attrs`: ⎇/⌫/⊠)
 

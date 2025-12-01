@@ -271,18 +271,18 @@ impl Repository {
         })
     }
 
-    /// Read a user-defined status from `worktrunk.status.<branch>` in git config.
-    pub fn branch_keyed_status(&self, branch: &str) -> Option<String> {
-        let config_key = format!("worktrunk.status.{}", branch);
+    /// Read a user-defined marker from `worktrunk.marker.<branch>` in git config.
+    pub fn branch_keyed_marker(&self, branch: &str) -> Option<String> {
+        let config_key = format!("worktrunk.marker.{}", branch);
         self.run_command(&["config", "--get", &config_key])
             .ok()
             .map(|output| output.trim().to_string())
             .filter(|s| !s.is_empty())
     }
 
-    /// Read user-defined branch-keyed status.
-    pub fn user_status(&self, branch: Option<&str>) -> Option<String> {
-        branch.and_then(|branch| self.branch_keyed_status(branch))
+    /// Read user-defined branch-keyed marker.
+    pub fn user_marker(&self, branch: Option<&str>) -> Option<String> {
+        branch.and_then(|branch| self.branch_keyed_marker(branch))
     }
 
     /// Record the previous branch in worktrunk.history for `wt switch -` support.

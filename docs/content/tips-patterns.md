@@ -53,9 +53,9 @@ Custom emoji markers show agent state in `wt list`. The Claude Code plugin sets 
 Set status manually for any workflow:
 
 ```bash
-wt config status set "🚧"                    # Current branch
-wt config status set "✅" --branch feature   # Specific branch
-git config worktrunk.status.feature "💬"     # Direct git config
+wt config var set marker "🚧"                   # Current branch
+wt config var set marker "✅" --branch feature  # Specific branch
+git config worktrunk.marker.feature "💬"        # Direct git config
 ```
 
 See [Claude Code Integration](/advanced/#claude-code-integration) for plugin installation.

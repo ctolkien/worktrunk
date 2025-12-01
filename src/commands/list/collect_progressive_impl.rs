@@ -324,17 +324,17 @@ impl Task for GitOperationTask {
 }
 
 /// Task 8 (worktree only): User-defined status from git config
-pub struct UserStatusTask;
+pub struct UserMarkerTask;
 
-impl Task for UserStatusTask {
-    const KIND: TaskKind = TaskKind::UserStatus;
+impl Task for UserMarkerTask {
+    const KIND: TaskKind = TaskKind::UserMarker;
 
     fn compute(ctx: TaskContext) -> TaskResult {
         let repo = Repository::at(&ctx.repo_path);
-        let user_status = repo.user_status(ctx.branch.as_deref());
-        TaskResult::UserStatus {
+        let user_marker = repo.user_marker(ctx.branch.as_deref());
+        TaskResult::UserMarker {
             item_idx: ctx.item_idx,
-            user_status,
+            user_marker,
         }
     }
 }
@@ -461,7 +461,7 @@ pub fn collect_worktree_progressive(
         spawner.spawn::<WorkingTreeDiffTask>(s, &ctx);
         spawner.spawn::<MergeTreeConflictsTask>(s, &ctx);
         spawner.spawn::<GitOperationTask>(s, &ctx);
-        spawner.spawn::<UserStatusTask>(s, &ctx);
+        spawner.spawn::<UserMarkerTask>(s, &ctx);
         spawner.spawn::<UpstreamTask>(s, &ctx);
         spawner.spawn::<CiStatusTask>(s, &ctx);
     });
