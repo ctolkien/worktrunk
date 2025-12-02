@@ -1,6 +1,6 @@
 +++
 title = "Quick Start"
-weight = 1
+weight = 2
 +++
 
 ## Install
@@ -76,19 +76,8 @@ When you're done with a worktree (e.g., after merging via CI):
 
 Worktrunk checks if your changes are already on main before deleting the branch.
 
-## Shortcuts
-
-Use these shortcuts for common targets:
-
-- `@` — current branch/worktree
-- `-` — previous worktree (like `cd -`)
-- `^` — main/default branch
-
-```bash
-$ wt switch -                              # Switch to previous worktree
-$ wt switch --create hotfix --base=@       # Branch from current HEAD
-$ wt remove @                              # Remove current worktree
-```
+<!-- TODO: Add shortcuts (@, -, ^) somewhere more prominent in the docs -
+     too early for quickstart but should be discoverable -->
 
 ## Next steps
 

@@ -808,6 +808,8 @@ fn test_docs_quickstart_examples_are_in_sync() {
     let doc_files = [
         "docs/content/quickstart.md",
         "docs/content/configuration.md",
+        "docs/content/concepts.md",
+        "docs/content/advanced.md",
     ];
 
     let mut all_errors = Vec::new();

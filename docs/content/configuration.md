@@ -1,7 +1,10 @@
 +++
 title = "Configuration"
-weight = 3
+weight = 4
 +++
+
+<!-- TODO: This user config vs project config distinction is a good organizing
+     principle - consider orienting more of the docs around it -->
 
 Worktrunk uses two configuration files:
 

@@ -107,14 +107,14 @@
 {% endblock toc %}
 
 {% block content %}
-{# Display quickstart content directly on homepage - relies on quickstart.md existing #}
+{# Display intro content directly on homepage #}
 {% set docs_section = get_section(path="_index.md") %}
-{% set quickstart = docs_section.pages | filter(attribute="slug", value="quickstart") | first %}
-<div class="heading-text">{{ quickstart.title }}</div>
-{{ quickstart.content | safe }}
+{% set intro = docs_section.pages | filter(attribute="slug", value="intro") | first %}
+<div class="heading-text">{{ intro.title }}</div>
+{{ intro.content | safe }}
 
 <div class="page-nav" style="justify-content: flex-end;">
-    {% set concepts = docs_section.pages | filter(attribute="slug", value="concepts") | first %}
-    <a href="{{ concepts.permalink | safe }}">{{ concepts.title }} →</a>
+    {% set quickstart = docs_section.pages | filter(attribute="slug", value="quickstart") | first %}
+    <a href="{{ quickstart.permalink | safe }}">{{ quickstart.title }} →</a>
 </div>
 {% endblock content %}

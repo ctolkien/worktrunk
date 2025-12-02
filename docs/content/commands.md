@@ -1,6 +1,6 @@
 +++
 title = "Commands Reference"
-weight = 4
+weight = 5
 +++
 
 ## wt switch
@@ -691,6 +691,9 @@ Global Options:
 ---
 
 ## wt select
+
+<!-- TODO: This content should come from `wt select --help-md` like other commands.
+     Add the keyboard shortcuts to the help text in the codebase. -->
 
 Interactive fzf-like fuzzy-search worktree picker with diff preview. Unix only.
 
