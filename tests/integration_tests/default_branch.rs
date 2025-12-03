@@ -107,3 +107,82 @@ fn test_branch_exists_with_custom_remote() {
     // Should not find non-existent branch
     assert!(!git_repo.branch_exists("nonexistent").unwrap());
 }
+
+#[test]
+fn test_get_default_branch_no_remote_common_names_fallback() {
+    let repo = TestRepo::new();
+    repo.commit("Initial commit");
+
+    // Create additional branches (no remote configured)
+    repo.git_command(&["branch", "feature"]).status().unwrap();
+    repo.git_command(&["branch", "bugfix"]).status().unwrap();
+
+    // Now we have multiple branches: main, feature, bugfix
+    // Should detect "main" from the common names list
+    let branch = Repository::at(repo.root_path()).default_branch().unwrap();
+    assert_eq!(branch, "main");
+}
+
+#[test]
+fn test_get_default_branch_no_remote_master_fallback() {
+    let repo = TestRepo::new();
+    repo.commit("Initial commit");
+
+    // Rename main to master, then create other branches
+    repo.git_command(&["branch", "-m", "main", "master"])
+        .status()
+        .unwrap();
+    repo.git_command(&["branch", "feature"]).status().unwrap();
+    repo.git_command(&["branch", "bugfix"]).status().unwrap();
+
+    // Now we have: master, feature, bugfix (no "main")
+    // Should detect "master" from the common names list
+    let branch = Repository::at(repo.root_path()).default_branch().unwrap();
+    assert_eq!(branch, "master");
+}
+
+#[test]
+fn test_get_default_branch_no_remote_init_default_branch_config() {
+    let repo = TestRepo::new();
+    repo.commit("Initial commit");
+
+    // Rename main to something non-standard, create the configured default
+    repo.git_command(&["branch", "-m", "main", "primary"])
+        .status()
+        .unwrap();
+    repo.git_command(&["branch", "feature"]).status().unwrap();
+
+    // Set init.defaultBranch - this should be checked before common names
+    repo.git_command(&["config", "init.defaultBranch", "primary"])
+        .status()
+        .unwrap();
+
+    // Now we have: primary, feature (no common names like main/master)
+    // Should detect "primary" via init.defaultBranch config
+    let branch = Repository::at(repo.root_path()).default_branch().unwrap();
+    assert_eq!(branch, "primary");
+}
+
+#[test]
+fn test_get_default_branch_no_remote_fails_when_no_match() {
+    let repo = TestRepo::new();
+    repo.commit("Initial commit");
+
+    // Rename main to something non-standard
+    repo.git_command(&["branch", "-m", "main", "xyz"])
+        .status()
+        .unwrap();
+    repo.git_command(&["branch", "abc"]).status().unwrap();
+    repo.git_command(&["branch", "def"]).status().unwrap();
+
+    // Now we have: xyz, abc, def - no common names, no init.defaultBranch
+    // Should fail with an error
+    let result = Repository::at(repo.root_path()).default_branch();
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("Could not infer default branch"),
+        "Expected error about inferring default branch, got: {}",
+        err
+    );
+}
