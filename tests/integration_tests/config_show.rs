@@ -357,3 +357,72 @@ fn test_config_show_warns_unknown_user_keys() {
         "#);
     });
 }
+
+/// Test `wt config show --doctor` when commit generation is not configured
+#[test]
+fn test_config_show_doctor_not_configured() {
+    let repo = TestRepo::new();
+    let temp_home = TempDir::new().unwrap();
+
+    // Create isolated config directory
+    let global_config_dir = temp_home.path().join(".config").join("worktrunk");
+    fs::create_dir_all(&global_config_dir).unwrap();
+    let config_path = global_config_dir.join("config.toml");
+    fs::write(
+        &config_path,
+        "worktree-path = \"../{{ main_worktree }}.{{ branch }}\"",
+    )
+    .unwrap();
+
+    let settings = setup_snapshot_settings_with_home(&repo, &temp_home);
+    settings.bind(|| {
+        let mut cmd = wt_command();
+        repo.clean_cli_env(&mut cmd);
+        // Override WORKTRUNK_CONFIG_PATH to point to our test config
+        cmd.env("WORKTRUNK_CONFIG_PATH", &config_path);
+        cmd.arg("config")
+            .arg("show")
+            .arg("--doctor")
+            .current_dir(repo.root_path());
+        set_temp_home_env(&mut cmd, temp_home.path());
+
+        assert_cmd_snapshot!(cmd);
+    });
+}
+
+/// Test `wt config show --doctor` when commit generation command doesn't exist
+#[test]
+fn test_config_show_doctor_command_not_found() {
+    let repo = TestRepo::new();
+    let temp_home = TempDir::new().unwrap();
+
+    // Create isolated config directory
+    let global_config_dir = temp_home.path().join(".config").join("worktrunk");
+    fs::create_dir_all(&global_config_dir).unwrap();
+    let config_path = global_config_dir.join("config.toml");
+    fs::write(
+        &config_path,
+        r#"worktree-path = "../{{ main_worktree }}.{{ branch }}"
+
+[commit-generation]
+command = "nonexistent-llm-command-12345"
+args = ["-m", "test-model"]
+"#,
+    )
+    .unwrap();
+
+    let settings = setup_snapshot_settings_with_home(&repo, &temp_home);
+    settings.bind(|| {
+        let mut cmd = wt_command();
+        repo.clean_cli_env(&mut cmd);
+        // Override WORKTRUNK_CONFIG_PATH to point to our test config
+        cmd.env("WORKTRUNK_CONFIG_PATH", &config_path);
+        cmd.arg("config")
+            .arg("show")
+            .arg("--doctor")
+            .current_dir(repo.root_path());
+        set_temp_home_env(&mut cmd, temp_home.path());
+
+        assert_cmd_snapshot!(cmd);
+    });
+}

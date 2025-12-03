@@ -3,15 +3,19 @@ use color_print::cformat;
 use etcetera::base_strategy::{BaseStrategy, choose_base_strategy};
 use std::fmt::Write as _;
 use std::path::PathBuf;
+use worktrunk::config::WorktrunkConfig;
 use worktrunk::config::{find_unknown_project_keys, find_unknown_user_keys};
 use worktrunk::git::Repository;
 use worktrunk::path::format_path_for_display;
 use worktrunk::shell::Shell;
-use worktrunk::styling::{HINT_EMOJI, INFO_EMOJI, WARNING_EMOJI, format_toml, format_with_gutter};
+use worktrunk::styling::{
+    ERROR_EMOJI, HINT_EMOJI, INFO_EMOJI, WARNING_EMOJI, format_toml, format_with_gutter,
+};
 
 use super::configure_shell::{ConfigAction, scan_shell_configs};
 use super::list::ci_status::CachedCiStatus;
 use crate::help_pager::show_help_in_pager;
+use crate::llm::test_commit_generation;
 use crate::output;
 
 /// Example configuration file content (displayed in help with values uncommented)
@@ -81,26 +85,82 @@ pub fn handle_config_create() -> anyhow::Result<()> {
 }
 
 /// Handle the config show command
-pub fn handle_config_show() -> anyhow::Result<()> {
+pub fn handle_config_show(doctor: bool) -> anyhow::Result<()> {
     // Build the complete output as a string
-    let mut output = String::new();
+    let mut show_output = String::new();
 
     // Render user config
-    render_user_config(&mut output)?;
-    output.push('\n');
+    render_user_config(&mut show_output)?;
+    show_output.push('\n');
 
     // Render project config if in a git repository
-    render_project_config(&mut output)?;
-    output.push('\n');
+    render_project_config(&mut show_output)?;
+    show_output.push('\n');
 
     // Render shell integration status
-    render_shell_status(&mut output)?;
+    render_shell_status(&mut show_output)?;
 
-    // Display through pager
-    if let Err(e) = show_help_in_pager(&output) {
+    // Display through pager (only if not in doctor mode, since doctor adds interactive output)
+    if doctor {
+        worktrunk::styling::eprintln!("{}", show_output);
+    } else if let Err(e) = show_help_in_pager(&show_output) {
         log::debug!("Pager invocation failed: {}", e);
         // Fall back to direct output via eprintln (matches help behavior)
-        worktrunk::styling::eprintln!("{}", output);
+        worktrunk::styling::eprintln!("{}", show_output);
+    }
+
+    // Run doctor checks if requested
+    if doctor {
+        run_doctor_checks()?;
+    }
+
+    Ok(())
+}
+
+/// Run diagnostic checks on configuration
+fn run_doctor_checks() -> anyhow::Result<()> {
+    output::info("Running diagnostic checks...")?;
+    output::blank()?;
+
+    // Test commit generation
+    let config = WorktrunkConfig::load()?;
+    let commit_config = &config.commit_generation;
+
+    if !commit_config.is_configured() {
+        output::warning("Commit generation is not configured")?;
+        output::hint(cformat!(
+            "Add <bright-black>[commit-generation]</> section to enable LLM commit messages"
+        ))?;
+        return Ok(());
+    }
+
+    let command_display = format!(
+        "{}{}",
+        commit_config.command.as_ref().unwrap(),
+        if commit_config.args.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", commit_config.args.join(" "))
+        }
+    );
+
+    output::progress(cformat!(
+        "Testing commit generation with <bold>{command_display}</>"
+    ))?;
+
+    match test_commit_generation(commit_config) {
+        Ok(message) => {
+            output::success("Commit generation working")?;
+            output::blank()?;
+            output::info("Sample generated message:")?;
+            output::gutter(format_with_gutter(&message, "", None))?;
+        }
+        Err(e) => {
+            output::print(cformat!("{ERROR_EMOJI} <red>Commit generation failed</>"))?;
+            output::gutter(format_with_gutter(&e.to_string(), "", None))?;
+            output::blank()?;
+            output::hint("Check that the command is installed and API keys are configured")?;
+        }
     }
 
     Ok(())

@@ -408,6 +408,61 @@ pub fn generate_squash_message(
     Ok(commit_message)
 }
 
+/// Synthetic diff for testing commit generation
+const SYNTHETIC_DIFF: &str = r#"diff --git a/src/main.rs b/src/main.rs
+index abc1234..def5678 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -10,6 +10,10 @@ fn main() {
+     println!("Hello, world!");
++
++    // Add new feature
++    let config = load_config();
++    process_data(&config);
+ }
+"#;
+
+/// Test commit generation with a synthetic diff.
+///
+/// Returns Ok(message) if the LLM command succeeds, or an error describing
+/// what went wrong (command not found, API error, empty response, etc.)
+pub fn test_commit_generation(
+    commit_generation_config: &CommitGenerationConfig,
+) -> anyhow::Result<String> {
+    if !commit_generation_config.is_configured() {
+        anyhow::bail!(
+            "Commit generation is not configured. Add [commit-generation] to your config."
+        );
+    }
+
+    let command = commit_generation_config.command.as_ref().unwrap();
+    let args = &commit_generation_config.args;
+
+    // Build prompt with synthetic data
+    let recent_commits = vec![
+        "feat: Add user authentication".to_string(),
+        "fix: Handle edge case in parser".to_string(),
+        "docs: Update README".to_string(),
+    ];
+    let context = TemplateContext {
+        git_diff: SYNTHETIC_DIFF,
+        branch: "feature/example",
+        recent_commits: Some(&recent_commits),
+        repo_name: "test-repo",
+        commits: &[],
+        target_branch: None,
+    };
+    let prompt = build_prompt(commit_generation_config, TemplateType::Commit, &context)?;
+
+    execute_llm_command(command, args, &prompt).map_err(|e| {
+        worktrunk::git::GitError::LlmCommandFailed {
+            command: format_command_display(command, args),
+            error: e.to_string(),
+        }
+        .into()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -681,7 +681,7 @@ fn main() {
                 }
             }
             ConfigCommand::Create => handle_config_create(),
-            ConfigCommand::Show => handle_config_show(),
+            ConfigCommand::Show { doctor } => handle_config_show(doctor),
             ConfigCommand::Cache { action } => match action {
                 CacheCommand::Show => handle_cache_show(),
                 CacheCommand::Clear { cache_type } => handle_cache_clear(cache_type),

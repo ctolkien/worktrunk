@@ -284,9 +284,24 @@ pub enum ConfigCommand {
         after_long_help = r#"Shows location and contents of user config (`~/.config/worktrunk/config.toml`)
 and project config (`.config/wt.toml`).
 
-If a config file doesn't exist, shows defaults that would be used."#
+If a config file doesn't exist, shows defaults that would be used.
+
+## Doctor Mode
+
+Use `--doctor` to test commit generation with a synthetic diff:
+
+```console
+wt config show --doctor
+```
+
+This verifies that the LLM command is configured correctly and can generate
+commit messages."#
     )]
-    Show,
+    Show {
+        /// Test commit generation pipeline
+        #[arg(long)]
+        doctor: bool,
+    },
 
     /// Manage caches (CI status, default branch)
     Cache {
