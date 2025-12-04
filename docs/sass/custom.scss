@@ -521,7 +521,8 @@ table {
     border: 1px solid var(--wt-color-border-subtle);
     border-top: 3px solid var(--wt-color-accent);
     padding: 0.75rem 0 1rem;
-    max-height: calc(100svh - var(--wt-header-height) - var(--wt-main-padding-top) - 20px); // Fill viewport minus sticky offset and bottom margin
+    // Use --vh-full (JS-set) with svh fallback for Firefox/Chrome iOS fix
+    max-height: calc(var(--vh-full, 100svh) - var(--wt-header-height) - var(--wt-main-padding-top) - 20px);
     overflow-y: auto;
     overscroll-behavior: contain; // Trap scroll events within TOC
 }
@@ -682,7 +683,8 @@ footer {
     }
 
     .hero-image {
-        max-height: 55svh;
+        // Use --vh-full (JS-set) with svh fallback for Firefox/Chrome iOS fix
+        max-height: calc(var(--vh-full, 100svh) * 0.55);
         width: auto;
         aspect-ratio: 1;
         object-fit: contain;
