@@ -42,7 +42,14 @@ Usage: [1m[36mwt config[0m [36m[OPTIONS][0m [36m<COMMAND>[0m
   [1m[36m-v[0m, [1m[36m--verbose[0m
           Show commands and debug info
 
-Manages configuration, shell integration, and runtime settings. The command provides subcommands for setup, inspection, and cache management.
+Manages configuration, shell integration, and runtime settings.
+
+Worktrunk uses two configuration files:
+
+| File | Location | Purpose |
+|------|----------|---------|
+| [1mUser config[0m | [2m~/.config/worktrunk/config.toml[0m | Personal settings, command defaults, approved project commands |
+| [1mProject config[0m | [2m.config/wt.toml[0m | Lifecycle hooks, checked into version control |
 
 [32mExamples[0m
 
@@ -58,11 +65,101 @@ Show current configuration and file locations:
 
   [2mwt config show[0m
 
+[32mUser config[0m
+
+The user config stores personal preferences that apply across all repositories. Create it with [2mwt config create[0m and view with [2mwt config show[0m.
+
+[1mWorktree path template[0m
+
+Controls where new worktrees are created. The template is relative to the repository root.
+
+[1mAvailable variables:[0m
+- [2m{{ main_worktree }}[0m — main worktree directory name
+- [2m{{ branch }}[0m — branch name (slashes replaced with dashes)
+
+[1mExamples[0m for a repo at [2m~/code/myproject[0m creating branch [2mfeature/login[0m:
+
+  [2m# Default — siblings in parent directory[0m
+  [2m# Creates: ~/code/myproject.feature-login[0m
+  [2mworktree-path = "../{{ main_worktree }}.{{ branch }}"[0m
+  [2m[0m
+  [2m# Inside the repository[0m
+  [2m# Creates: ~/code/myproject/.worktrees/feature-login[0m
+  [2mworktree-path = ".worktrees/{{ branch }}"[0m
+  [2m[0m
+  [2m# Namespaced (useful when multiple repos share a parent directory)[0m
+  [2m# Creates: ~/code/worktrees/myproject/feature-login[0m
+  [2mworktree-path = "../worktrees/{{ main_worktree }}/{{ branch }}"[0m
+
+[1mCommand defaults[0m
+
+Override default flag behavior for commands. Settings here apply unless explicitly overridden on the command line.
+
+[1m`wt list` defaults:[0m
+
+  [2m[list][0m
+  [2mfull = true      # --full (default: false)[0m
+  [2mbranches = true  # --branches (default: false)[0m
+  [2mremotes = true   # --remotes (default: false)[0m
+
+[1m`wt step commit` and `wt merge` staging:[0m
+
+  [2m[commit][0m
+  [2mstage = "all"    # "all" (default), "tracked", or "none"[0m
+
+[1m`wt merge` defaults:[0m
+
+  [2m[merge][0m
+  [2m# All options default to true[0m
+  [2msquash = false  # --no-squash: preserve individual commits[0m
+  [2mcommit = false  # --no-commit: skip committing uncommitted changes[0m
+  [2mremove = false  # --no-remove: keep worktree after merge[0m
+  [2mverify = false  # --no-verify: skip project hooks[0m
+
+[1mLLM commit messages[0m
+
+Configure automatic commit message generation. Requires an external tool like llm:
+
+  [2m[commit-generation][0m
+  [2mcommand = "llm"[0m
+  [2margs = ["-m", "claude-haiku-4.5"][0m
+
+See LLM Commit Messages for setup details and template customization.
+
+[1mApproved commands[0m
+
+When project hooks run for the first time, Worktrunk prompts for approval. Approved commands are saved here automatically:
+
+  [2m[projects."my-project"][0m
+  [2mapproved-commands = [[0m
+  [2m    "post-create.install = npm ci",[0m
+  [2m    "pre-merge.test = npm test",[0m
+  [2m][0m
+
+Manage approvals with [2mwt config approvals list[0m and [2mwt config approvals clear <repo>[0m.
+
+[32mProject config[0m
+
+The project config defines lifecycle hooks — commands that run at specific points during worktree operations. This file is checked into version control and shared across the team.
+
+Create [2m.config/wt.toml[0m in the repository root:
+
+  [2m[post-create][0m
+  [2minstall = "npm ci"[0m
+  [2m[0m
+  [2m[pre-merge][0m
+  [2mtest = "npm test"[0m
+  [2mlint = "npm run lint"[0m
+
+See Hooks for complete documentation on hook types, execution order, and template variables.
+
 [32mShell integration[0m
 
-Shell integration allows Worktrunk to change the shell's working directory after [2mwt switch[0m. Without it, commands run in a subprocess and directory changes don't persist.
+Worktrunk needs shell integration to change directories when switching worktrees. Install with:
 
-The [2mwt config shell install[0m command adds integration to the shell's config file. Manual installation:
+  [2mwt config shell install[0m
+
+Or manually add to the shell config:
 
   [2m# For bash: add to ~/.bashrc[0m
   [2meval "$(wt config shell init bash)"[0m
@@ -73,30 +170,44 @@ The [2mwt config shell install[0m command adds integration to the shell's conf
   [2m# For fish: add to ~/.config/fish/config.fish[0m
   [2mwt config shell init fish | source[0m
 
-[32mConfiguration files[0m
+Without shell integration, [2mwt switch[0m prints the target directory but cannot [2mcd[0m into it.
 
-[1mUser config[0m — [2m~/.config/worktrunk/config.toml[0m (or [2m$WORKTRUNK_CONFIG_PATH[0m):
+[32mEnvironment variables[0m
 
-Personal settings like LLM commit generation, path templates, and default behaviors. The [2mwt config create[0m command generates a file with documented examples.
+All user config options can be overridden with environment variables using the [2mWORKTRUNK_[0m prefix.
 
-[1mProject config[0m — [2m.config/wt.toml[0m in repository root:
+[1mNaming convention[0m
 
-Project-specific hooks: post-create, post-start, pre-commit, pre-merge, post-merge. See Hooks for details.
+Config keys use kebab-case ([2mworktree-path[0m), while env vars use SCREAMING_SNAKE_CASE ([2mWORKTRUNK_WORKTREE_PATH[0m). The conversion happens automatically.
 
-[32mCommand approvals[0m
+For nested config sections, use double underscores to separate levels:
 
-Project hooks require approval on first run. Manage saved approvals with:
+| Config | Environment Variable |
+|--------|---------------------|
+| [2mworktree-path[0m | [2mWORKTRUNK_WORKTREE_PATH[0m |
+| [2mcommit-generation.command[0m | [2mWORKTRUNK_COMMIT_GENERATION__COMMAND[0m |
+| [2mcommit-generation.args[0m | [2mWORKTRUNK_COMMIT_GENERATION__ARGS[0m |
 
-  [2mwt config approvals list           # Show all approved commands[0m
-  [2mwt config approvals clear <repo>   # Remove approvals for a repository[0m
+Note the single underscore after [2mWORKTRUNK[0m and double underscores between nested keys.
 
-See Hooks for how approvals work.
+[1mArray values[0m
 
-[32mLLM commit messages[0m
+Array config values like [2margs = ["-m", "claude-haiku"][0m can be specified as a single string in environment variables:
 
-Worktrunk can generate commit messages using an LLM. Enable in user config:
+  [2mexport WORKTRUNK_COMMIT_GENERATION__ARGS="-m claude-haiku"[0m
 
-  [2m[commit-generation][0m
-  [2mcommand = "llm"[0m
+[1mExample: CI/testing override[0m
 
-See LLM Commits for installation, provider setup, and customization.
+Override the LLM command in CI to use a mock:
+
+  [2mWORKTRUNK_COMMIT_GENERATION__COMMAND=echo \[0m
+  [2mWORKTRUNK_COMMIT_GENERATION__ARGS="test: automated commit" \[0m
+  [2m  wt merge[0m
+
+[1mSpecial variables[0m
+
+| Variable | Purpose |
+|----------|---------|
+| [2mWORKTRUNK_CONFIG_PATH[0m | Override user config file location (not a config key) |
+| [2mNO_COLOR[0m | Disable colored output (standard) |
+| [2mCLICOLOR_FORCE[0m | Force colored output even when not a TTY |

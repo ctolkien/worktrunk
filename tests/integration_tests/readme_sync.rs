@@ -923,7 +923,6 @@ fn test_docs_quickstart_examples_are_in_sync() {
     // Process all docs files with AUTO-GENERATED-HTML markers
     let doc_files = [
         "docs/content/quickstart.md",
-        "docs/content/configuration.md",
         "docs/content/concepts.md",
         "docs/content/advanced.md",
     ];

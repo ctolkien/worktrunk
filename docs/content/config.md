@@ -8,7 +8,14 @@ group = "Commands"
 
 <!-- ⚠️ AUTO-GENERATED from `wt config --help-page` — edit src/cli.rs to update -->
 
-Manages configuration, shell integration, and runtime settings. The command provides subcommands for setup, inspection, and cache management.
+Manages configuration, shell integration, and runtime settings.
+
+Worktrunk uses two configuration files:
+
+| File | Location | Purpose |
+|------|----------|---------|
+| **User config** | `~/.config/worktrunk/config.toml` | Personal settings, command defaults, approved project commands |
+| **Project config** | `.config/wt.toml` | Lifecycle hooks, checked into version control |
 
 ## Examples
 
@@ -30,11 +37,117 @@ Show current configuration and file locations:
 wt config show
 ```
 
+## User config
+
+The user config stores personal preferences that apply across all repositories. Create it with `wt config create` and view with `wt config show`.
+
+### Worktree path template
+
+Controls where new worktrees are created. The template is relative to the repository root.
+
+**Available variables:**
+- `{{ main_worktree }}` — main worktree directory name
+- `{{ branch }}` — branch name (slashes replaced with dashes)
+
+**Examples** for a repo at `~/code/myproject` creating branch `feature/login`:
+
+```toml
+# Default — siblings in parent directory
+# Creates: ~/code/myproject.feature-login
+worktree-path = "../{{ main_worktree }}.{{ branch }}"
+
+# Inside the repository
+# Creates: ~/code/myproject/.worktrees/feature-login
+worktree-path = ".worktrees/{{ branch }}"
+
+# Namespaced (useful when multiple repos share a parent directory)
+# Creates: ~/code/worktrees/myproject/feature-login
+worktree-path = "../worktrees/{{ main_worktree }}/{{ branch }}"
+```
+
+### Command defaults
+
+Override default flag behavior for commands. Settings here apply unless explicitly overridden on the command line.
+
+**`wt list` defaults:**
+
+```toml
+[list]
+full = true      # --full (default: false)
+branches = true  # --branches (default: false)
+remotes = true   # --remotes (default: false)
+```
+
+**`wt step commit` and `wt merge` staging:**
+
+```toml
+[commit]
+stage = "all"    # "all" (default), "tracked", or "none"
+```
+
+**`wt merge` defaults:**
+
+```toml
+[merge]
+# All options default to true
+squash = false  # --no-squash: preserve individual commits
+commit = false  # --no-commit: skip committing uncommitted changes
+remove = false  # --no-remove: keep worktree after merge
+verify = false  # --no-verify: skip project hooks
+```
+
+### LLM commit messages
+
+Configure automatic commit message generation. Requires an external tool like [llm](https://llm.datasette.io/):
+
+```toml
+[commit-generation]
+command = "llm"
+args = ["-m", "claude-haiku-4.5"]
+```
+
+See [LLM Commit Messages](@/llm-commits.md) for setup details and template customization.
+
+### Approved commands
+
+When project hooks run for the first time, Worktrunk prompts for approval. Approved commands are saved here automatically:
+
+```toml
+[projects."my-project"]
+approved-commands = [
+    "post-create.install = npm ci",
+    "pre-merge.test = npm test",
+]
+```
+
+Manage approvals with `wt config approvals list` and `wt config approvals clear <repo>`.
+
+## Project config
+
+The project config defines lifecycle hooks — commands that run at specific points during worktree operations. This file is checked into version control and shared across the team.
+
+Create `.config/wt.toml` in the repository root:
+
+```toml
+[post-create]
+install = "npm ci"
+
+[pre-merge]
+test = "npm test"
+lint = "npm run lint"
+```
+
+See [Hooks](@/hooks.md) for complete documentation on hook types, execution order, and template variables.
+
 ## Shell integration
 
-Shell integration allows Worktrunk to change the shell's working directory after `wt switch`. Without it, commands run in a subprocess and directory changes don't persist.
+Worktrunk needs shell integration to change directories when switching worktrees. Install with:
 
-The `wt config shell install` command adds integration to the shell's config file. Manual installation:
+```bash
+wt config shell install
+```
+
+Or manually add to the shell config:
 
 ```bash
 # For bash: add to ~/.bashrc
@@ -47,37 +160,51 @@ eval "$(wt config shell init zsh)"
 wt config shell init fish | source
 ```
 
-## Configuration files
+Without shell integration, `wt switch` prints the target directory but cannot `cd` into it.
 
-**User config** — `~/.config/worktrunk/config.toml` (or `$WORKTRUNK_CONFIG_PATH`):
+## Environment variables
 
-Personal settings like LLM commit generation, path templates, and default behaviors. The `wt config create` command generates a file with documented examples.
+All user config options can be overridden with environment variables using the `WORKTRUNK_` prefix.
 
-**Project config** — `.config/wt.toml` in repository root:
+### Naming convention
 
-Project-specific hooks: post-create, post-start, pre-commit, pre-merge, post-merge. See [Hooks](@/hooks.md) for details.
+Config keys use kebab-case (`worktree-path`), while env vars use SCREAMING_SNAKE_CASE (`WORKTRUNK_WORKTREE_PATH`). The conversion happens automatically.
 
-## Command approvals
+For nested config sections, use double underscores to separate levels:
 
-Project hooks require approval on first run. Manage saved approvals with:
+| Config | Environment Variable |
+|--------|---------------------|
+| `worktree-path` | `WORKTRUNK_WORKTREE_PATH` |
+| `commit-generation.command` | `WORKTRUNK_COMMIT_GENERATION__COMMAND` |
+| `commit-generation.args` | `WORKTRUNK_COMMIT_GENERATION__ARGS` |
+
+Note the single underscore after `WORKTRUNK` and double underscores between nested keys.
+
+### Array values
+
+Array config values like `args = ["-m", "claude-haiku"]` can be specified as a single string in environment variables:
 
 ```bash
-wt config approvals list           # Show all approved commands
-wt config approvals clear <repo>   # Remove approvals for a repository
+export WORKTRUNK_COMMIT_GENERATION__ARGS="-m claude-haiku"
 ```
 
-See [Hooks](@/hooks.md#security--approval) for how approvals work.
+### Example: CI/testing override
 
-## LLM commit messages
+Override the LLM command in CI to use a mock:
 
-Worktrunk can generate commit messages using an LLM. Enable in user config:
-
-```toml
-[commit-generation]
-command = "llm"
+```bash
+WORKTRUNK_COMMIT_GENERATION__COMMAND=echo \
+WORKTRUNK_COMMIT_GENERATION__ARGS="test: automated commit" \
+  wt merge
 ```
 
-See [LLM Commits](@/llm-commits.md) for installation, provider setup, and customization.
+### Special variables
+
+| Variable | Purpose |
+|----------|---------|
+| `WORKTRUNK_CONFIG_PATH` | Override user config file location (not a config key) |
+| `NO_COLOR` | Disable colored output ([standard](https://no-color.org/)) |
+| `CLICOLOR_FORCE` | Force colored output even when not a TTY |
 
 ---
 
