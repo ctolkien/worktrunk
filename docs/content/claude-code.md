@@ -27,8 +27,8 @@ The plugin adds status indicators to `wt list`:
 
 <!-- END AUTO-GENERATED -->
 
-- `🤖` — Claude is working
-- `💬` — Claude is waiting for input
+- 🤖 — Claude is working
+- 💬 — Claude is waiting for input
 
 ### Installation
 
@@ -51,7 +51,7 @@ $ git config worktrunk.marker.feature "💬"        # Direct git config
 
 `wt list statusline --claude-code` outputs a single-line status for the Claude Code statusline (currently this grabs CI status, so is too slow to use in synchronous contexts—if a faster version would be helpful, please [open an issue](https://github.com/max-sixty/worktrunk/issues)):
 
-`~/w/myproject.feature-auth  !🤖  @`<span style='color:#0a0'>+42</span> <span style='color:#a00'>-8</span>`  `<span style='color:#0a0'>↑3</span>`  `<span style='color:#0a0'>⇡1</span>`  `<span style='color:#0a0'>●</span>`  | Opus`
+<code>~/w/myproject.feature-auth  !🤖  @<span style='color:#0a0'>+42</span> <span style='color:#a00'>-8</span>  <span style='color:#0a0'>↑3</span>  <span style='color:#0a0'>⇡1</span>  <span style='color:#0a0'>●</span>  | Opus</code>
 
 Add to `~/.claude/settings.json`:
 
