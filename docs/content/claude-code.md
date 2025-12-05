@@ -15,7 +15,7 @@ The plugin adds status indicators to `wt list`:
 <!-- ⚠️ AUTO-GENERATED-HTML from tests/snapshots/integration__integration_tests__list__with_user_marker.snap — edit source to update -->
 
 {% terminal() %}
-<span class="prompt">$</span> wt list
+<span class="prompt">$</span> <span class="cmd">wt list</span>
   <b>Branch</b>       <b>Status</b>         <b>HEAD±</b>    <b>main↕</b>  <b>Path</b>                <b>Remote⇅</b>  <b>Commit</b>    <b>Age</b>   <b>Message</b>
 @ <b>main</b>             <span class=d>^</span>                          <b>./repo</b>                       <span class=d>b834638e</span>  <span class=d>1d</span>    <span class=d>Initial commit</span>
 + feature-api      <span class=d>↑</span>  🤖              <span class=g>↑1</span>      ./repo.feature-api           <span class=d>9606cd0f</span>  <span class=d>1d</span>    <span class=d>Add REST API endpoints</span>

@@ -44,15 +44,15 @@ Named commands appear in output with their labels:
 <!-- ⚠️ AUTO-GENERATED-HTML from tests/integration_tests/snapshots/integration__integration_tests__shell_wrapper__tests__readme_example_hooks_post_create.snap — edit source to update -->
 
 {% terminal() %}
-<span class="prompt">$</span> wt switch --create feature-x
-🔄 <span style='color:var(--cyan,#0aa)'>Running post-create <b>install</b>:</span>
-<span style='background:var(--bright-white,#fff)'> </span>  <span style='opacity:0.67'><span style='color:var(--blue,#00a)'>uv</span></span><span style='opacity:0.67'> sync</span>
+<span class="prompt">$</span> <span class="cmd">wt switch --create feature-x</span>
+🔄 <span class=c>Running post-create <b>install</b>:</span>
+<span style='background:var(--bright-white,#fff)'> </span>  <span class=d><span style='color:var(--blue,#00a)'>uv</span></span><span class=d> sync</span>
 
   Resolved 24 packages in 145ms
   Installed 24 packages in 1.2s
-✅ <span style='color:var(--green,#0a0)'>Created new worktree for <b>feature-x</b> from <b>main</b> at <b>../repo.feature-x</b></span>
-🔄 <span style='color:var(--cyan,#0aa)'>Running post-start <b>dev</b>:</span>
-<span style='background:var(--bright-white,#fff)'> </span>  <span style='opacity:0.67'><span style='color:var(--blue,#00a)'>uv</span></span><span style='opacity:0.67'> run dev</span>
+✅ <span class=g>Created new worktree for <b>feature-x</b> from <b>main</b> at <b>../repo.feature-x</b></span>
+🔄 <span class=c>Running post-start <b>dev</b>:</span>
+<span style='background:var(--bright-white,#fff)'> </span>  <span class=d><span style='color:var(--blue,#00a)'>uv</span></span><span class=d> run dev</span>
 {% end %}
 
 <!-- END AUTO-GENERATED -->

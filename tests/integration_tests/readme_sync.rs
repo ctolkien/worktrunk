@@ -893,7 +893,7 @@ fn sync_docs_snapshots(doc_path: &Path, project_root: &Path) -> Result<usize, Ve
                 Some(cmd) if cmd.starts_with("$ ") => {
                     let cmd_text = cmd.strip_prefix("$ ").unwrap();
                     format!(
-                        "<span class=\"prompt\">$</span> {}\n{}",
+                        "<span class=\"prompt\">$</span> <span class=\"cmd\">{}</span>\n{}",
                         cmd_text, normalized
                     )
                 }
@@ -922,9 +922,9 @@ fn test_docs_quickstart_examples_are_in_sync() {
 
     // Process all docs files with AUTO-GENERATED-HTML markers
     let doc_files = [
-        "docs/content/quickstart.md",
-        "docs/content/concepts.md",
-        "docs/content/advanced.md",
+        "docs/content/why-worktrunk.md",
+        "docs/content/hooks.md",
+        "docs/content/claude-code.md",
     ];
 
     let mut all_errors = Vec::new();

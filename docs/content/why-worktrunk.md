@@ -39,7 +39,7 @@ Create a worktree for a new task:
 <!-- ⚠️ AUTO-GENERATED-HTML from tests/integration_tests/snapshots/integration__integration_tests__shell_wrapper__tests__readme_example_simple_switch.snap — edit source to update -->
 
 {% terminal() %}
-<span class="prompt">$</span> wt switch --create fix-auth
+<span class="prompt">$</span> <span class="cmd">wt switch --create fix-auth</span>
 ✅ <span class=g>Created new worktree for <b>fix-auth</b> from <b>main</b> at <b>../repo.fix-auth</b></span>
 {% end %}
 
@@ -50,7 +50,7 @@ Switch to an existing worktree:
 <!-- ⚠️ AUTO-GENERATED-HTML from tests/integration_tests/snapshots/integration__integration_tests__shell_wrapper__tests__readme_example_switch_back.snap — edit source to update -->
 
 {% terminal() %}
-<span class="prompt">$</span> wt switch feature-api
+<span class="prompt">$</span> <span class="cmd">wt switch feature-api</span>
 ✅ <span class=g>Switched to worktree for <b>feature-api</b> at <b>../repo.feature-api</b></span>
 {% end %}
 
@@ -61,12 +61,11 @@ See all worktrees at a glance:
 <!-- ⚠️ AUTO-GENERATED-HTML from tests/snapshots/integration__integration_tests__list__readme_example_list.snap — edit source to update -->
 
 {% terminal() %}
-<span class="prompt">$</span> wt list
-<b>Branch</b> <b>Status</b> <b>HEAD±</b> <b>main↕</b> <b>Path</b> <b>Remote⇅</b> <b>Commit</b> <b>Age</b> <b>Message</b>
-@ <b>feature-api</b> <span class=c>+</span> <span class=d>↕</span><span class=d>⇡</span> <span class=g>+54</span> <span class=r>-5</span> <span class=g>↑4</span> <span class=d><span class=r>↓1</span></span> <b>./repo.feature-api</b> <span class=g>⇡3</span> <span class=d>28d38c20</span> <span class=d>30m</span> <span class=d>Add API tests</span>
-^ main <span class=d>^</span><span class=d>⇅</span> ./repo <span class=g>⇡1</span> <span class=d><span class=r>⇣1</span></span> <span class=d>2e6b7a8f</span> <span class=d>4d</span> <span class=d>Merge fix-auth:…</span>
-
-- fix-auth <span class=d>↕</span><span class=d>|</span> <span class=g>↑2</span> <span class=d><span class=r>↓1</span></span> ./repo.fix-auth <span class=d>|</span> <span class=d>1d697d5b</span> <span class=d>5h</span> <span class=d>Add secure token…</span>
+<span class="prompt">$</span> <span class="cmd">wt list</span>
+  <b>Branch</b>       <b>Status</b>         <b>HEAD±</b>    <b>main↕</b>  <b>Path</b>                <b>Remote⇅</b>  <b>Commit</b>    <b>Age</b>   <b>Message</b>
+@ <b>feature-api</b>  <span class=c>+</span>   <span class=d>↕</span><span class=d>⇡</span>      <span class=g>+54</span>   <span class=r>-5</span>   <span class=g>↑4</span>  <span class=d><span class=r>↓1</span></span>  <b>./repo.feature-api</b>   <span class=g>⇡3</span>      <span class=d>28d38c20</span>  <span class=d>30m</span>   <span class=d>Add API tests</span>
+^ main             <span class=d>^</span><span class=d>⇅</span>                         ./repo               <span class=g>⇡1</span>  <span class=d><span class=r>⇣1</span></span>  <span class=d>2e6b7a8f</span>  <span class=d>4d</span>    <span class=d>Merge fix-auth:…</span>
++ fix-auth         <span class=d>↕</span><span class=d>|</span>                 <span class=g>↑2</span>  <span class=d><span class=r>↓1</span></span>  ./repo.fix-auth        <span class=d>|</span>     <span class=d>1d697d5b</span>  <span class=d>5h</span>    <span class=d>Add secure token…</span>
 
 ⚪ <span class=d>Showing 3 worktrees, 1 with changes, 2 ahead</span>
 {% end %}
@@ -80,7 +79,7 @@ Clean up when done:
 <!-- ⚠️ AUTO-GENERATED-HTML from tests/integration_tests/snapshots/integration__integration_tests__shell_wrapper__tests__readme_example_remove.snap — edit source to update -->
 
 {% terminal() %}
-<span class="prompt">$</span> wt remove
+<span class="prompt">$</span> <span class="cmd">wt remove</span>
 🔄 <span class=c>Removing <b>feature-api</b> worktree &amp; branch in background (already in main)</span>
 {% end %}
 
