@@ -13,7 +13,7 @@
 
 > **December 2025**: I've been using Worktrunk as my daily driver, and am releasing it as Open Source this week. It's built with love (there's no slop!). If social proof is helpful: I also created [PRQL](https://github.com/PRQL/prql) (10k stars) and am a maintainer of [Xarray](https://github.com/pydata/xarray) (4k stars), [Insta](https://github.com/mitsuhiko/insta), & [Numbagg](https://github.com/numbagg/numbagg).
 
-Worktrunk is a CLI for git worktree management, designed for parallel AI agent workflows. Git worktrees give each agent an isolated branch and directory; Worktrunk adds branch-based navigation, unified status, and lifecycle hooks. Creating a new agent workspace is as quick as `git switch`.
+Worktrunk is a CLI for git worktree management, designed for parallel AI agent workflows. Git worktrees give each agent an isolated branch and directory; Worktrunk adds branch-based navigation, unified status, and lifecycle hooks. Creating a new agent workspace is as immediate as `git switch`.
 
 ![Worktrunk Demo](https://cdn.jsdelivr.net/gh/max-sixty/worktrunk-assets@main/demos/wt-demo.gif)
 
@@ -42,7 +42,7 @@ Worktrunk makes worktrees easy to use. Branch names replace paths:
 | Clean up | `wt remove` | `cd ../repo && git worktree remove ../repo.feature && git branch -d feature` |
 | List with status | `wt list` | `git worktree list` (paths only) |
 
-Plus:
+Beyond navigation, Worktrunk automates common tasks:
 
 - **[Lifecycle hooks](https://worktrunk.dev/hooks/)** — run commands on create, switch, merge (deps install, dev servers, test suites)
 - **[LLM commit messages](https://worktrunk.dev/llm-commits/)** — generate commits from diffs via [llm](https://llm.datasette.io/)
@@ -84,9 +84,9 @@ $ wt list
 
 <!-- END AUTO-GENERATED -->
 
-Add `--full` for CI status and conflicts, `--branches` to include all branches.
+The `--full` flag adds CI status and conflict detection.
 
-When done with a worktree (e.g., after merging via CI):
+Clean up when done:
 
 <!-- ⚠️ AUTO-GENERATED from tests/integration_tests/snapshots/integration__integration_tests__shell_wrapper__tests__readme_example_remove.snap — edit source to update -->
 
