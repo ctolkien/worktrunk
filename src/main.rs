@@ -892,7 +892,7 @@ fn main() {
                 VarCommand::Clear { key, branch, all } => handle_var_clear(&key, branch, all),
             },
             ConfigCommand::Approvals { action } => match action {
-                ApprovalsCommand::Add { force, all } => add_approvals(force, all),
+                ApprovalsCommand::Add { all } => add_approvals(all),
                 ApprovalsCommand::Clear { global } => clear_approvals(global),
             },
         },

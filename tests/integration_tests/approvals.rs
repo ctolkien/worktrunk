@@ -37,16 +37,6 @@ fn test_add_approvals_no_config() {
 }
 
 #[test]
-fn test_add_approvals_force() {
-    let repo = TestRepo::new();
-    repo.commit("Initial commit");
-    repo.write_project_config(r#"post-create = "echo 'test'""#);
-    repo.commit("Add config");
-
-    snapshot_add_approvals("add_approvals_force", &repo, &["--force"]);
-}
-
-#[test]
 fn test_add_approvals_all_with_none_approved() {
     let repo = TestRepo::new();
     repo.commit("Initial commit");

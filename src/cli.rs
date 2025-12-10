@@ -254,13 +254,9 @@ pub enum ApprovalsCommand {
         after_long_help = r#"Prompts for approval of all project commands and saves them to user config.
 
 By default, shows only unapproved commands. Use `--all` to review all commands
-including previously approved ones. Use `--force` to approve without prompts."#
+including previously approved ones."#
     )]
     Add {
-        /// Skip approval prompts
-        #[arg(short, long)]
-        force: bool,
-
         /// Show all commands
         #[arg(long)]
         all: bool,

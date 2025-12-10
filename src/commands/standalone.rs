@@ -560,7 +560,7 @@ pub fn handle_rebase(target: Option<&str>) -> anyhow::Result<RebaseResult> {
 }
 
 /// Handle `wt config approvals add` command - approve all commands in the project
-pub fn add_approvals(force: bool, show_all: bool) -> anyhow::Result<()> {
+pub fn add_approvals(show_all: bool) -> anyhow::Result<()> {
     use super::command_approval::approve_command_batch;
     use worktrunk::config::WorktrunkConfig;
 
@@ -603,21 +603,15 @@ pub fn add_approvals(force: bool, show_all: bool) -> anyhow::Result<()> {
         commands
     };
 
-    // Call the approval prompt
+    // Call the approval prompt (force=false to require interactive approval and save)
     // When show_all=true, we've already included all commands in commands_to_approve
     // When show_all=false, we've already filtered to unapproved commands
     // So we pass skip_approval_filter=true to prevent double-filtering
-    let approved = approve_command_batch(&commands_to_approve, &project_id, &config, force, true)?;
+    let approved = approve_command_batch(&commands_to_approve, &project_id, &config, false, true)?;
 
     // Show result
     if approved {
-        if force {
-            // When using --force, commands aren't saved to config
-            crate::output::print(success_message("Commands approved; not saved (--force)"))?;
-        } else {
-            // Interactive approval - commands were saved to config (unless save failed)
-            crate::output::print(success_message("Commands approved & saved to config"))?;
-        }
+        crate::output::print(success_message("Commands approved & saved to config"))?;
     } else {
         crate::output::print(info_message("Commands declined"))?;
     }

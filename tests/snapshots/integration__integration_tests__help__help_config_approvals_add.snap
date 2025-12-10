@@ -24,9 +24,6 @@ wt config approvals add - Store approvals in config
 Usage: [1m[36mwt config approvals add[0m [36m[OPTIONS][0m
 
 [1m[32mOptions:[0m
-  [1m[36m-f[0m, [1m[36m--force[0m
-          Skip approval prompts
-
       [1m[36m--all[0m
           Show all commands
 
@@ -46,4 +43,4 @@ Usage: [1m[36mwt config approvals add[0m [36m[OPTIONS][0m
 Prompts for approval of all project commands and saves them to user config.
 
 By default, shows only unapproved commands. Use [2m--all[0m to review all commands
-including previously approved ones. Use [2m--force[0m to approve without prompts.
+including previously approved ones.
