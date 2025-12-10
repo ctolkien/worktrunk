@@ -1,0 +1,8 @@
+# Insta snapshot testing configuration
+# https://insta.rs/docs/settings/
+
+test:
+  # Use nextest as the test runner
+  runner: "nextest"
+  # Fall back to cargo-test if nextest is not available
+  test_runner_fallback: true
