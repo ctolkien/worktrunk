@@ -124,7 +124,6 @@ fn prompt_for_batch_approval(commands: &[&Command], project_id: &str) -> anyhow:
         };
         eprintln!("{label}");
         eprint!("{}", format_bash_with_gutter(&cmd.expanded, ""));
-        eprintln!();
     }
 
     // Check if stdin is a TTY before attempting to prompt

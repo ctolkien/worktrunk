@@ -8,10 +8,8 @@ n
 
 ⚪ post-create [1mfirst[22m:
 [107m [0m  [2m[0m[2m[34mecho[0m[2m [0m[2m[32m'First command'[0m[2m[0m
-
 ⚪ post-create [1mthird[22m:
 [107m [0m  [2m[0m[2m[34mecho[0m[2m [0m[2m[32m'Third command'[0m[2m[0m
-
 ❓ Allow and remember? [1m[y/N][22m 
 ⚪ Commands declined, continuing worktree creation
 ✅ [32m[32mCreated new worktree for [1mtest-mixed-decline[22m from [1mmain[22m at [1m[REPO]/repo.test-mixed-decline[39m[22m[39m
