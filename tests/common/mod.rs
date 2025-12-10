@@ -165,11 +165,14 @@ impl TestRepo {
         // Create isolated config path for this test
         let test_config_path = temp_dir.path().join("test-config.toml");
 
-        // Create git config file with test settings
+        // Create git config file with test settings including user identity
+        // This eliminates the need for separate `git config user.name/email` commands
         let git_config_path = temp_dir.path().join("test-gitconfig");
         std::fs::write(
             &git_config_path,
-            "[advice]\n\tmergeConflict = false\n\tresolveConflict = false\n",
+            "[user]\n\tname = Test User\n\temail = test@example.com\n\
+             [advice]\n\tmergeConflict = false\n\tresolveConflict = false\n\
+             [init]\n\tdefaultBranch = main\n",
         )
         .unwrap();
 
@@ -184,27 +187,10 @@ impl TestRepo {
         };
 
         // Initialize git repo with isolated environment
+        // User config is already in the gitconfig file, no separate config commands needed
         let mut cmd = Command::new("git");
         repo.configure_git_cmd(&mut cmd);
-        cmd.args(["init", "-b", "main"])
-            .current_dir(&repo.root)
-            .output()
-            .unwrap();
-
-        // Configure git user
-        let mut cmd = Command::new("git");
-        repo.configure_git_cmd(&mut cmd);
-        cmd.args(["config", "user.name", "Test User"])
-            .current_dir(&repo.root)
-            .output()
-            .unwrap();
-
-        let mut cmd = Command::new("git");
-        repo.configure_git_cmd(&mut cmd);
-        cmd.args(["config", "user.email", "test@example.com"])
-            .current_dir(&repo.root)
-            .output()
-            .unwrap();
+        cmd.args(["init"]).current_dir(&repo.root).output().unwrap();
 
         repo
     }

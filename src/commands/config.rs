@@ -206,7 +206,7 @@ fn render_user_config(out: &mut String) -> anyhow::Result<()> {
         out,
         "{}",
         cformat!(
-            "{INFO_EMOJI} User Config: <bold>{}</>",
+            "<cyan>USER CONFIG</>  {}",
             format_path_for_display(&config_path)
         )
     )?;
@@ -269,7 +269,7 @@ fn render_project_config(out: &mut String) -> anyhow::Result<()> {
             writeln!(
                 out,
                 "{}",
-                cformat!("{INFO_EMOJI} <dim>Project Config: Not in a git repository</>")
+                cformat!("<cyan><dim>PROJECT CONFIG</>  Not in a git repository</>")
             )?;
             return Ok(());
         }
@@ -280,7 +280,7 @@ fn render_project_config(out: &mut String) -> anyhow::Result<()> {
         out,
         "{}",
         cformat!(
-            "{INFO_EMOJI} Project Config: <bold>{}</>",
+            "<cyan>PROJECT CONFIG</>  {}",
             format_path_for_display(&config_path)
         )
     )?;
