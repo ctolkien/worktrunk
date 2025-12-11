@@ -58,9 +58,6 @@ exclude = [
     "https://worktrunk\\.dev/hook/",
 ]
 
-# Root directory for resolving root-relative paths like /assets/wt-demo.gif
-# Assets are fetched from separate repo at deploy time (gitignored locally)
-root_dir = "docs/static"
 
 # Exclude source files from link checking
 exclude_path = [
