@@ -20,6 +20,7 @@
 //!
 //! This ensures fast operations don't wait for slow ones (e.g., CI doesn't block ahead/behind counts)
 use crossbeam_channel as chan;
+use dunce::canonicalize;
 use rayon::prelude::*;
 use worktrunk::git::{LineDiff, Repository, Worktree};
 use worktrunk::styling::{INFO_EMOJI, warning_message};
@@ -79,7 +80,6 @@ pub(super) enum TaskResult {
         has_file_changes: bool,
     },
     /// Whether merging branch into main would add changes (merge simulation)
-    /// Only computed with --full flag
     WouldMergeAdd {
         item_idx: usize,
         would_merge_add: bool,
@@ -169,9 +169,17 @@ enum DrainOutcome {
     TimedOut {
         /// Number of task results received before timeout
         received_count: usize,
-        /// Items with missing results: (item_idx, branch_name, missing_result_kinds)
-        items_with_missing: Vec<(usize, String, Vec<TaskKind>)>,
+        /// Items with missing results
+        items_with_missing: Vec<MissingResult>,
     },
+}
+
+/// Item with missing task results (for timeout diagnostics)
+#[derive(Debug)]
+struct MissingResult {
+    item_idx: usize,
+    name: String,
+    missing_kinds: Vec<TaskKind>,
 }
 
 /// Tracks expected result types per item for timeout diagnostics.
@@ -257,7 +265,7 @@ fn drain_results(
             let received_count: usize = received_by_item.values().map(|v| v.len()).sum();
 
             // Find items with missing results by comparing received vs expected
-            let mut items_with_missing: Vec<(usize, String, Vec<TaskKind>)> = Vec::new();
+            let mut items_with_missing: Vec<MissingResult> = Vec::new();
 
             for (item_idx, item) in items.iter().enumerate() {
                 // Get expected results for this item (populated at spawn time)
@@ -270,23 +278,27 @@ fn drain_results(
                     .unwrap_or(&[]);
 
                 // Find missing results
-                let missing: Vec<TaskKind> = expected
+                let missing_kinds: Vec<TaskKind> = expected
                     .iter()
                     .filter(|kind| !received.contains(kind))
                     .copied()
                     .collect();
 
-                if !missing.is_empty() {
+                if !missing_kinds.is_empty() {
                     let name = item
                         .branch
                         .clone()
                         .unwrap_or_else(|| item.head[..8.min(item.head.len())].to_string());
-                    items_with_missing.push((item_idx, name, missing));
+                    items_with_missing.push(MissingResult {
+                        item_idx,
+                        name,
+                        missing_kinds,
+                    });
                 }
             }
 
             // Sort by item index and limit to first 5
-            items_with_missing.sort_by_key(|(idx, _, _)| *idx);
+            items_with_missing.sort_by_key(|result| result.item_idx);
             items_with_missing.truncate(5);
 
             return DrainOutcome::TimedOut {
@@ -531,9 +543,11 @@ pub fn collect(
         .iter()
         .map(|wt| {
             let is_main = wt.path == main_worktree.path;
+            // Canonicalize wt.path for comparison since current_worktree_path is canonicalized
+            // (On Windows, paths from git worktree list may differ from git rev-parse --show-toplevel)
             let is_current = current_worktree_path
                 .as_ref()
-                .is_some_and(|cp| &wt.path == cp);
+                .is_some_and(|cp| canonicalize(&wt.path).as_ref().ok() == Some(cp));
             let is_previous = previous_branch
                 .as_deref()
                 .is_some_and(|prev| wt.branch.as_deref() == Some(prev));
@@ -551,8 +565,8 @@ pub fn collect(
                         // Template path is relative to main worktree, resolve it
                         let expected_path = main_worktree.path.join(&expected_relative);
                         // Canonicalize both paths for comparison (handles symlinks, .., etc.)
-                        let actual_canonical = wt.path.canonicalize().ok();
-                        let expected_canonical = expected_path.canonicalize().ok();
+                        let actual_canonical = canonicalize(&wt.path).ok();
+                        let expected_canonical = canonicalize(&expected_path).ok();
                         match (actual_canonical, expected_canonical) {
                             (Some(actual), Some(expected)) => actual != expected,
                             // Can't canonicalize one or both paths (e.g., worktree deleted,
@@ -840,9 +854,14 @@ pub fn collect(
 
         if !items_with_missing.is_empty() {
             diag.push_str("\nMissing results:");
-            for (_, name, missing) in &items_with_missing {
-                let missing_names: Vec<&str> = missing.iter().map(|k| k.into()).collect();
-                diag.push_str(&format!("\n  - {name}: {}", missing_names.join(", ")));
+            for result in &items_with_missing {
+                let missing_names: Vec<&str> =
+                    result.missing_kinds.iter().map(|k| k.into()).collect();
+                diag.push_str(&format!(
+                    "\n  - {}: {}",
+                    result.name,
+                    missing_names.join(", ")
+                ));
             }
         }
 

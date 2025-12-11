@@ -152,17 +152,16 @@ pub fn handle_list(
     let repo = Repository::current();
 
     // Build skip set based on flags
-    // Without --full: skip expensive operations (BranchDiff, CiStatus, WouldMergeAdd)
+    // Without --full: skip expensive operations (BranchDiff, CiStatus)
+    // TODO: WouldMergeAdd (~500ms-2s per worktree) is currently enabled for ⊂ detection.
+    // If this causes performance issues, consider adding it back to skip_tasks or
+    // implementing a timeout for the merge simulation.
     let skip_tasks: std::collections::HashSet<TaskKind> = if show_full {
         std::collections::HashSet::new() // Compute everything
     } else {
-        [
-            TaskKind::BranchDiff,
-            TaskKind::CiStatus,
-            TaskKind::WouldMergeAdd,
-        ]
-        .into_iter()
-        .collect()
+        [TaskKind::BranchDiff, TaskKind::CiStatus]
+            .into_iter()
+            .collect()
     };
 
     // Progressive rendering only for table format with Progressive mode
@@ -202,6 +201,42 @@ pub fn handle_list(
         }
     }
 
+    // Show hint if CI status was requested but no tools can fetch it
+    if show_full {
+        let ci_tools = ci_status::CiToolsStatus::detect();
+        if !ci_tools.any_available() {
+            use color_print::cformat;
+            use worktrunk::styling::hint_message;
+            crate::output::blank()?;
+
+            // Provide specific guidance based on what's installed but not authenticated
+            let gh_needs_auth = ci_tools.gh_installed && !ci_tools.gh_authenticated;
+            let glab_needs_auth = ci_tools.glab_installed && !ci_tools.glab_authenticated;
+
+            if gh_needs_auth && glab_needs_auth {
+                // Both installed but neither authenticated
+                crate::output::print(hint_message(cformat!(
+                    "CI status unavailable; run <bright-black>gh auth login</> or <bright-black>glab auth login</>"
+                )))?;
+            } else if gh_needs_auth {
+                // gh installed but not authenticated
+                crate::output::print(hint_message(cformat!(
+                    "CI status unavailable; run <bright-black>gh auth login</> to authenticate"
+                )))?;
+            } else if glab_needs_auth {
+                // glab installed but not authenticated
+                crate::output::print(hint_message(cformat!(
+                    "CI status unavailable; run <bright-black>glab auth login</> to authenticate"
+                )))?;
+            } else {
+                // Neither tool is installed
+                crate::output::print(hint_message(cformat!(
+                    "CI status unavailable; install <bright-black>gh</> or <bright-black>glab</>"
+                )))?;
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -229,20 +264,14 @@ impl SummaryMetrics {
             if data
                 .working_tree_diff
                 .as_ref()
-                .map(|d| !d.is_empty())
-                .unwrap_or(false)
+                .is_some_and(|d| !d.is_empty())
             {
                 self.dirty_worktrees += 1;
             }
         } else {
             // Distinguish local vs remote branches by presence of '/' in name
             // Remote branches are like "origin/feature", local are like "feature"
-            if item
-                .branch
-                .as_ref()
-                .map(|b| b.contains('/'))
-                .unwrap_or(false)
-            {
+            if item.branch.as_ref().is_some_and(|b| b.contains('/')) {
                 self.remote_branches += 1;
             } else {
                 self.local_branches += 1;

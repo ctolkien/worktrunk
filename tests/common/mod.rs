@@ -1,7 +1,3 @@
-// Test utilities are Unix-only as they're used by integration tests
-// which rely on Unix-specific behavior (PTY, shell integration, etc.)
-#![cfg(unix)]
-
 //! # Test Utilities for worktrunk
 //!
 //! This module provides test harnesses for testing the worktrunk CLI tool.
@@ -11,6 +7,14 @@
 //! The `TestRepo` struct creates isolated git repositories in temporary directories
 //! with deterministic timestamps and configuration. Each test gets a fresh repo
 //! that is automatically cleaned up when the test ends.
+//!
+//! ## Fixture-Based Initialization
+//!
+//! To improve test performance, `TestRepo::new()` copies from a pre-initialized
+//! template stored in `tests/fixtures/template-repo/`. The template contains a
+//! `_git` directory (renamed from `.git` so it can be committed) which gets
+//! copied and renamed to `.git` for each test. This avoids spawning `git init`
+//! for every test, saving ~10ms per test.
 //!
 //! ## Environment Isolation
 //!
@@ -25,6 +29,10 @@
 //!
 //! Paths are canonicalized to handle platform differences (especially macOS symlinks
 //! like /var -> /private/var). This ensures snapshot filters work correctly.
+//!
+//! On Windows, `std::fs::canonicalize()` returns verbatim paths (`\\?\C:\...`) which
+//! git cannot handle. We use `normalize_path()` to strip these prefixes while
+//! preserving the symlink resolution behavior needed on macOS.
 
 pub mod list_snapshots;
 // Progressive output tests use PTY and are Unix-only for now
@@ -34,12 +42,135 @@ pub mod progressive_output;
 #[cfg(all(unix, feature = "shell-integration-tests"))]
 pub mod shell;
 
+/// Block SIGTTIN and SIGTTOU signals to prevent test processes from being
+/// stopped when PTY operations interact with terminal control in background
+/// process groups.
+///
+/// This is needed when running tests in environments like Codex where the test
+/// process may be in the background process group of a controlling terminal.
+/// PTY operations (via `portable_pty`) can trigger these signals, causing the
+/// process to be stopped rather than continuing execution.
+///
+/// Signal masks are per-thread, so this must be called on each thread that
+/// performs PTY operations. It's idempotent within a thread (safe to call
+/// multiple times on the same thread).
+///
+/// **Preferred usage**: Use the `pty_safe` rstest fixture instead of calling directly:
+/// ```ignore
+/// use rstest::rstest;
+/// use crate::common::pty_safe;
+///
+/// #[rstest]
+/// fn test_something(_pty_safe: ()) {
+///     // PTY operations here won't cause SIGTTIN/SIGTTOU stops
+/// }
+/// ```
+#[cfg(unix)]
+pub fn ignore_tty_signals() {
+    use std::cell::Cell;
+    thread_local! {
+        static TTY_SIGNALS_BLOCKED: Cell<bool> = const { Cell::new(false) };
+    }
+    TTY_SIGNALS_BLOCKED.with(|blocked| {
+        if blocked.get() {
+            return;
+        }
+        use nix::sys::signal::{SigSet, SigmaskHow, Signal, pthread_sigmask};
+        let mut mask = SigSet::empty();
+        mask.add(Signal::SIGTTIN);
+        mask.add(Signal::SIGTTOU);
+        // Block these signals in the current thread's signal mask.
+        // Fail fast if this doesn't work - silent failure would cause flaky tests.
+        pthread_sigmask(SigmaskHow::SIG_BLOCK, Some(&mask), None)
+            .expect("failed to block SIGTTIN/SIGTTOU signals");
+        blocked.set(true);
+    });
+}
+
+/// Rstest fixture that blocks SIGTTIN/SIGTTOU signals before each test.
+///
+/// Use this for any test that performs PTY operations to prevent the test
+/// from being stopped when running in background process groups (e.g., Codex).
+///
+/// # Example
+/// ```ignore
+/// use rstest::rstest;
+/// use crate::common::pty_safe;
+///
+/// #[rstest]
+/// fn test_pty_interaction(_pty_safe: ()) {
+///     // PTY operations here are safe from SIGTTIN/SIGTTOU stops
+/// }
+/// ```
+#[cfg(unix)]
+#[rstest::fixture]
+pub fn pty_safe() {
+    ignore_tty_signals();
+}
+
+/// Returns a PTY system after ensuring SIGTTIN/SIGTTOU signals are blocked.
+///
+/// Use this instead of `portable_pty::native_pty_system()` directly to ensure
+/// PTY tests work in background process groups (e.g., Codex).
+#[cfg(unix)]
+pub fn native_pty_system() -> Box<dyn portable_pty::PtySystem> {
+    ignore_tty_signals();
+    portable_pty::native_pty_system()
+}
+
 use insta_cmd::get_cargo_bin;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 use worktrunk::config::sanitize_branch_name;
+
+/// Path to the fixture template repo (relative to crate root).
+/// Contains `_git/` (renamed .git) and `gitconfig`.
+fn fixture_template_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/template-repo")
+}
+
+/// Copy the fixture template to create a new test repo.
+///
+/// The fixture contains a git repo with one initial commit (on `main` branch).
+/// Copies `_git/` to `.git/`, `file.txt`, and `gitconfig` to `test-gitconfig`.
+/// Uses `cp -r` which benchmarks faster than native Rust fs operations.
+fn copy_fixture_template(dest: &Path) {
+    let template = fixture_template_path();
+
+    // Create repo subdirectory
+    let repo_path = dest.join("repo");
+    std::fs::create_dir(&repo_path).unwrap();
+
+    // Copy _git to repo/.git (suppress stderr for socket file warnings)
+    let output = Command::new("cp")
+        .args(["-r", "--"])
+        .arg(template.join("_git"))
+        .arg(repo_path.join(".git"))
+        .stderr(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "Failed to copy template _git directory"
+    );
+
+    // Copy file.txt (part of the initial commit)
+    std::fs::copy(template.join("file.txt"), repo_path.join("file.txt")).unwrap();
+
+    // Copy gitconfig
+    std::fs::copy(template.join("gitconfig"), dest.join("test-gitconfig")).unwrap();
+}
+
+/// Canonicalize a path without Windows verbatim prefix (`\\?\`).
+///
+/// On Windows, `std::fs::canonicalize()` returns verbatim paths like `\\?\C:\...`
+/// which git cannot handle. The `dunce` crate strips this prefix when safe.
+/// On Unix, this is equivalent to `std::fs::canonicalize()`.
+fn canonicalize(path: &Path) -> std::io::Result<PathBuf> {
+    dunce::canonicalize(path)
+}
 
 /// Time constants for `commit_with_age()` - use as `5 * MINUTE`, `2 * HOUR`, etc.
 pub const MINUTE: i64 = 60;
@@ -133,10 +264,18 @@ pub fn configure_cli_command(cmd: &mut Command) {
     cmd.env("COLUMNS", "150");
 }
 
-/// Set `HOME` and `XDG_CONFIG_HOME` for commands that rely on isolated temp homes.
+/// Set home environment variables for commands that rely on isolated temp homes.
+///
+/// Sets both Unix (`HOME`, `XDG_CONFIG_HOME`) and Windows (`USERPROFILE`) variables
+/// so the `home` crate can find the temp home directory on all platforms.
 pub fn set_temp_home_env(cmd: &mut Command, home: &Path) {
     cmd.env("HOME", home);
     cmd.env("XDG_CONFIG_HOME", home.join(".config"));
+    // Windows: the `home` crate uses USERPROFILE for home_dir()
+    cmd.env("USERPROFILE", home);
+    // Windows: etcetera uses APPDATA for config_dir() (AppData\Roaming)
+    // Map it to .config to match Unix XDG_CONFIG_HOME behavior
+    cmd.env("APPDATA", home.join(".config"));
 }
 
 pub struct TestRepo {
@@ -153,21 +292,50 @@ pub struct TestRepo {
 }
 
 impl TestRepo {
-    /// Create a new test repository with isolated git environment
+    /// Create a new test repository with isolated git environment.
+    ///
+    /// The repo is initialized on `main` branch with one initial commit.
+    /// Uses a fixture template for fast initialization - copies a pre-initialized
+    /// git repo from `tests/fixtures/template-repo/` instead of running `git init`.
+    /// This saves ~10ms per test by avoiding process spawns.
     pub fn new() -> Self {
         let temp_dir = TempDir::new().unwrap();
-        // Create main repo as a subdirectory so worktrees can be siblings
-        let root = temp_dir.path().join("repo");
-        std::fs::create_dir(&root).unwrap();
+
+        // Copy from fixture template (includes initial commit)
+        copy_fixture_template(temp_dir.path());
+
         // Canonicalize to resolve symlinks (important on macOS where /var is symlink to /private/var)
-        let root = root.canonicalize().unwrap();
+        let root = canonicalize(&temp_dir.path().join("repo")).unwrap();
 
         // Create isolated config path for this test
         let test_config_path = temp_dir.path().join("test-config.toml");
-
-        // Create git config file with test settings including user identity
-        // This eliminates the need for separate `git config user.name/email` commands
         let git_config_path = temp_dir.path().join("test-gitconfig");
+
+        Self {
+            temp_dir,
+            root,
+            worktrees: HashMap::new(),
+            remote: None,
+            test_config_path,
+            git_config_path,
+            mock_bin_path: None,
+        }
+    }
+
+    /// Create an empty test repository (no commits, no branches).
+    ///
+    /// Use this for tests that specifically need to test behavior in an
+    /// uninitialized repo. Most tests should use `new()` instead.
+    pub fn empty() -> Self {
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path().join("repo");
+        std::fs::create_dir(&root).unwrap();
+        let root = canonicalize(&root).unwrap();
+
+        let test_config_path = temp_dir.path().join("test-config.toml");
+        let git_config_path = temp_dir.path().join("test-gitconfig");
+
+        // Write gitconfig
         std::fs::write(
             &git_config_path,
             "[user]\n\tname = Test User\n\temail = test@example.com\n\
@@ -186,11 +354,13 @@ impl TestRepo {
             mock_bin_path: None,
         };
 
-        // Initialize git repo with isolated environment
-        // User config is already in the gitconfig file, no separate config commands needed
+        // Run git init (can't avoid this for empty repos)
         let mut cmd = Command::new("git");
         repo.configure_git_cmd(&mut cmd);
-        cmd.args(["init"]).current_dir(&repo.root).output().unwrap();
+        cmd.args(["init", "-q"])
+            .current_dir(&repo.root)
+            .output()
+            .unwrap();
 
         repo
     }
@@ -214,6 +384,7 @@ impl TestRepo {
     ///
     /// This is useful for PTY tests and other cases where you need environment variables
     /// as a vector rather than setting them on a Command.
+    #[cfg_attr(windows, allow(dead_code))] // Used only by unix PTY tests
     pub fn test_env_vars(&self) -> Vec<(String, String)> {
         vec![
             ("CLICOLOR_FORCE".to_string(), "1".to_string()),
@@ -463,7 +634,7 @@ impl TestRepo {
         }
 
         // Canonicalize worktree path to match what git returns
-        let canonical_path = worktree_path.canonicalize().unwrap();
+        let canonical_path = canonicalize(&worktree_path).unwrap();
         // Use branch as key (consistent with path generation)
         self.worktrees
             .insert(branch.to_string(), canonical_path.clone());
@@ -560,7 +731,7 @@ impl TestRepo {
             .unwrap();
 
         // Canonicalize remote path
-        let remote_path = remote_path.canonicalize().unwrap();
+        let remote_path = canonicalize(&remote_path).unwrap();
 
         // Add as remote
         let mut cmd = Command::new("git");
@@ -664,6 +835,11 @@ impl TestRepo {
 # Mock gh command that fails fast without network calls
 
 case "$1" in
+    --version)
+        # gh --version - succeed (indicates gh is installed)
+        echo "gh version 2.0.0 (mock)"
+        exit 0
+        ;;
     auth)
         # gh auth status - succeed immediately
         exit 0
@@ -695,6 +871,81 @@ esac
             r#"#!/bin/sh
 # Mock glab command that fails fast
 exit 1
+"#,
+        )
+        .unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&glab_script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        self.mock_bin_path = Some(mock_bin);
+    }
+
+    /// Setup mock `gh` and `glab` commands that show "installed but not authenticated"
+    ///
+    /// Use this for `wt config show` tests that need deterministic BINARIES output.
+    /// Creates mocks where:
+    /// - `gh --version`: succeeds (installed)
+    /// - `gh auth status`: fails (not authenticated)
+    /// - `glab --version`: succeeds (installed)
+    /// - `glab auth status`: fails (not authenticated)
+    pub fn setup_mock_ci_tools_unauthenticated(&mut self) {
+        let mock_bin = self.temp_dir.path().join("mock-bin");
+        std::fs::create_dir_all(&mock_bin).unwrap();
+
+        // Create mock gh script - installed but not authenticated
+        let gh_script = mock_bin.join("gh");
+        std::fs::write(
+            &gh_script,
+            r#"#!/bin/sh
+# Mock gh: installed but not authenticated
+
+case "$1" in
+    --version)
+        echo "gh version 2.0.0 (mock)"
+        exit 0
+        ;;
+    auth)
+        # gh auth status - fail (not authenticated)
+        exit 1
+        ;;
+    *)
+        exit 1
+        ;;
+esac
+"#,
+        )
+        .unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&gh_script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        // Create mock glab script - installed but not authenticated
+        let glab_script = mock_bin.join("glab");
+        std::fs::write(
+            &glab_script,
+            r#"#!/bin/sh
+# Mock glab: installed but not authenticated
+
+case "$1" in
+    --version)
+        echo "glab version 1.0.0 (mock)"
+        exit 0
+        ;;
+    auth)
+        # glab auth status - fail (not authenticated)
+        exit 1
+        ;;
+    *)
+        exit 1
+        ;;
+esac
 "#,
         )
         .unwrap();
@@ -740,27 +991,57 @@ pub fn setup_snapshot_settings(repo: &TestRepo) -> insta::Settings {
     // This must come before repo path filter to avoid partial matches
     let project_root = std::env::var("CARGO_MANIFEST_DIR")
         .ok()
-        .and_then(|p| std::path::PathBuf::from(p).canonicalize().ok());
+        .and_then(|p| canonicalize(std::path::Path::new(&p)).ok());
     if let Some(root) = project_root {
         settings.add_filter(&regex::escape(root.to_str().unwrap()), "[PROJECT_ROOT]");
     }
 
     // Normalize paths (canonicalize for macOS /var -> /private/var symlink)
-    let root_canonical = repo
-        .root_path()
-        .canonicalize()
-        .unwrap_or_else(|_| repo.root_path().to_path_buf());
-    settings.add_filter(&regex::escape(root_canonical.to_str().unwrap()), "[REPO]");
+    let root_canonical =
+        canonicalize(repo.root_path()).unwrap_or_else(|_| repo.root_path().to_path_buf());
+    let root_str = root_canonical.to_str().unwrap();
+    // Add both backslash and forward-slash versions for Windows compatibility
+    // (output may have either format depending on when filters are applied)
+    settings.add_filter(&regex::escape(root_str), "[REPO]");
+    settings.add_filter(&regex::escape(&root_str.replace('\\', "/")), "[REPO]");
+
+    // On Windows, format_path_for_display() converts paths under HOME to tilde-prefixed.
+    // Since temp directories (like C:\Users\runner\AppData\Local\Temp\.tmpXXX) are under HOME,
+    // the repo path becomes ~/AppData/Local/Temp/.tmpXXX/repo in output.
+    // Add filter for tilde-prefixed repo path.
+    // Note: canonicalize home_dir too, since on Windows home::home_dir() may return a short path
+    // (C:\Users\RUNNER~1) while dunce::canonicalize returns the long path (C:\Users\runneradmin).
+    if let Some(home) = home::home_dir().and_then(|h| canonicalize(&h).ok())
+        && let Ok(relative) = root_canonical.strip_prefix(&home)
+    {
+        let tilde_path = format!("~/{}", relative.display()).replace('\\', "/");
+        settings.add_filter(&regex::escape(&tilde_path), "[REPO]");
+    }
+
     for (name, path) in &repo.worktrees {
-        let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
-        settings.add_filter(
-            &regex::escape(canonical.to_str().unwrap()),
-            format!("[WORKTREE_{}]", name.to_uppercase().replace('-', "_")),
-        );
+        let canonical = canonicalize(path).unwrap_or_else(|_| path.clone());
+        let path_str = canonical.to_str().unwrap();
+        let replacement = format!("[WORKTREE_{}]", name.to_uppercase().replace('-', "_"));
+        settings.add_filter(&regex::escape(path_str), &replacement);
+        settings.add_filter(&regex::escape(&path_str.replace('\\', "/")), &replacement);
+
+        // Also add tilde-prefixed worktree path filter for Windows
+        if let Some(home) = home::home_dir().and_then(|h| canonicalize(&h).ok())
+            && let Ok(relative) = canonical.strip_prefix(&home)
+        {
+            let tilde_path = format!("~/{}", relative.display()).replace('\\', "/");
+            settings.add_filter(&regex::escape(&tilde_path), &replacement);
+        }
     }
 
     // Normalize backslashes for Windows compatibility
     settings.add_filter(r"\\", "/");
+
+    // Windows fallback: use a regex pattern to catch tilde-prefixed Windows temp paths.
+    // This handles cases where path formats differ between home::home_dir() and the actual
+    // paths used in commands. MUST come after backslash normalization so paths have forward slashes.
+    // Pattern: ~/AppData/Local/Temp/.tmpXXXXXX/repo (where XXXXXX varies)
+    settings.add_filter(r"~/AppData/Local/Temp/\.tmp[^/]+/repo", "[REPO]");
 
     // Normalize temp directory paths in project identifiers (approval prompts)
     // Example: /private/var/folders/wf/.../T/.tmpABC123/origin -> [PROJECT_ID]
@@ -788,7 +1069,11 @@ pub fn setup_snapshot_settings(repo: &TestRepo) -> insta::Settings {
     settings.add_redaction(".env.GIT_CONFIG_GLOBAL", "[TEST_GIT_CONFIG]");
     settings.add_redaction(".env.WORKTRUNK_CONFIG_PATH", "[TEST_CONFIG]");
     settings.add_redaction(".env.HOME", "[TEST_HOME]");
+    // Windows: the `home` crate uses USERPROFILE for home_dir()
+    settings.add_redaction(".env.USERPROFILE", "[TEST_HOME]");
     settings.add_redaction(".env.XDG_CONFIG_HOME", "[TEST_CONFIG_HOME]");
+    // Windows: etcetera uses APPDATA for config_dir()
+    settings.add_redaction(".env.APPDATA", "[TEST_CONFIG_HOME]");
     settings.add_redaction(".env.PATH", "[PATH]");
 
     // Normalize timestamps in log filenames (format: YYYYMMDD-HHMMSS)
@@ -819,10 +1104,18 @@ pub fn setup_snapshot_settings(repo: &TestRepo) -> insta::Settings {
     // when capturing stderr from shell commands due to timing/buffering differences
     settings.add_filter(r"Broken pipe \(os error 32\)", "Error: connection refused");
 
-    // Normalize OS-specific error messages in gutter output
-    // Ubuntu may produce "Broken pipe (os error 32)" instead of the expected error
-    // when capturing stderr from shell commands due to timing/buffering differences
-    settings.add_filter(r"Broken pipe \(os error 32\)", "Error: connection refused");
+    // Filter out PowerShell lines on Windows - these appear only on Windows
+    // and would cause snapshot mismatches with Unix snapshots
+    settings.add_filter(r"(?m)^.*[Pp]owershell.*\n", "");
+
+    // Normalize Windows executable extension in help output
+    // On Windows, clap shows "wt.exe" instead of "wt"
+    settings.add_filter(r"wt\.exe", "wt");
+
+    // Remove trailing ANSI reset codes at end of lines for cross-platform consistency
+    // Windows terminal strips these trailing resets that Unix includes
+    settings.add_filter(r"\x1b\[0m$", "");
+    settings.add_filter(r"\x1b\[0m\n", "\n");
 
     settings
 }
@@ -833,7 +1126,10 @@ pub fn setup_snapshot_settings(repo: &TestRepo) -> insta::Settings {
 /// Use this for tests that need both a TestRepo and a temporary home (for user config testing).
 pub fn setup_snapshot_settings_with_home(repo: &TestRepo, temp_home: &TempDir) -> insta::Settings {
     let mut settings = setup_snapshot_settings(repo);
-    settings.add_filter(&temp_home.path().to_string_lossy(), "[TEMP_HOME]");
+    settings.add_filter(
+        &regex::escape(&temp_home.path().to_string_lossy()),
+        "[TEMP_HOME]",
+    );
     settings
 }
 
@@ -844,8 +1140,16 @@ pub fn setup_snapshot_settings_with_home(repo: &TestRepo, temp_home: &TempDir) -
 pub fn setup_home_snapshot_settings(temp_home: &TempDir) -> insta::Settings {
     let mut settings = insta::Settings::clone_current();
     settings.set_snapshot_path("../snapshots");
-    settings.add_filter(&temp_home.path().to_string_lossy(), "[TEMP_HOME]");
+    settings.add_filter(
+        &regex::escape(&temp_home.path().to_string_lossy()),
+        "[TEMP_HOME]",
+    );
     settings.add_filter(r"\\", "/");
+    // Filter out PowerShell lines on Windows - these appear only on Windows
+    // and would cause snapshot mismatches with Unix snapshots
+    settings.add_filter(r"(?m)^.*[Pp]owershell.*\n", "");
+    // Normalize Windows executable extension in help output
+    settings.add_filter(r"wt\.exe", "wt");
     settings
 }
 
@@ -860,6 +1164,8 @@ pub fn setup_temp_snapshot_settings(temp_path: &std::path::Path) -> insta::Setti
     // Filter temp paths in output
     settings.add_filter(&regex::escape(temp_path.to_str().unwrap()), "[TEMP]");
     settings.add_filter(r"\\", "/");
+    // Normalize Windows executable extension in help output
+    settings.add_filter(r"wt\.exe", "wt");
 
     // Redact volatile metadata captured by insta-cmd
     settings.add_redaction(".env.GIT_CONFIG_GLOBAL", "[TEST_GIT_CONFIG]");
@@ -990,6 +1296,7 @@ pub struct ExponentialBackoff {
     /// Maximum sleep duration in milliseconds
     pub max_ms: u64,
     /// Total timeout
+    #[cfg_attr(windows, allow(dead_code))] // Used only by unix PTY tests
     pub timeout: std::time::Duration,
 }
 
@@ -1208,8 +1515,8 @@ mod tests {
 
     #[test]
     fn test_commit_with_age() {
+        // TestRepo::new() already includes one initial commit from fixture
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Create commits with specific ages
         repo.commit_with_age("One hour ago", HOUR);
@@ -1217,7 +1524,7 @@ mod tests {
         repo.commit_with_age("One week ago", WEEK);
         repo.commit_with_age("Ten minutes ago", 10 * MINUTE);
 
-        // Verify commits were created (git log shows 5 commits)
+        // Verify commits were created (1 from fixture + 4 = 5 commits)
         let output = repo.git_command(&["log", "--oneline"]).output().unwrap();
         let log = String::from_utf8_lossy(&output.stdout);
         assert_eq!(log.lines().count(), 5);

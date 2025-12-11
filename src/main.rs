@@ -32,7 +32,7 @@ use commands::{
     handle_init, handle_list, handle_merge, handle_rebase, handle_remove, handle_remove_by_path,
     handle_remove_current, handle_show_theme, handle_squash, handle_switch,
     handle_unconfigure_shell, handle_var_clear, handle_var_get, handle_var_set,
-    resolve_worktree_path_first, run_hook, step_commit,
+    resolve_worktree_path_first, run_hook, step_commit, step_for_each,
 };
 use output::{execute_user_command, handle_remove_output, handle_switch_output};
 
@@ -875,7 +875,7 @@ fn main() {
                 }
             }
             ConfigCommand::Create { project } => handle_config_create(project),
-            ConfigCommand::Show { doctor } => handle_config_show(doctor),
+            ConfigCommand::Show { full } => handle_config_show(full),
             ConfigCommand::Cache { action } => match action {
                 CacheCommand::Show => handle_cache_show(),
                 CacheCommand::Clear { cache_type } => handle_cache_clear(cache_type),
@@ -964,6 +964,7 @@ fn main() {
                     }
                 })
             }
+            StepCommand::ForEach { args } => step_for_each(args),
         },
         Commands::Hook { action } => match action {
             HookCommand::Show {
@@ -1071,7 +1072,7 @@ fn main() {
                     let ctx = CommandContext::new(
                         &repo,
                         &config,
-                        &branch,
+                        Some(&branch),
                         &worktree_path,
                         &repo_root,
                         force,
@@ -1113,7 +1114,7 @@ fn main() {
                     let ctx = CommandContext::new(
                         &repo,
                         &config,
-                        &resolved_branch,
+                        Some(&resolved_branch),
                         path,
                         &repo_root,
                         force,
@@ -1158,11 +1159,12 @@ fn main() {
                     let worktree_path =
                         std::env::current_dir().context("Failed to get current directory")?;
                     let repo_root = repo.worktree_base()?;
-                    let current_branch = repo.current_branch()?.unwrap_or_default();
+                    // Keep as Option so detached HEAD maps to None -> "HEAD" via branch_or_head()
+                    let current_branch = repo.current_branch()?;
                     let ctx = CommandContext::new(
                         &repo,
                         &config,
-                        &current_branch,
+                        current_branch.as_deref(),
                         &worktree_path,
                         &repo_root,
                         force,

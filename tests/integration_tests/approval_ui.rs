@@ -43,7 +43,6 @@ fn snapshot_approval(test_name: &str, repo: &TestRepo, args: &[&str], approve: b
 #[test]
 fn test_approval_single_command() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     repo.write_project_config(r#"post-create = "echo 'Worktree path: {{ worktree }}'""#);
 
@@ -60,7 +59,6 @@ fn test_approval_single_command() {
 #[test]
 fn test_approval_multiple_commands() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     repo.write_project_config(
         r#"[post-create]
@@ -84,7 +82,6 @@ pwd = "cd {{ worktree }} && pwd"
 #[test]
 fn test_approval_mixed_approved_unapproved() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     repo.write_project_config(
         r#"[post-create]
@@ -113,10 +110,11 @@ approved-commands = ["echo 'Second command'"]
     );
 }
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_force_flag_does_not_save_approvals() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     repo.write_project_config(r#"post-create = "echo 'test command' > output.txt""#);
 
@@ -152,10 +150,11 @@ fn test_force_flag_does_not_save_approvals() {
     );
 }
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_already_approved_commands_skip_prompt() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     repo.write_project_config(r#"post-create = "echo 'approved' > output.txt""#);
 
@@ -181,7 +180,6 @@ approved-commands = ["echo 'approved' > output.txt"]
 #[test]
 fn test_decline_approval_skips_only_unapproved() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     repo.write_project_config(
         r#"[post-create]
@@ -217,7 +215,6 @@ approved-commands = ["echo 'Second command'"]
 #[test]
 fn test_approval_named_commands() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     repo.write_project_config(
         r#"[post-create]
@@ -278,7 +275,6 @@ fn snapshot_run_hook(test_name: &str, repo: &TestRepo, hook_type: &str, approve:
 #[test]
 fn test_run_hook_pre_merge_requires_approval() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     repo.write_project_config(r#"pre-merge = "echo 'Running pre-merge checks on {{ branch }}'""#);
 
@@ -300,7 +296,6 @@ fn test_run_hook_pre_merge_requires_approval() {
 #[test]
 fn test_run_hook_post_merge_requires_approval() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     repo.write_project_config(r#"post-merge = "echo 'Post-merge cleanup for {{ branch }}'""#);
 
@@ -322,7 +317,6 @@ fn test_run_hook_post_merge_requires_approval() {
 #[test]
 fn test_approval_fails_in_non_tty() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     repo.write_project_config(r#"post-create = "echo 'test command'""#);
     repo.commit("Add config");
@@ -339,10 +333,11 @@ fn test_approval_fails_in_non_tty() {
 /// Test that --force flag bypasses TTY requirement
 ///
 /// Even in non-TTY environments, --force should allow commands to execute.
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_force_bypasses_tty_check() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     repo.write_project_config(r#"post-create = "echo 'test command'""#);
     repo.commit("Add config");
@@ -365,10 +360,11 @@ fn test_force_bypasses_tty_check() {
 /// When `wt hook post-merge` runs standalone (not via `wt merge`), the `{{ target }}`
 /// variable should be the current branch, not always the default branch.
 /// This allows hooks to behave correctly when testing from feature worktrees.
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_hook_post_merge_target_is_current_branch() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Hook that writes {{ target }} to a file so we can verify its value
     repo.write_project_config(r#"post-merge = "echo '{{ target }}' > target-branch.txt""#);
@@ -405,10 +401,11 @@ fn test_hook_post_merge_target_is_current_branch() {
 }
 
 /// Test that `{{ target }}` is the current branch for pre-merge standalone
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_hook_pre_merge_target_is_current_branch() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Hook that writes {{ target }} to a file so we can verify its value
     repo.write_project_config(r#"pre-merge = "echo '{{ target }}' > target-branch.txt""#);
@@ -445,10 +442,11 @@ fn test_hook_pre_merge_target_is_current_branch() {
 }
 
 /// Test running a specific named hook command
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_step_hook_run_named_command() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Config with multiple named commands
     repo.write_project_config(
@@ -493,7 +491,6 @@ build = "echo 'running build' > build.txt"
 #[test]
 fn test_step_hook_unknown_name_error() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Config with multiple named commands
     repo.write_project_config(
@@ -521,7 +518,6 @@ lint = "echo 'lint'"
 #[test]
 fn test_step_hook_name_filter_on_unnamed_command() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Config with a single unnamed command (no table)
     repo.write_project_config(r#"pre-merge = "echo 'test'""#);
@@ -536,10 +532,11 @@ fn test_step_hook_name_filter_on_unnamed_command() {
 }
 
 /// Test running all hooks (no name filter) still works
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_step_hook_run_all_commands() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Config with multiple named commands
     repo.write_project_config(

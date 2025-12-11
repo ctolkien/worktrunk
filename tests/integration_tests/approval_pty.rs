@@ -1,3 +1,4 @@
+#![cfg(unix)]
 //! PTY-based tests for interactive approval prompts
 //!
 //! These tests verify the approval workflow in a real PTY environment where stdin is a TTY.
@@ -14,7 +15,7 @@
 use crate::common::TestRepo;
 use insta::assert_snapshot;
 use insta_cmd::get_cargo_bin;
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{CommandBuilder, PtySize};
 use std::io::{Read, Write};
 use std::path::Path;
 
@@ -28,7 +29,7 @@ fn exec_in_pty_with_input(
     env_vars: &[(String, String)],
     input: &str,
 ) -> (String, i32) {
-    let pty_system = native_pty_system();
+    let pty_system = crate::common::native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
             rows: 48,
@@ -141,7 +142,6 @@ fn normalize_output(output: &str) -> String {
 #[test]
 fn test_approval_prompt_accept() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
     repo.write_project_config(r#"post-create = "echo 'test command'""#);
     repo.commit("Add config");
 
@@ -162,7 +162,6 @@ fn test_approval_prompt_accept() {
 #[test]
 fn test_approval_prompt_decline() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
     repo.write_project_config(r#"post-create = "echo 'test command'""#);
     repo.commit("Add config");
 
@@ -183,7 +182,6 @@ fn test_approval_prompt_decline() {
 #[test]
 fn test_approval_prompt_multiple_commands() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
     repo.write_project_config(
         r#"[post-create]
 first = "echo 'First command'"
@@ -212,7 +210,6 @@ third = "echo 'Third command'"
 #[test]
 fn test_approval_prompt_permission_error() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
     repo.write_project_config(r#"post-create = "echo 'test command'""#);
     repo.commit("Add config");
 
@@ -274,7 +271,6 @@ fn test_approval_prompt_permission_error() {
 #[test]
 fn test_approval_prompt_named_commands() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
     repo.write_project_config(
         r#"[post-create]
 install = "echo 'Installing dependencies...'"
@@ -313,7 +309,6 @@ test = "echo 'Running tests...'"
 #[test]
 fn test_approval_prompt_mixed_approved_unapproved_accept() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
     repo.write_project_config(
         r#"[post-create]
 first = "echo 'First command'"
@@ -372,7 +367,6 @@ approved-commands = ["echo 'Second command'"]
 #[test]
 fn test_approval_prompt_mixed_approved_unapproved_decline() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
     repo.write_project_config(
         r#"[post-create]
 first = "echo 'First command'"

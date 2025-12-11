@@ -2,6 +2,43 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::process::Command;
 use worktrunk::git::Repository;
 
+/// CI platform detected from remote URL
+// TODO: Add a `[ci] platform = "github" | "gitlab"` override in project config
+// for cases where URL detection fails or users want to force a specific platform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CiPlatform {
+    GitHub,
+    GitLab,
+}
+
+/// Detect the CI platform from a remote URL by searching for "github" or "gitlab".
+fn detect_platform_from_url(url: &str) -> Option<CiPlatform> {
+    let url_lower = url.to_ascii_lowercase();
+    if url_lower.contains("github") {
+        Some(CiPlatform::GitHub)
+    } else if url_lower.contains("gitlab") {
+        Some(CiPlatform::GitLab)
+    } else {
+        None
+    }
+}
+
+/// Get the CI platform for a repository by checking its origin remote URL.
+fn get_platform_for_repo(repo_root: &str) -> Option<CiPlatform> {
+    let output = Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .current_dir(repo_root)
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let url = String::from_utf8(output.stdout).ok()?;
+        detect_platform_from_url(&url)
+    } else {
+        None
+    }
+}
+
 /// Extract owner from a git remote URL.
 ///
 /// Used for client-side filtering of PRs/MRs by source repository. When multiple users
@@ -51,6 +88,73 @@ fn parse_remote_owner(url: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_detect_platform_from_url() {
+        // GitHub - various URL formats
+        assert_eq!(
+            detect_platform_from_url("https://github.com/owner/repo.git"),
+            Some(CiPlatform::GitHub)
+        );
+        assert_eq!(
+            detect_platform_from_url("git@github.com:owner/repo.git"),
+            Some(CiPlatform::GitHub)
+        );
+        assert_eq!(
+            detect_platform_from_url("ssh://git@github.com/owner/repo.git"),
+            Some(CiPlatform::GitHub)
+        );
+
+        // GitHub Enterprise
+        assert_eq!(
+            detect_platform_from_url("https://github.mycompany.com/owner/repo.git"),
+            Some(CiPlatform::GitHub)
+        );
+
+        // GitLab - various URL formats
+        assert_eq!(
+            detect_platform_from_url("https://gitlab.com/owner/repo.git"),
+            Some(CiPlatform::GitLab)
+        );
+        assert_eq!(
+            detect_platform_from_url("git@gitlab.com:owner/repo.git"),
+            Some(CiPlatform::GitLab)
+        );
+
+        // Self-hosted GitLab
+        assert_eq!(
+            detect_platform_from_url("https://gitlab.example.com/owner/repo.git"),
+            Some(CiPlatform::GitLab)
+        );
+
+        // Legacy schemes (http://, git://) - common on self-hosted installations
+        assert_eq!(
+            detect_platform_from_url("http://github.com/owner/repo.git"),
+            Some(CiPlatform::GitHub)
+        );
+        assert_eq!(
+            detect_platform_from_url("git://github.com/owner/repo.git"),
+            Some(CiPlatform::GitHub)
+        );
+        assert_eq!(
+            detect_platform_from_url("http://gitlab.example.com/owner/repo.git"),
+            Some(CiPlatform::GitLab)
+        );
+        assert_eq!(
+            detect_platform_from_url("git://gitlab.mycompany.com/owner/repo.git"),
+            Some(CiPlatform::GitLab)
+        );
+
+        // Unknown platforms
+        assert_eq!(
+            detect_platform_from_url("https://bitbucket.org/owner/repo.git"),
+            None
+        );
+        assert_eq!(
+            detect_platform_from_url("https://codeberg.org/owner/repo.git"),
+            None
+        );
+    }
 
     /// Test URL parsing for various git remote formats.
     ///
@@ -308,6 +412,40 @@ fn tool_available(tool: &str, args: &[&str]) -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// Status of CI tools availability
+#[derive(Debug, Clone, Copy)]
+pub struct CiToolsStatus {
+    /// gh is installed (can run --version)
+    pub gh_installed: bool,
+    /// gh is installed and authenticated
+    pub gh_authenticated: bool,
+    /// glab is installed (can run --version)
+    pub glab_installed: bool,
+    /// glab is installed and authenticated
+    pub glab_authenticated: bool,
+}
+
+impl CiToolsStatus {
+    /// Check which CI tools are available
+    pub fn detect() -> Self {
+        let gh_installed = tool_available("gh", &["--version"]);
+        let gh_authenticated = gh_installed && tool_available("gh", &["auth", "status"]);
+        let glab_installed = tool_available("glab", &["--version"]);
+        let glab_authenticated = glab_installed && tool_available("glab", &["auth", "status"]);
+        Self {
+            gh_installed,
+            gh_authenticated,
+            glab_installed,
+            glab_authenticated,
+        }
+    }
+
+    /// Returns true if at least one CI tool can fetch status
+    pub fn any_available(&self) -> bool {
+        self.gh_authenticated || self.glab_authenticated
+    }
 }
 
 /// Parse JSON output from CLI tools
@@ -686,6 +824,9 @@ impl PrStatus {
 
     /// Detect CI status without caching (internal implementation)
     ///
+    /// Platform is determined by the remote URL (github.com vs gitlab.com).
+    /// For unknown platforms (e.g., GitHub Enterprise with custom domains), falls back
+    /// to trying both platforms.
     /// PR/MR detection always runs. Workflow/pipeline fallback only runs if `has_upstream`.
     fn detect_uncached(
         branch: &str,
@@ -693,30 +834,59 @@ impl PrStatus {
         repo_root: &str,
         has_upstream: bool,
     ) -> Option<Self> {
-        // Try GitHub PR first (always, regardless of upstream)
+        // Determine platform from remote URL
+        let platform = get_platform_for_repo(repo_root);
+
+        match platform {
+            Some(CiPlatform::GitHub) => {
+                Self::detect_github_ci(branch, local_head, repo_root, has_upstream)
+            }
+            Some(CiPlatform::GitLab) => {
+                Self::detect_gitlab_ci(branch, local_head, repo_root, has_upstream)
+            }
+            None => {
+                // Unknown platform (e.g., GitHub Enterprise, self-hosted GitLab with custom domain)
+                // Fall back to trying both platforms
+                log::debug!(
+                    "Could not determine CI platform for {}, trying both",
+                    repo_root
+                );
+                Self::detect_github_ci(branch, local_head, repo_root, has_upstream)
+                    .or_else(|| Self::detect_gitlab_ci(branch, local_head, repo_root, has_upstream))
+            }
+        }
+    }
+
+    /// Detect GitHub CI status (PR first, then workflow if has_upstream)
+    fn detect_github_ci(
+        branch: &str,
+        local_head: &str,
+        repo_root: &str,
+        has_upstream: bool,
+    ) -> Option<Self> {
         if let Some(status) = Self::detect_github(branch, local_head, repo_root) {
             return Some(status);
         }
+        if has_upstream {
+            return Self::detect_github_workflow(branch, local_head, repo_root);
+        }
+        None
+    }
 
-        // Try GitLab MR (always, regardless of upstream)
+    /// Detect GitLab CI status (MR first, then pipeline if has_upstream)
+    fn detect_gitlab_ci(
+        branch: &str,
+        local_head: &str,
+        repo_root: &str,
+        has_upstream: bool,
+    ) -> Option<Self> {
         if let Some(status) = Self::detect_gitlab(branch, local_head, repo_root) {
             return Some(status);
         }
-
-        // Workflow/pipeline fallback only if upstream is configured.
-        // This prevents false matches from similarly-named branches on the remote
-        // that aren't actually related to the local branch.
-        if !has_upstream {
-            return None;
+        if has_upstream {
+            return Self::detect_gitlab_pipeline(branch, local_head);
         }
-
-        // Try GitHub workflow runs (for branches without PRs)
-        if let Some(status) = Self::detect_github_workflow(branch, local_head, repo_root) {
-            return Some(status);
-        }
-
-        // Fall back to GitLab pipeline (for branches without MRs)
-        Self::detect_gitlab_pipeline(branch, local_head)
+        None
     }
 
     /// Detect GitHub PR CI status for a branch.
@@ -1101,10 +1271,27 @@ struct HeadRepositoryOwner {
     login: String,
 }
 
+/// A single check from `statusCheckRollup`.
+///
+/// This is a union of two GitHub API types with different field structures:
+/// - `CheckRun` (GitHub Actions): has `status` ("COMPLETED", "IN_PROGRESS") and
+///   `conclusion` ("SUCCESS", "FAILURE", "CANCELLED", "SKIPPED")
+/// - `StatusContext` (external CI like pre-commit.ci): has `state` only
+///   ("SUCCESS", "FAILURE", "PENDING", "ERROR")
+///
+/// We parse all three fields and check whichever is present. An alternative approach would be
+/// `gh pr checks <number> --json state` which returns a flat array with unified `state` field,
+/// but that requires a separate API call after finding the PR number. Since we also need
+/// `gh run list` for branch-based CI (branches without PRs), keeping the single-call approach
+/// here is simpler overall.
 #[derive(Debug, Deserialize)]
 struct GitHubCheck {
+    /// CheckRun only: "COMPLETED", "IN_PROGRESS", "QUEUED", etc.
     status: Option<String>,
+    /// CheckRun only: "SUCCESS", "FAILURE", "CANCELLED", "SKIPPED", etc.
     conclusion: Option<String>,
+    /// StatusContext only: "SUCCESS", "FAILURE", "PENDING", "ERROR"
+    state: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1125,23 +1312,35 @@ impl GitHubPrInfo {
             return CiStatus::NoCI;
         }
 
-        let has_pending = checks.iter().any(|c| {
+        // CheckRun uses `status` for in-progress states
+        let has_pending_checkrun = checks.iter().any(|c| {
             matches!(
                 c.status.as_deref(),
                 Some("IN_PROGRESS" | "QUEUED" | "PENDING" | "EXPECTED")
             )
         });
 
-        let has_failure = checks.iter().any(|c| {
+        // StatusContext uses `state` for pending
+        let has_pending_status = checks
+            .iter()
+            .any(|c| matches!(c.state.as_deref(), Some("PENDING")));
+
+        // CheckRun uses `conclusion` for final result
+        let has_failure_checkrun = checks.iter().any(|c| {
             matches!(
                 c.conclusion.as_deref(),
                 Some("FAILURE" | "ERROR" | "CANCELLED")
             )
         });
 
-        if has_pending {
+        // StatusContext uses `state` for final result
+        let has_failure_status = checks
+            .iter()
+            .any(|c| matches!(c.state.as_deref(), Some("FAILURE" | "ERROR")));
+
+        if has_pending_checkrun || has_pending_status {
             CiStatus::Running
-        } else if has_failure {
+        } else if has_failure_checkrun || has_failure_status {
             CiStatus::Failed
         } else {
             CiStatus::Passed

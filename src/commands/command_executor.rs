@@ -17,7 +17,8 @@ pub struct PreparedCommand {
 pub struct CommandContext<'a> {
     pub repo: &'a Repository,
     pub config: &'a WorktrunkConfig,
-    pub branch: &'a str,
+    /// Current branch name, if on a branch (None in detached HEAD state).
+    pub branch: Option<&'a str>,
     pub worktree_path: &'a Path,
     pub repo_root: &'a Path,
     pub force: bool,
@@ -27,7 +28,7 @@ impl<'a> CommandContext<'a> {
     pub fn new(
         repo: &'a Repository,
         config: &'a WorktrunkConfig,
-        branch: &'a str,
+        branch: Option<&'a str>,
         worktree_path: &'a Path,
         repo_root: &'a Path,
         force: bool,
@@ -40,6 +41,11 @@ impl<'a> CommandContext<'a> {
             repo_root,
             force,
         }
+    }
+
+    /// Get branch name, using "HEAD" as fallback for detached HEAD state.
+    pub fn branch_or_head(&self) -> &str {
+        self.branch.unwrap_or("HEAD")
     }
 }
 
@@ -66,7 +72,8 @@ pub fn build_hook_context(
 
     let mut map = HashMap::new();
     map.insert("repo".into(), repo_name.into());
-    map.insert("branch".into(), sanitize_branch_name(ctx.branch));
+    map.insert("main_worktree".into(), repo_name.into()); // Alias for repo
+    map.insert("branch".into(), sanitize_branch_name(ctx.branch_or_head()));
     map.insert("worktree".into(), worktree.into());
     map.insert("worktree_name".into(), worktree_name.into());
     map.insert("repo_root".into(), repo_root.to_string_lossy().into());
@@ -89,7 +96,9 @@ pub fn build_hook_context(
         if let Ok(url) = ctx.repo.run_command(&["remote", "get-url", &remote]) {
             map.insert("remote_url".into(), url.trim().into());
         }
-        if let Ok(Some(upstream)) = ctx.repo.upstream_branch(ctx.branch) {
+        if let Some(branch) = ctx.branch
+            && let Ok(Some(upstream)) = ctx.repo.upstream_branch(branch)
+        {
             map.insert("upstream".into(), upstream);
         }
     }
@@ -117,14 +126,8 @@ fn expand_commands(
 
     let base_context = build_hook_context(ctx, extra_vars);
 
-    let repo_name = ctx
-        .repo_root
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown");
-
     // Convert to &str references for expand_template
-    let extras_ref: HashMap<&str, &str> = base_context
+    let vars: HashMap<&str, &str> = base_context
         .iter()
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
@@ -132,14 +135,13 @@ fn expand_commands(
     let mut result = Vec::new();
 
     for cmd in commands {
-        let expanded_str = expand_template(&cmd.template, repo_name, ctx.branch, &extras_ref)
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to expand command template '{}': {}",
-                    cmd.template,
-                    e
-                )
-            })?;
+        let expanded_str = expand_template(&cmd.template, &vars, true).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to expand command template '{}': {}",
+                cmd.template,
+                e
+            )
+        })?;
 
         // Build per-command JSON with hook_type and hook_name
         let mut cmd_context = base_context.clone();
@@ -164,14 +166,15 @@ fn expand_commands(
     Ok(result)
 }
 
-/// Prepare project commands for execution
+/// Prepare commands for execution.
 ///
-/// This function:
-/// 1. Expands command templates with context variables
-/// 2. Returns prepared commands ready for execution, each with JSON context for stdin
+/// Expands command templates with context variables and returns prepared
+/// commands ready for execution, each with JSON context for stdin.
 ///
-/// Note: Approval is handled at the gate (command entry point), not here.
-pub fn prepare_project_commands(
+/// Note: Approval logic (for project commands) is handled at the call site,
+/// not here. User commands don't require approval since users implicitly
+/// approve them by adding them to their config.
+pub fn prepare_commands(
     command_config: &CommandConfig,
     ctx: &CommandContext<'_>,
     extra_vars: &[(&str, &str)],
@@ -182,39 +185,6 @@ pub fn prepare_project_commands(
         return Ok(Vec::new());
     }
 
-    let expanded_with_json = expand_commands(&commands, ctx, extra_vars)?;
-
-    Ok(expanded_with_json
-        .into_iter()
-        .map(|(cmd, context_json)| PreparedCommand {
-            name: cmd.name,
-            expanded: cmd.expanded,
-            context_json,
-        })
-        .collect())
-}
-
-/// Prepare user hooks for execution without approval
-///
-/// Unlike project commands, user hooks don't require approval because they're
-/// defined in the user's own config file. The user implicitly approves them
-/// by adding them to their config.
-///
-/// This function:
-/// 1. Expands command templates with context variables
-/// 2. Returns prepared commands ready for execution, each with JSON context for stdin
-pub fn prepare_user_commands(
-    command_config: &CommandConfig,
-    ctx: &CommandContext<'_>,
-    extra_vars: &[(&str, &str)],
-    hook_type: HookType,
-) -> anyhow::Result<Vec<PreparedCommand>> {
-    let commands = command_config.commands_with_phase(hook_type);
-    if commands.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // Expand commands (no approval needed for user hooks)
     let expanded_with_json = expand_commands(&commands, ctx, extra_vars)?;
 
     Ok(expanded_with_json

@@ -126,40 +126,52 @@ fn detect_windows_shell() -> ShellConfig {
 
 /// Find Git Bash executable on Windows
 ///
-/// Checks:
-/// 1. MSYSTEM environment variable (indicates running in Git Bash/MSYS2)
-/// 2. Standard Git for Windows installation paths
-/// 3. `git.exe` in PATH to find Git installation directory
+/// Detection order (designed to always return absolute paths and avoid WSL):
+/// 1. `git.exe` in PATH - derive bash.exe location from Git installation
+/// 2. Standard Git for Windows and MSYS2 installation paths
+///
+/// We explicitly avoid `which bash` because on systems with WSL installed,
+/// `C:\Windows\System32\bash.exe` (WSL launcher) often comes before Git Bash
+/// in PATH, even when MSYSTEM is set.
 #[cfg(windows)]
 fn find_git_bash() -> Option<PathBuf> {
-    // If we're already in Git Bash (MSYSTEM is set), bash should be in PATH
-    if std::env::var("MSYSTEM").is_ok() && which::which("bash").is_ok() {
-        return Some(PathBuf::from("bash"));
-    }
-
-    // Check standard Git for Windows installation paths
-    let standard_paths = [
-        r"C:\Program Files\Git\bin\bash.exe",
-        r"C:\Program Files (x86)\Git\bin\bash.exe",
-        r"C:\Git\bin\bash.exe",
-    ];
-
-    for path in &standard_paths {
-        let path = PathBuf::from(path);
-        if path.exists() {
-            return Some(path);
-        }
-    }
-
-    // Try to find Git installation via `git.exe` in PATH
+    // Primary method: Find Git installation via `git.exe` in PATH
+    // This is the most reliable method and always returns an absolute path.
+    // Works on CI systems like GitHub Actions where Git might be in non-standard locations.
     if let Ok(git_path) = which::which("git") {
         // git.exe is typically at Git/cmd/git.exe or Git/bin/git.exe
-        // bash.exe is at Git/bin/bash.exe
+        // bash.exe is at Git/bin/bash.exe or Git/usr/bin/bash.exe
         if let Some(git_dir) = git_path.parent().and_then(|p| p.parent()) {
+            // Try bin/bash.exe first (most common)
             let bash_path = git_dir.join("bin").join("bash.exe");
             if bash_path.exists() {
                 return Some(bash_path);
             }
+            // Also try usr/bin/bash.exe (some Git for Windows layouts)
+            let bash_path = git_dir.join("usr").join("bin").join("bash.exe");
+            if bash_path.exists() {
+                return Some(bash_path);
+            }
+        }
+    }
+
+    // Fallback: Check standard installation paths for bash.exe
+    // (Git for Windows and MSYS2 both provide POSIX-compatible bash)
+    let bash_paths = [
+        // Git for Windows
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files\Git\usr\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\bin\bash.exe",
+        r"C:\Git\bin\bash.exe",
+        // MSYS2 standalone (popular alternative to Git Bash)
+        r"C:\msys64\usr\bin\bash.exe",
+        r"C:\msys32\usr\bin\bash.exe",
+    ];
+
+    for path in &bash_paths {
+        let path = PathBuf::from(path);
+        if path.exists() {
+            return Some(path);
         }
     }
 
@@ -200,8 +212,17 @@ mod tests {
             .command("echo hello")
             .output()
             .expect("Failed to execute shell command");
-        assert!(output.status.success(), "echo should succeed");
         let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success(),
+            "echo should succeed. Shell: {} ({:?}), exit: {:?}, stdout: '{}', stderr: '{}'",
+            config.name,
+            config.executable,
+            output.status.code(),
+            stdout.trim(),
+            stderr.trim()
+        );
         assert!(
             stdout.contains("hello"),
             "stdout should contain 'hello', got: '{}'",
@@ -258,8 +279,17 @@ mod tests {
             .output()
             .expect("Failed to execute echo");
 
-        assert!(output.status.success(), "echo should succeed");
         let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success(),
+            "echo should succeed. Shell: {} ({:?}), exit: {:?}, stdout: '{}', stderr: '{}'",
+            config.name,
+            config.executable,
+            output.status.code(),
+            stdout.trim(),
+            stderr.trim()
+        );
         assert!(
             stdout.contains("test_output"),
             "stdout should contain 'test_output', got: '{}'",
@@ -278,11 +308,17 @@ mod tests {
                 .output()
                 .expect("Failed to execute redirection test");
 
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
             assert!(
                 output.status.success(),
-                "redirection command should succeed"
+                "redirection command should succeed. Shell: {} ({:?}), exit: {:?}, stdout: '{}', stderr: '{}'",
+                config.name,
+                config.executable,
+                output.status.code(),
+                stdout.trim(),
+                stderr.trim()
             );
-            let stderr = String::from_utf8_lossy(&output.stderr);
             assert!(
                 stderr.contains("redirected"),
                 "stderr should contain 'redirected' (stdout redirected to stderr), got: '{}'",

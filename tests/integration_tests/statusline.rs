@@ -59,14 +59,11 @@ fn run_statusline(repo: &TestRepo, args: &[&str], stdin_json: Option<&str>) -> S
 // --- Test Fixtures ---
 
 fn setup_basic_repo() -> TestRepo {
-    let repo = TestRepo::new();
-    repo.commit("Initial commit");
-    repo
+    TestRepo::new()
 }
 
 fn setup_repo_with_changes() -> TestRepo {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create uncommitted changes
     std::fs::write(repo.root_path().join("modified.txt"), "modified content").unwrap();
@@ -76,7 +73,6 @@ fn setup_repo_with_changes() -> TestRepo {
 
 fn setup_repo_with_commits_ahead() -> TestRepo {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create feature branch with commits ahead
     let feature_path = repo.add_worktree("feature");
@@ -140,11 +136,16 @@ fn claude_code_snapshot_settings(repo: &TestRepo) -> insta::Settings {
     // We replace everything up to "repo" with [PATH]
     settings.add_filter(r"(?m)^.*repo", "[PATH]");
     // Also filter the raw path in case it appears
-    settings.add_filter(&repo.root_path().display().to_string(), "[PATH]");
+    settings.add_filter(
+        &regex::escape(&repo.root_path().display().to_string()),
+        "[PATH]",
+    );
     settings
 }
 
+/// Skipped on Windows: JSON contains paths that need escaping on Windows.
 #[test]
+#[cfg_attr(windows, ignore)]
 fn test_statusline_claude_code_full_context() {
     let repo = setup_repo_with_changes();
 
@@ -172,7 +173,9 @@ fn test_statusline_claude_code_full_context() {
     });
 }
 
+/// Skipped on Windows: JSON contains paths that need escaping on Windows.
 #[test]
+#[cfg_attr(windows, ignore)]
 fn test_statusline_claude_code_minimal() {
     let repo = setup_basic_repo();
 
@@ -187,7 +190,9 @@ fn test_statusline_claude_code_minimal() {
     });
 }
 
+/// Skipped on Windows: JSON contains paths that need escaping on Windows.
 #[test]
+#[cfg_attr(windows, ignore)]
 fn test_statusline_claude_code_with_model() {
     let repo = setup_basic_repo();
 

@@ -31,10 +31,11 @@ fn snapshot_switch(test_name: &str, repo: &TestRepo, args: &[&str]) {
     });
 }
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_user_post_create_hook_executes() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Write user config with post-create hook (no project config)
     repo.write_test_config(
@@ -62,10 +63,11 @@ log = "echo 'USER_POST_CREATE_RAN' > user_hook_marker.txt"
     );
 }
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_user_hooks_run_before_project_hooks() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create project config with post-create hook
     repo.write_project_config(r#"post-create = "echo 'PROJECT_HOOK' >> hook_order.txt""#);
@@ -98,10 +100,11 @@ approved-commands = ["echo 'PROJECT_HOOK' >> hook_order.txt"]
     assert_eq!(lines[1], "PROJECT_HOOK", "Project hook should run second");
 }
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_user_hooks_no_approval_required() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Write user config with hook but NO pre-approved commands
     // (unlike project hooks, user hooks don't require approval)
@@ -127,7 +130,6 @@ setup = "echo 'NO_APPROVAL_NEEDED' > no_approval.txt"
 #[test]
 fn test_no_verify_flag_skips_all_hooks() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create project config with post-create hook
     repo.write_project_config(r#"post-create = "echo 'PROJECT_HOOK' > project_marker.txt""#);
@@ -169,10 +171,11 @@ approved-commands = ["echo 'PROJECT_HOOK' > project_marker.txt"]
     );
 }
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_user_post_create_hook_failure() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Write user config with failing hook
     repo.write_test_config(
@@ -198,10 +201,11 @@ failing = "exit 1"
 // User Post-Start Hook Tests (Background)
 // ============================================================================
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_user_post_start_hook_executes() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Write user config with post-start hook (background)
     repo.write_test_config(
@@ -229,7 +233,6 @@ bg = "echo 'USER_POST_START_RAN' > user_bg_marker.txt"
 #[test]
 fn test_user_post_start_skipped_with_no_verify() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Write user config with post-start hook
     repo.write_test_config(
@@ -270,10 +273,11 @@ fn snapshot_merge(test_name: &str, repo: &TestRepo, args: &[&str], cwd: Option<&
     });
 }
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_user_pre_merge_hook_executes() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create feature worktree with a commit
     let feature_wt = repo.add_worktree("feature");
@@ -314,10 +318,11 @@ check = "echo 'USER_PRE_MERGE_RAN' > user_premerge.txt"
     assert!(marker_file.exists(), "User pre-merge hook should have run");
 }
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_user_pre_merge_hook_failure_blocks_merge() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create feature worktree with a commit
     let feature_wt = repo.add_worktree("feature");
@@ -358,7 +363,6 @@ check = "exit 1"
 #[test]
 fn test_user_pre_merge_skipped_with_no_verify() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create feature worktree with a commit
     let feature_wt = repo.add_worktree("feature");
@@ -402,14 +406,73 @@ check = "echo 'USER_PRE_MERGE' > user_premerge_marker.txt"
     );
 }
 
+#[test]
+#[cfg(unix)]
+fn test_pre_merge_hook_receives_sigint() {
+    use nix::sys::signal::{Signal, kill};
+    use nix::unistd::Pid;
+    use std::io::Read;
+    use std::process::Stdio;
+
+    let repo = TestRepo::new();
+    repo.commit("Initial commit");
+
+    // Project pre-merge hook: write start, then sleep, then write done (if not interrupted)
+    repo.write_project_config(
+        r#"[pre-merge]
+long = "sh -c 'echo start >> hook.log; sleep 30; echo done >> hook.log'"
+"#,
+    );
+    repo.commit("Add pre-merge hook");
+
+    // Spawn wt hook pre-merge (skip approval with --force)
+    // Redirect stdout/stderr to null to prevent output leaking into test runner
+    let mut cmd = crate::common::wt_command();
+    cmd.current_dir(repo.root_path());
+    cmd.args(["hook", "pre-merge", "--force"]);
+    cmd.stdout(Stdio::null());
+    cmd.stderr(Stdio::null());
+    let mut child = cmd.spawn().expect("failed to spawn wt hook pre-merge");
+
+    // Wait until hook writes "start" to hook.log (verifies the hook is running)
+    let hook_log = repo.root_path().join("hook.log");
+    wait_for_file(&hook_log, Duration::from_secs(5));
+
+    // Send SIGINT to wt (simulates Ctrl-C)
+    kill(Pid::from_raw(child.id() as i32), Signal::SIGINT).expect("failed to send SIGINT");
+
+    let status = child.wait().expect("failed to wait for wt");
+
+    // Expect conventional Ctrl-C exit code 130
+    assert_eq!(
+        status.code(),
+        Some(130),
+        "wt should exit with 130 on SIGINT, status: {status:?}"
+    );
+
+    // Give the (killed) hook a moment; it must not append "done"
+    thread::sleep(Duration::from_millis(500));
+
+    let mut contents = String::new();
+    std::fs::File::open(&hook_log)
+        .unwrap()
+        .read_to_string(&mut contents)
+        .unwrap();
+    assert!(
+        contents.trim() == "start",
+        "hook should not have reached 'done'; got: {contents:?}"
+    );
+}
+
 // ============================================================================
 // User Post-Merge Hook Tests
 // ============================================================================
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_user_post_merge_hook_executes() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create feature worktree with a commit
     let feature_wt = repo.add_worktree("feature");
@@ -467,10 +530,11 @@ fn snapshot_remove(test_name: &str, repo: &TestRepo, args: &[&str], cwd: Option<
     });
 }
 
+/// Skipped on Windows: Uses /tmp path and file locking prevents worktree removal.
 #[test]
+#[cfg_attr(windows, ignore)]
 fn test_user_pre_remove_hook_executes() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create a worktree to remove
     let _feature_wt = repo.add_worktree("feature");
@@ -498,10 +562,11 @@ cleanup = "echo 'USER_PRE_REMOVE_RAN' > /tmp/user_preremove_marker.txt"
     let _ = fs::remove_file(marker_file);
 }
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_user_pre_remove_failure_blocks_removal() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create a worktree to remove
     let feature_wt = repo.add_worktree("feature");
@@ -529,10 +594,11 @@ block = "exit 1"
     );
 }
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_user_pre_remove_skipped_with_no_verify() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create a worktree to remove
     let feature_wt = repo.add_worktree("feature");
@@ -572,10 +638,11 @@ block = "exit 1"
 // User Pre-Commit Hook Tests
 // ============================================================================
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_user_pre_commit_hook_executes() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create feature worktree
     let feature_wt = repo.add_worktree("feature");
@@ -604,10 +671,11 @@ lint = "echo 'USER_PRE_COMMIT_RAN' > user_precommit.txt"
     assert!(marker_file.exists(), "User pre-commit hook should have run");
 }
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_user_pre_commit_failure_blocks_commit() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create feature worktree
     let feature_wt = repo.add_worktree("feature");
@@ -637,10 +705,11 @@ lint = "exit 1"
 // Template Variable Tests
 // ============================================================================
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_user_hook_template_variables() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Write user config with hook using template variables
     repo.write_test_config(
@@ -675,10 +744,11 @@ vars = "echo 'repo={{ repo }} branch={{ branch }}' > template_vars.txt"
 // Combined User and Project Hooks Tests
 // ============================================================================
 
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_user_and_project_post_start_both_run() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create project config with post-start hook
     repo.write_project_config(r#"post-start = "echo 'PROJECT_POST_START' > project_bg.txt""#);

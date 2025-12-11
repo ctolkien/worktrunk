@@ -350,10 +350,11 @@ fn exec_in_pty_interactive(
     env_vars: &[(&str, &str)],
     inputs: &[&str],
 ) -> (String, i32) {
-    use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+    use portable_pty::{CommandBuilder, PtySize};
     use std::io::{Read, Write};
 
-    let pty_system = native_pty_system();
+    // Ignore SIGTTIN/SIGTTOU to prevent stopping in background process groups
+    let pty_system = crate::common::native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
             rows: 48,
@@ -448,7 +449,7 @@ fn exec_bash_truly_interactive(
     working_dir: &std::path::Path,
     env_vars: &[(&str, &str)],
 ) -> (String, i32) {
-    use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+    use portable_pty::{CommandBuilder, PtySize};
     use std::io::{Read, Write};
     use std::thread;
     use std::time::Duration;
@@ -458,7 +459,7 @@ fn exec_bash_truly_interactive(
     let script_path = tmp_dir.path().join("setup.sh");
     fs::write(&script_path, setup_script).unwrap();
 
-    let pty_system = native_pty_system();
+    let pty_system = crate::common::native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
             rows: 48,
@@ -701,7 +702,6 @@ mod tests {
     fn test_wrapper_handles_command_failure(#[case] shell: &str) {
         skip_if_shell_unavailable!(shell);
         let mut repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Create a worktree that already exists
         repo.add_worktree("existing");
@@ -736,7 +736,6 @@ mod tests {
     fn test_wrapper_switch_create(#[case] shell: &str) {
         skip_if_shell_unavailable!(shell);
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         let output = exec_through_wrapper(shell, &repo, "switch", &["--create", "feature"]);
 
@@ -764,7 +763,6 @@ mod tests {
     fn test_wrapper_remove(#[case] shell: &str) {
         skip_if_shell_unavailable!(shell);
         let mut repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Create a worktree to remove
         repo.add_worktree("to-remove");
@@ -785,10 +783,69 @@ mod tests {
     #[case("bash")]
     #[case("zsh")]
     #[case("fish")]
-    fn test_wrapper_merge(#[case] shell: &str) {
+    fn test_wrapper_step_for_each(#[case] shell: &str) {
         skip_if_shell_unavailable!(shell);
         let mut repo = TestRepo::new();
         repo.commit("Initial commit");
+
+        // Create additional worktrees
+        repo.add_worktree("feature-a");
+        repo.add_worktree("feature-b");
+
+        // Run for-each with echo to test stdout handling
+        let output = exec_through_wrapper(
+            shell,
+            &repo,
+            "step",
+            &["for-each", "--", "echo", "Branch: {{ branch }}"],
+        );
+
+        // Shell-agnostic assertions
+        assert_eq!(output.exit_code, 0, "{}: Command should succeed", shell);
+        output.assert_no_directive_leaks();
+        output.assert_no_job_control_messages();
+
+        // Verify output contains branch names (stdout redirected to stderr)
+        assert!(
+            output.combined.contains("Branch: main"),
+            "{}: Should show main branch output.\nOutput:\n{}",
+            shell,
+            output.combined
+        );
+        assert!(
+            output.combined.contains("Branch: feature-a"),
+            "{}: Should show feature-a branch output.\nOutput:\n{}",
+            shell,
+            output.combined
+        );
+        assert!(
+            output.combined.contains("Branch: feature-b"),
+            "{}: Should show feature-b branch output.\nOutput:\n{}",
+            shell,
+            output.combined
+        );
+
+        // Verify summary message
+        assert!(
+            output.combined.contains("Completed in 3 worktrees"),
+            "{}: Should show completion summary.\nOutput:\n{}",
+            shell,
+            output.combined
+        );
+
+        // Consolidated snapshot - output should be identical across all shells
+        insta::allow_duplicates! {
+            assert_snapshot!("step_for_each", output.normalized());
+        }
+    }
+
+    #[rstest]
+    #[case("bash")]
+    #[case("zsh")]
+    #[case("fish")]
+    fn test_wrapper_merge(#[case] shell: &str) {
+        skip_if_shell_unavailable!(shell);
+        let mut repo = TestRepo::new();
 
         // Create a feature branch
         repo.add_worktree("feature");
@@ -812,7 +869,6 @@ mod tests {
     fn test_wrapper_switch_with_execute(#[case] shell: &str) {
         skip_if_shell_unavailable!(shell);
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Use --force to skip approval prompt in tests
         let output = exec_through_wrapper(
@@ -854,7 +910,6 @@ mod tests {
     fn test_wrapper_execute_exit_code_propagation(#[case] shell: &str) {
         skip_if_shell_unavailable!(shell);
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Use --force to skip approval prompt in tests
         // wt should succeed (creates worktree), but the execute command should fail with exit 42
@@ -900,7 +955,6 @@ mod tests {
     fn test_wrapper_switch_with_hooks(#[case] shell: &str) {
         skip_if_shell_unavailable!(shell);
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Create project config with both post-create and post-start hooks
         let config_dir = repo.root_path().join(".config");
@@ -957,7 +1011,6 @@ approved-commands = [
     fn test_wrapper_merge_with_pre_merge_success(#[case] shell: &str) {
         skip_if_shell_unavailable!(shell);
         let mut repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Create project config with pre-merge validation
         let config_dir = repo.root_path().join(".config");
@@ -1039,7 +1092,6 @@ approved-commands = [
     fn test_wrapper_merge_with_pre_merge_failure(#[case] shell: &str) {
         skip_if_shell_unavailable!(shell);
         let mut repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Create project config with failing pre-merge validation
         let config_dir = repo.root_path().join(".config");
@@ -1119,7 +1171,6 @@ approved-commands = [
     fn test_wrapper_merge_with_mixed_stdout_stderr(#[case] shell: &str) {
         skip_if_shell_unavailable!(shell);
         let mut repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Copy the fixture script to the test repo to avoid path issues with special characters
         // (CARGO_MANIFEST_DIR may contain single quotes like worktrunk.'∅' which break shell parsing)
@@ -1221,7 +1272,6 @@ approved-commands = [
     #[test]
     fn test_switch_with_post_start_command_no_directive_leak() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Configure a post-start command in the project config (this is where the bug manifests)
         // The println! in handle_post_start_commands causes directive leaks
@@ -1265,7 +1315,6 @@ approved-commands = ["echo 'test command executed'"]
     #[test]
     fn test_switch_with_execute_through_wrapper() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Use --force to skip approval prompt in tests
         let output = exec_through_wrapper(
@@ -1300,7 +1349,6 @@ approved-commands = ["echo 'test command executed'"]
     #[test]
     fn test_bash_shell_integration_hint_suppressed() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // When running through the shell wrapper, the "To enable automatic cd" hint
         // should NOT appear because the user already has shell integration
@@ -1325,7 +1373,6 @@ approved-commands = ["echo 'test command executed'"]
     #[test]
     fn test_readme_example_simple_switch() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Create worktree through shell wrapper (suppresses hint)
         let output = exec_through_wrapper("bash", &repo, "switch", &["--create", "fix-auth"]);
@@ -1341,7 +1388,6 @@ approved-commands = ["echo 'test command executed'"]
     #[test]
     fn test_readme_example_switch_back() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Create worktrees (fix-auth is where we are after step 2, feature-api exists from earlier)
         exec_through_wrapper("bash", &repo, "switch", &["--create", "fix-auth"]);
@@ -1364,7 +1410,6 @@ approved-commands = ["echo 'test command executed'"]
     #[test]
     fn test_readme_example_remove() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Create worktrees
         exec_through_wrapper("bash", &repo, "switch", &["--create", "fix-auth"]);
@@ -1385,7 +1430,6 @@ approved-commands = ["echo 'test command executed'"]
     #[test]
     fn test_wrapper_preserves_progress_messages() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Configure a post-start background command that will trigger progress output
         let config_dir = repo.root_path().join(".config");
@@ -1453,7 +1497,6 @@ approved-commands = ["echo 'background task'"]
     #[test]
     fn test_fish_wrapper_preserves_progress_messages() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Configure a post-start background command that will trigger progress output
         let config_dir = repo.root_path().join(".config");
@@ -1505,7 +1548,6 @@ approved-commands = ["echo 'fish background task'"]
     #[test]
     fn test_fish_multiline_command_execution() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Test that Fish wrapper handles multi-line commands correctly
         // This tests Fish's NUL-byte parsing with embedded newlines
@@ -1544,7 +1586,6 @@ approved-commands = ["echo 'fish background task'"]
     #[test]
     fn test_fish_wrapper_handles_empty_chunks() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Test edge case: command that produces minimal output
         // This verifies Fish's `test -n "$chunk"` check works correctly
@@ -1581,7 +1622,6 @@ approved-commands = ["echo 'fish background task'"]
         use std::env;
 
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Get the worktrunk source directory (where this test is running from)
         // This is the directory that contains Cargo.toml with the workspace
@@ -1691,7 +1731,6 @@ approved-commands = ["echo 'fish background task'"]
     #[test]
     fn test_zsh_no_job_control_notifications() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Configure a post-start command that will trigger background job
         let config_dir = repo.root_path().join(".config");
@@ -1746,7 +1785,6 @@ approved-commands = ["echo 'background job'"]
     #[test]
     fn test_bash_job_control_suppression() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Configure a post-start command that will trigger background job
         let config_dir = repo.root_path().join(".config");
@@ -1831,7 +1869,6 @@ approved-commands = ["echo 'bash background'"]
     #[test]
     fn test_bash_completions_registered() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         let wt_bin = get_cargo_bin("wt");
         let wrapper_script = generate_wrapper(&repo, "bash");
@@ -1871,7 +1908,6 @@ approved-commands = ["echo 'bash background'"]
     #[test]
     fn test_fish_completions_registered() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         let wt_bin = get_cargo_bin("wt");
         let wrapper_script = generate_wrapper(&repo, "fish");
@@ -1917,7 +1953,6 @@ approved-commands = ["echo 'bash background'"]
     #[test]
     fn test_zsh_wrapper_function_registered() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         let wt_bin = get_cargo_bin("wt");
         let wrapper_script = generate_wrapper(&repo, "zsh");
@@ -1970,7 +2005,6 @@ approved-commands = ["echo 'bash background'"]
     #[case("fish")]
     fn test_branch_name_with_slashes(#[case] shell: &str) {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Branch name with slashes (common git convention)
         let output =
@@ -1993,7 +2027,6 @@ approved-commands = ["echo 'bash background'"]
     #[case("fish")]
     fn test_branch_name_with_dashes_underscores(#[case] shell: &str) {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         let output = exec_through_wrapper(shell, &repo, "switch", &["--create", "fix-bug_123"]);
 
@@ -2018,7 +2051,6 @@ approved-commands = ["echo 'bash background'"]
     #[case("fish")]
     fn test_worktrunk_bin_fallback(#[case] shell: &str) {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         let wt_bin = get_cargo_bin("wt");
         let wrapper_script = generate_wrapper(&repo, shell);
@@ -2130,7 +2162,6 @@ approved-commands = ["echo 'bash background'"]
     #[case("fish")]
     fn test_shell_completes_cleanly(#[case] shell: &str) {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Configure a post-start command to exercise the background job code path
         let config_dir = repo.root_path().join(".config");
@@ -2193,7 +2224,6 @@ approved-commands = ["echo 'cleanup test'"]
     #[test]
     fn test_readme_example_hooks_pre_merge() {
         let mut repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Create project config with pre-merge hooks
         let config_dir = repo.root_path().join(".config");
@@ -2464,7 +2494,6 @@ command = "{}"
     #[test]
     fn test_readme_example_hooks_post_create() {
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Create project config with post-create and post-start hooks
         let config_dir = repo.root_path().join(".config");
@@ -2554,11 +2583,10 @@ fi
     /// The shell integration hint is truncated from the output.
     #[test]
     fn test_readme_example_approval_prompt() {
-        use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+        use portable_pty::{CommandBuilder, PtySize};
         use std::io::{Read, Write};
 
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         // Create project config with named post-create commands
         repo.write_project_config(
@@ -2571,7 +2599,8 @@ test = "echo 'Running tests...'"
         repo.commit("Add config");
 
         // Direct PTY execution (not through shell wrapper) for interactive prompt
-        let pty_system = native_pty_system();
+        // Ignore SIGTTIN/SIGTTOU to prevent stopping in background process groups
+        let pty_system = crate::common::native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
                 rows: 48,
@@ -2669,11 +2698,10 @@ test = "echo 'Running tests...'"
     /// - Completion output being executed as commands (the COMPLETE mode bug)
     #[test]
     fn test_bash_completion_produces_correct_output() {
-        use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+        use portable_pty::{CommandBuilder, PtySize};
         use std::io::Read;
 
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         let wt_bin = get_cargo_bin("wt");
         let wt_bin_dir = wt_bin.parent().unwrap();
@@ -2750,7 +2778,8 @@ fi
         );
 
         // Execute in PTY
-        let pty_system = native_pty_system();
+        // Ignore SIGTTIN/SIGTTOU to prevent stopping in background process groups
+        let pty_system = crate::common::native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
                 rows: 48,
@@ -2833,11 +2862,10 @@ fi
     /// wt command with COMPLETE=zsh produces completion candidates.
     #[test]
     fn test_zsh_completion_produces_correct_output() {
-        use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+        use portable_pty::{CommandBuilder, PtySize};
         use std::io::Read;
 
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         let wt_bin = get_cargo_bin("wt");
         let wt_bin_dir = wt_bin.parent().unwrap();
@@ -2903,7 +2931,8 @@ fi
         );
 
         // Execute in PTY
-        let pty_system = native_pty_system();
+        // Ignore SIGTTIN/SIGTTOU to prevent stopping in background process groups
+        let pty_system = crate::common::native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
                 rows: 48,
@@ -3104,11 +3133,10 @@ for c in "${{COMPREPLY[@]}}"; do echo "${{c%%	*}}"; done
     #[case("fish")]
     fn test_wrapper_help_redirect_captures_all_output(#[case] shell: &str) {
         skip_if_shell_unavailable!(shell);
-        use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+        use portable_pty::{CommandBuilder, PtySize};
         use std::io::Read;
 
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         let wt_bin = get_cargo_bin("wt");
         let wt_bin_dir = wt_bin.parent().unwrap();
@@ -3188,7 +3216,8 @@ echo "SCRIPT_COMPLETED"
         };
 
         // Execute in PTY
-        let pty_system = native_pty_system();
+        // Ignore SIGTTIN/SIGTTOU to prevent stopping in background process groups
+        let pty_system = crate::common::native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
                 rows: 48,
@@ -3302,11 +3331,10 @@ echo "SCRIPT_COMPLETED"
     #[case("fish")]
     fn test_wrapper_help_interactive_uses_pager(#[case] shell: &str) {
         skip_if_shell_unavailable!(shell);
-        use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+        use portable_pty::{CommandBuilder, PtySize};
         use std::io::Read;
 
         let repo = TestRepo::new();
-        repo.commit("Initial commit");
 
         let wt_bin = get_cargo_bin("wt");
         let wt_bin_dir = wt_bin.parent().unwrap();
@@ -3402,7 +3430,8 @@ echo "SCRIPT_COMPLETED"
         };
 
         // Execute in PTY (simulates interactive terminal)
-        let pty_system = native_pty_system();
+        // Ignore SIGTTIN/SIGTTOU to prevent stopping in background process groups
+        let pty_system = crate::common::native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
                 rows: 48,

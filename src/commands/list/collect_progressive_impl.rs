@@ -249,7 +249,7 @@ impl Task for HasFileChangesTask {
     }
 }
 
-/// Task 3b: Merge simulation (--full only)
+/// Task 3b: Merge simulation
 ///
 /// Checks if merging the branch into main would add any changes by simulating
 /// the merge with `git merge-tree --write-tree`. Returns false when the merge

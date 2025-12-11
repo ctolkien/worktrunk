@@ -207,7 +207,7 @@ fn test_complete_outside_git_repo() {
 
 #[test]
 fn test_complete_empty_repo() {
-    let repo = TestRepo::new();
+    let repo = TestRepo::empty();
     let mut settings = Settings::clone_current();
     settings.set_snapshot_path("../snapshots");
 
@@ -702,10 +702,11 @@ fn test_complete_step_subcommands() {
     assert!(subcommands.contains(&"squash"), "Missing squash");
     assert!(subcommands.contains(&"push"), "Missing push");
     assert!(subcommands.contains(&"rebase"), "Missing rebase");
+    assert!(subcommands.contains(&"for-each"), "Missing for-each");
     assert_eq!(
         subcommands.len(),
-        4,
-        "Should have exactly 4 step subcommands (git operations)"
+        5,
+        "Should have exactly 5 step subcommands"
     );
 }
 

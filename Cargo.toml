@@ -5,7 +5,7 @@ default-members = [".", "tests/helpers/dev-detach"]
 
 [package]
 name = "worktrunk"
-version = "0.1.18"
+version = "0.1.20"
 edition = "2024"
 rust-version = "1.89"
 build = "build.rs"
@@ -84,9 +84,18 @@ home = "0.5.12"
 dirs = "6.0"
 normalize-path = "0.2.1"
 which = "7.0"
+# Cross-platform path canonicalization that avoids Windows verbatim paths (\\?\)
+# which external tools like git cannot handle. On Unix, it's a no-op wrapper.
+dunce = "1.0"
 
 [target.'cfg(unix)'.dependencies]
 skim = "0.20"
+nix = { version = "0.29", default-features = false, features = ["process", "signal"] }
+signal-hook = { version = "0.3.17", default-features = false, features = ["iterator"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+# Match version used by portable-pty to avoid compiling multiple nix versions
+nix = { version = "0.29", default-features = false, features = ["signal"] }
 
 [build-dependencies]
 vergen-gitcl = { version = "1.0.8", features = ["build"] }

@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.1.20
+
+### Changed
+
+- **`--doctor` renamed to `--full`**: The `wt list --doctor` flag is now `wt list --full`. The new name better reflects that it shows extended information (binaries status, full diff stats). ([171952e](https://github.com/max-sixty/worktrunk/commit/171952ec))
+- **CLI binaries status in `wt config show --full`**: Shows installation and authentication status of `gh` and `glab` CLI tools in a new BINARIES section. ([171952e](https://github.com/max-sixty/worktrunk/commit/171952ec))
+- **CI tool hints**: `wt list --full` shows a hint when CI status is unavailable, with specific guidance on which CLI tool to install or authenticate. ([171952e](https://github.com/max-sixty/worktrunk/commit/171952ec))
+
+### Fixed
+
+- **GitHub StatusContext checks**: CI status now includes StatusContext checks (used by some CI systems like Jenkins, CircleCI, and external status checks) in addition to CheckRuns. ([690da88](https://github.com/max-sixty/worktrunk/commit/690da889))
+- **Windows Git Bash detection with WSL**: Fixed detection of Git Bash when WSL is installed. Previously, the WSL bash shim in PATH could be found instead of Git Bash, causing hook execution failures. ([b48b0ba](https://github.com/max-sixty/worktrunk/commit/b48b0ba7))
+
+## 0.1.19
+
+### Added
+
+- **`wt step for-each` command**: Run commands across all worktrees sequentially. Supports template variables (`{{ branch }}`, `{{ worktree }}`, etc.) and JSON context on stdin. Example: `wt step for-each -- git pull --autostash`. ([#138](https://github.com/max-sixty/worktrunk/pull/138))
+
+### Changed
+
+- **Content integration detection always enabled**: The `⊂` (content integrated) symbol now appears without requiring `--full`. Squash-merged branches are detected automatically. ([f39c442](https://github.com/max-sixty/worktrunk/commit/f39c4428))
+- **SIGINT forwarding**: Ctrl+C now properly terminates child processes in hooks, preventing orphaned background commands. ([#136](https://github.com/max-sixty/worktrunk/pull/136))
+
+### Fixed
+
+- **Windows path handling**: Fixed path canonicalization issues on Windows that caused worktree detection failures. Uses `dunce` to handle Windows verbatim paths (`\\?\`) that git cannot process. ([#125](https://github.com/max-sixty/worktrunk/pull/125))
+
 ## 0.1.18
 
 ### Added

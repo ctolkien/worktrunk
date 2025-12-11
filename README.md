@@ -86,9 +86,9 @@ See all worktrees at a glance:
 ```console
 $ wt list
   Branch       Status        HEAD±    main↕  Path                Remote⇅  Commit    Age   Message
-@ feature-api  +   ↕⇡     +54   -5   ↑4  ↓1  ./repo.feature-api   ⇡3      28d38c20  30m   Add API tests
-^ main             ^⇅                        ./repo               ⇡1  ⇣1  2e6b7a8f  4d    Merge fix-auth:…
-+ fix-auth         ↕|                ↑2  ↓1  ./repo.fix-auth        |     1d697d5b  5h    Add secure token…
+@ feature-api  +   ↕⇡     +54   -5   ↑4  ↓1  ./repo.feature-api   ⇡3      d35485d7  30m   Add API tests
+^ main             ^⇅                        ./repo               ⇡1  ⇣1  e18e1b4d  4d    Merge fix-auth:…
++ fix-auth         ↕|                ↑2  ↓1  ./repo.fix-auth        |     2517d700  5h    Add secure token…
 
 ⚪ Showing 3 worktrees, 1 with changes, 2 ahead
 ```
@@ -144,9 +144,8 @@ $ wt config shell install
 
 ## Contributing
 
-- ⭐ Star the repo
-- 🐛 [Open an issue](https://github.com/max-sixty/worktrunk/issues) with feedback or feature requests
-- 💡 What worktree friction does Worktrunk not yet solve? [Tell us](https://github.com/max-sixty/worktrunk/issues)
-- 📣 Share: [X](https://twitter.com/intent/tweet?text=Worktrunk%20%E2%80%94%20CLI%20for%20git%20worktree%20management&url=https%3A%2F%2Fworktrunk.dev) · [Reddit](https://www.reddit.com/submit?url=https%3A%2F%2Fworktrunk.dev&title=Worktrunk%20%E2%80%94%20CLI%20for%20git%20worktree%20management) · [LinkedIn](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fworktrunk.dev)
+- ⭐ [Star the repo](https://github.com/max-sixty/worktrunk/stargazers)
+- [Open an issue](https://github.com/max-sixty/worktrunk/issues/new?title=&body=%23%23%20Description%0A%0A%3C!--%20Describe%20the%20bug%20or%20feature%20request%20--%3E%0A%0A%23%23%20Context%0A%0A%3C!--%20Any%20relevant%20context%3A%20your%20workflow%2C%20what%20you%20were%20trying%20to%20do%2C%20etc.%20--%3E) — feedback, feature requests, or [a worktree friction we don't yet solve](https://github.com/max-sixty/worktrunk/issues/new?title=Worktree%20friction%3A%20&body=%23%23%20The%20friction%0A%0A%3C!--%20What%20worktree-related%20task%20is%20still%20painful%3F%20--%3E%0A%0A%23%23%20Current%20workaround%0A%0A%3C!--%20How%20do%20you%20handle%20this%20today%3F%20--%3E%0A%0A%23%23%20Ideal%20solution%0A%0A%3C!--%20What%20would%20make%20this%20easier%3F%20--%3E)
+- Share: [X](https://twitter.com/intent/tweet?text=Worktrunk%20%E2%80%94%20CLI%20for%20git%20worktree%20management&url=https%3A%2F%2Fworktrunk.dev) · [Reddit](https://www.reddit.com/submit?url=https%3A%2F%2Fworktrunk.dev&title=Worktrunk%20%E2%80%94%20CLI%20for%20git%20worktree%20management) · [LinkedIn](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fworktrunk.dev)
 
 > ## 📚 Full documentation at [worktrunk.dev](https://worktrunk.dev) 📚

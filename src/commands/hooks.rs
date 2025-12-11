@@ -18,9 +18,7 @@ use worktrunk::config::{CommandConfig, ProjectConfig};
 use worktrunk::git::WorktrunkError;
 use worktrunk::styling::{format_bash_with_gutter, progress_message, warning_message};
 
-use super::command_executor::{
-    CommandContext, PreparedCommand, prepare_project_commands, prepare_user_commands,
-};
+use super::command_executor::{CommandContext, PreparedCommand, prepare_commands};
 use crate::commands::process::spawn_detached;
 use crate::output::execute_command_in_worktree;
 
@@ -73,18 +71,11 @@ impl<'a> HookPipeline<'a> {
         &self,
         command_config: &CommandConfig,
         hook_type: HookType,
-        source: &HookSource,
+        _source: &HookSource,
         extra_vars: &[(&str, &str)],
         name_filter: Option<&str>,
     ) -> anyhow::Result<Vec<PreparedCommand>> {
-        let commands = match source {
-            HookSource::User => {
-                prepare_user_commands(command_config, &self.ctx, extra_vars, hook_type)?
-            }
-            HookSource::Project => {
-                prepare_project_commands(command_config, &self.ctx, extra_vars, hook_type)?
-            }
-        };
+        let commands = prepare_commands(command_config, &self.ctx, extra_vars, hook_type)?;
         Ok(Self::filter_by_name(commands, name_filter))
     }
 
@@ -228,7 +219,7 @@ impl<'a> HookPipeline<'a> {
                 self.ctx.repo,
                 self.ctx.worktree_path,
                 &prepared.expanded,
-                self.ctx.branch,
+                self.ctx.branch_or_head(),
                 &operation,
                 Some(&prepared.context_json),
             ) {
@@ -270,4 +261,76 @@ impl<'a> HookPipeline<'a> {
         )?;
         Ok(())
     }
+}
+
+/// Run user and project hooks for a given hook type.
+///
+/// This is the canonical implementation for running hooks from both sources.
+/// Runs user hooks first, then project hooks. Handles name filtering and
+/// returns an error if a name filter was provided but no matching command found.
+pub fn run_hook_with_filter(
+    ctx: &CommandContext,
+    user_config: Option<&CommandConfig>,
+    project_config: Option<&CommandConfig>,
+    hook_type: HookType,
+    extra_vars: &[(&str, &str)],
+    failure_strategy: HookFailureStrategy,
+    name_filter: Option<&str>,
+) -> anyhow::Result<()> {
+    let pipeline = HookPipeline::new(*ctx);
+    let mut total_commands_run = 0;
+
+    // Run user hooks first (no approval required)
+    if let Some(config) = user_config {
+        total_commands_run += pipeline.run_sequential(
+            config,
+            hook_type,
+            HookSource::User,
+            extra_vars,
+            HookFailureStrategy::FailFast, // User hooks always fail-fast
+            name_filter,
+        )?;
+    }
+
+    // Then run project hooks (approval handled at gate)
+    if let Some(config) = project_config {
+        total_commands_run += pipeline.run_sequential(
+            config,
+            hook_type,
+            HookSource::Project,
+            extra_vars,
+            failure_strategy,
+            name_filter,
+        )?;
+    }
+
+    // If name filter was provided but no commands matched, error with available names
+    if let Some(name) = name_filter
+        && total_commands_run == 0
+    {
+        let mut available = Vec::new();
+        if let Some(config) = user_config {
+            available.extend(
+                config
+                    .commands()
+                    .iter()
+                    .filter_map(|c| c.name.as_ref().map(|n| format!("user:{n}"))),
+            );
+        }
+        if let Some(config) = project_config {
+            available.extend(
+                config
+                    .commands()
+                    .iter()
+                    .filter_map(|c| c.name.as_ref().map(|n| format!("project:{n}"))),
+            );
+        }
+        return Err(worktrunk::git::GitError::HookCommandNotFound {
+            name: name.to_string(),
+            available,
+        }
+        .into());
+    }
+
+    Ok(())
 }

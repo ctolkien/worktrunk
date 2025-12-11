@@ -1,7 +1,4 @@
-use crate::common::{
-    TestRepo, set_temp_home_env, setup_home_snapshot_settings, setup_snapshot_settings_with_home,
-    wt_command,
-};
+use crate::common::{TestRepo, set_temp_home_env, setup_snapshot_settings_with_home, wt_command};
 use insta_cmd::assert_cmd_snapshot;
 use std::fs;
 use tempfile::TempDir;
@@ -9,8 +6,11 @@ use tempfile::TempDir;
 /// Test `wt config show` with both global and project configs present
 #[test]
 fn test_config_show_with_project_config() {
-    let repo = TestRepo::new();
+    let mut repo = TestRepo::new();
     let temp_home = TempDir::new().unwrap();
+
+    // Setup mock gh/glab for deterministic BINARIES output
+    repo.setup_mock_ci_tools_unauthenticated();
 
     // Create fake global config at XDG path (used on all platforms with etcetera)
     let global_config_dir = temp_home.path().join(".config").join("worktrunk");
@@ -42,39 +42,22 @@ server = "npm run dev"
     settings.bind(|| {
         let mut cmd = wt_command();
         repo.clean_cli_env(&mut cmd);
+        repo.configure_mock_commands(&mut cmd);
         cmd.arg("config").arg("show").current_dir(repo.root_path());
         set_temp_home_env(&mut cmd, temp_home.path());
 
-        assert_cmd_snapshot!(cmd, @r#"
-        success: true
-        exit_code: 0
-        ----- stdout -----
-
-        ----- stderr -----
-        [36mUSER CONFIG[39m  ~/.config/worktrunk/config.toml
-        [107m [0m  worktree-path = [32m"../{{ main_worktree }}.{{ branch }}"[0m
-        [107m [0m  
-        [107m [0m  [1m[36m[projects."test-project"][0m
-        [107m [0m  approved-commands = [[32m"npm install"[0m]
-
-        [36mPROJECT CONFIG[39m  [REPO]/.config/wt.toml
-        [107m [0m  post-create = [32m"npm install"[0m
-        [107m [0m  
-        [107m [0m  [1m[36m[post-start][0m
-        [107m [0m  server = [32m"npm run dev"[0m
-
-        [2m⚪ Skipped bash; ~/.bashrc not found[22m
-        [2m⚪ Skipped zsh; ~/.zshrc not found[22m
-        [2m⚪ Skipped fish; ~/.config/fish/conf.d not found[22m
-        "#);
+        assert_cmd_snapshot!(cmd);
     });
 }
 
 /// Test `wt config show` when there is no project config
 #[test]
 fn test_config_show_no_project_config() {
-    let repo = TestRepo::new();
+    let mut repo = TestRepo::new();
     let temp_home = TempDir::new().unwrap();
+
+    // Setup mock gh/glab for deterministic BINARIES output
+    repo.setup_mock_ci_tools_unauthenticated();
 
     // Create fake global config (but no project config) at XDG path
     let global_config_dir = temp_home.path().join(".config").join("worktrunk");
@@ -90,33 +73,23 @@ fn test_config_show_no_project_config() {
     settings.bind(|| {
         let mut cmd = wt_command();
         repo.clean_cli_env(&mut cmd);
+        repo.configure_mock_commands(&mut cmd);
         cmd.arg("config").arg("show").current_dir(repo.root_path());
         set_temp_home_env(&mut cmd, temp_home.path());
 
-        assert_cmd_snapshot!(cmd, @r#"
-        success: true
-        exit_code: 0
-        ----- stdout -----
-
-        ----- stderr -----
-        [36mUSER CONFIG[39m  ~/.config/worktrunk/config.toml
-        [107m [0m  worktree-path = [32m"../{{ main_worktree }}.{{ branch }}"[0m
-
-        [36mPROJECT CONFIG[39m  [REPO]/.config/wt.toml
-        💡 [2mNot found[22m
-
-        [2m⚪ Skipped bash; ~/.bashrc not found[22m
-        [2m⚪ Skipped zsh; ~/.zshrc not found[22m
-        [2m⚪ Skipped fish; ~/.config/fish/conf.d not found[22m
-        "#);
+        assert_cmd_snapshot!(cmd);
     });
 }
 
 /// Test `wt config show` outside a git repository
 #[test]
 fn test_config_show_outside_git_repo() {
+    let mut repo = TestRepo::new();
     let temp_dir = tempfile::tempdir().unwrap();
     let temp_home = TempDir::new().unwrap();
+
+    // Setup mock gh/glab for deterministic BINARIES output
+    repo.setup_mock_ci_tools_unauthenticated();
 
     // Create fake global config at XDG path
     let global_config_dir = temp_home.path().join(".config").join("worktrunk");
@@ -128,35 +101,25 @@ fn test_config_show_outside_git_repo() {
     )
     .unwrap();
 
-    let settings = setup_home_snapshot_settings(&temp_home);
+    let settings = setup_snapshot_settings_with_home(&repo, &temp_home);
     settings.bind(|| {
         let mut cmd = wt_command();
+        repo.configure_mock_commands(&mut cmd);
         cmd.arg("config").arg("show").current_dir(temp_dir.path());
         set_temp_home_env(&mut cmd, temp_home.path());
 
-        assert_cmd_snapshot!(cmd, @r#"
-        success: true
-        exit_code: 0
-        ----- stdout -----
-
-        ----- stderr -----
-        [36mUSER CONFIG[39m  ~/.config/worktrunk/config.toml
-        [107m [0m  worktree-path = [32m"../{{ main_worktree }}.{{ branch }}"[0m
-
-        [36m[2mPROJECT CONFIG[22m  Not in a git repository[39m
-
-        [2m⚪ Skipped bash; ~/.bashrc not found[22m
-        [2m⚪ Skipped zsh; ~/.zshrc not found[22m
-        [2m⚪ Skipped fish; ~/.config/fish/conf.d not found[22m
-        "#);
+        assert_cmd_snapshot!(cmd);
     });
 }
 
 /// Test `wt config show` warns when zsh compinit is not enabled
 #[test]
 fn test_config_show_zsh_compinit_warning() {
-    let repo = TestRepo::new();
+    let mut repo = TestRepo::new();
     let temp_home = TempDir::new().unwrap();
+
+    // Setup mock gh/glab for deterministic BINARIES output
+    repo.setup_mock_ci_tools_unauthenticated();
 
     // Create global config
     let global_config_dir = temp_home.path().join(".config").join("worktrunk");
@@ -176,6 +139,7 @@ if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)
     settings.bind(|| {
         let mut cmd = wt_command();
         repo.clean_cli_env(&mut cmd);
+        repo.configure_mock_commands(&mut cmd);
         // Force compinit warning for deterministic tests across environments
         cmd.env("WORKTRUNK_TEST_COMPINIT_MISSING", "1");
         cmd.arg("config").arg("show").current_dir(repo.root_path());
@@ -188,8 +152,11 @@ if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)
 /// Test `wt config show` shows hint when some shells configured, some not
 #[test]
 fn test_config_show_partial_shell_config_shows_hint() {
-    let repo = TestRepo::new();
+    let mut repo = TestRepo::new();
     let temp_home = TempDir::new().unwrap();
+
+    // Setup mock gh/glab for deterministic BINARIES output
+    repo.setup_mock_ci_tools_unauthenticated();
 
     // Create global config
     let global_config_dir = temp_home.path().join(".config").join("worktrunk");
@@ -218,6 +185,7 @@ if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)
     settings.bind(|| {
         let mut cmd = wt_command();
         repo.clean_cli_env(&mut cmd);
+        repo.configure_mock_commands(&mut cmd);
         cmd.arg("config").arg("show").current_dir(repo.root_path());
         set_temp_home_env(&mut cmd, temp_home.path());
         cmd.env("WORKTRUNK_TEST_COMPINIT_CONFIGURED", "1"); // Bypass zsh subprocess check
@@ -229,8 +197,11 @@ if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)
 /// Test `wt config show` shows no warning when zsh compinit is enabled
 #[test]
 fn test_config_show_zsh_compinit_correct_order() {
-    let repo = TestRepo::new();
+    let mut repo = TestRepo::new();
     let temp_home = TempDir::new().unwrap();
+
+    // Setup mock gh/glab for deterministic BINARIES output
+    repo.setup_mock_ci_tools_unauthenticated();
 
     // Create global config
     let global_config_dir = temp_home.path().join(".config").join("worktrunk");
@@ -253,6 +224,7 @@ if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)
     settings.bind(|| {
         let mut cmd = wt_command();
         repo.clean_cli_env(&mut cmd);
+        repo.configure_mock_commands(&mut cmd);
         cmd.arg("config").arg("show").current_dir(repo.root_path());
         set_temp_home_env(&mut cmd, temp_home.path());
         cmd.env("WORKTRUNK_TEST_COMPINIT_CONFIGURED", "1"); // Bypass zsh subprocess check (unreliable on CI)
@@ -264,8 +236,11 @@ if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)
 /// Test `wt config show` warns about unknown/misspelled keys in project config
 #[test]
 fn test_config_show_warns_unknown_project_keys() {
-    let repo = TestRepo::new();
+    let mut repo = TestRepo::new();
     let temp_home = TempDir::new().unwrap();
+
+    // Setup mock gh/glab for deterministic BINARIES output
+    repo.setup_mock_ci_tools_unauthenticated();
 
     // Create global config
     let global_config_dir = temp_home.path().join(".config").join("worktrunk");
@@ -289,35 +264,22 @@ fn test_config_show_warns_unknown_project_keys() {
     settings.bind(|| {
         let mut cmd = wt_command();
         repo.clean_cli_env(&mut cmd);
+        repo.configure_mock_commands(&mut cmd);
         cmd.arg("config").arg("show").current_dir(repo.root_path());
         set_temp_home_env(&mut cmd, temp_home.path());
 
-        assert_cmd_snapshot!(cmd, @r#"
-        success: true
-        exit_code: 0
-        ----- stdout -----
-
-        ----- stderr -----
-        [36mUSER CONFIG[39m  ~/.config/worktrunk/config.toml
-        [107m [0m  worktree-path = [32m"../{{ main_worktree }}.{{ branch }}"[0m
-
-        [36mPROJECT CONFIG[39m  [REPO]/.config/wt.toml
-        🟡 [33mUnknown key [1mpost-merge-command[22m will be ignored[39m
-        [107m [0m  [1m[36m[post-merge-command][0m
-        [107m [0m  deploy = [32m"task deploy"[0m
-
-        [2m⚪ Skipped bash; ~/.bashrc not found[22m
-        [2m⚪ Skipped zsh; ~/.zshrc not found[22m
-        [2m⚪ Skipped fish; ~/.config/fish/conf.d not found[22m
-        "#);
+        assert_cmd_snapshot!(cmd);
     });
 }
 
 /// Test `wt config show` warns about unknown keys in user config
 #[test]
 fn test_config_show_warns_unknown_user_keys() {
-    let repo = TestRepo::new();
+    let mut repo = TestRepo::new();
     let temp_home = TempDir::new().unwrap();
+
+    // Setup mock gh/glab for deterministic BINARIES output
+    repo.setup_mock_ci_tools_unauthenticated();
 
     // Create global config with typo: commit-gen instead of commit-generation
     let global_config_dir = temp_home.path().join(".config").join("worktrunk");
@@ -332,37 +294,22 @@ fn test_config_show_warns_unknown_user_keys() {
     settings.bind(|| {
         let mut cmd = wt_command();
         repo.clean_cli_env(&mut cmd);
+        repo.configure_mock_commands(&mut cmd);
         cmd.arg("config").arg("show").current_dir(repo.root_path());
         set_temp_home_env(&mut cmd, temp_home.path());
 
-        assert_cmd_snapshot!(cmd, @r#"
-        success: true
-        exit_code: 0
-        ----- stdout -----
-
-        ----- stderr -----
-        [36mUSER CONFIG[39m  ~/.config/worktrunk/config.toml
-        🟡 [33mUnknown key [1mcommit-gen[22m will be ignored[39m
-        [107m [0m  worktree-path = [32m"../{{ main_worktree }}.{{ branch }}"[0m
-        [107m [0m  
-        [107m [0m  [1m[36m[commit-gen][0m
-        [107m [0m  command = [32m"llm"[0m
-
-        [36mPROJECT CONFIG[39m  [REPO]/.config/wt.toml
-        💡 [2mNot found[22m
-
-        [2m⚪ Skipped bash; ~/.bashrc not found[22m
-        [2m⚪ Skipped zsh; ~/.zshrc not found[22m
-        [2m⚪ Skipped fish; ~/.config/fish/conf.d not found[22m
-        "#);
+        assert_cmd_snapshot!(cmd);
     });
 }
 
-/// Test `wt config show --doctor` when commit generation is not configured
+/// Test `wt config show --full` when commit generation is not configured
 #[test]
-fn test_config_show_doctor_not_configured() {
-    let repo = TestRepo::new();
+fn test_config_show_full_not_configured() {
+    let mut repo = TestRepo::new();
     let temp_home = TempDir::new().unwrap();
+
+    // Setup mock gh/glab for deterministic BINARIES output
+    repo.setup_mock_ci_tools_unauthenticated();
 
     // Create isolated config directory
     let global_config_dir = temp_home.path().join(".config").join("worktrunk");
@@ -378,11 +325,12 @@ fn test_config_show_doctor_not_configured() {
     settings.bind(|| {
         let mut cmd = wt_command();
         repo.clean_cli_env(&mut cmd);
+        repo.configure_mock_commands(&mut cmd);
         // Override WORKTRUNK_CONFIG_PATH to point to our test config
         cmd.env("WORKTRUNK_CONFIG_PATH", &config_path);
         cmd.arg("config")
             .arg("show")
-            .arg("--doctor")
+            .arg("--full")
             .current_dir(repo.root_path());
         set_temp_home_env(&mut cmd, temp_home.path());
 
@@ -390,11 +338,14 @@ fn test_config_show_doctor_not_configured() {
     });
 }
 
-/// Test `wt config show --doctor` when commit generation command doesn't exist
+/// Test `wt config show --full` when commit generation command doesn't exist
 #[test]
-fn test_config_show_doctor_command_not_found() {
-    let repo = TestRepo::new();
+fn test_config_show_full_command_not_found() {
+    let mut repo = TestRepo::new();
     let temp_home = TempDir::new().unwrap();
+
+    // Setup mock gh/glab for deterministic BINARIES output
+    repo.setup_mock_ci_tools_unauthenticated();
 
     // Create isolated config directory
     let global_config_dir = temp_home.path().join(".config").join("worktrunk");
@@ -415,11 +366,12 @@ args = ["-m", "test-model"]
     settings.bind(|| {
         let mut cmd = wt_command();
         repo.clean_cli_env(&mut cmd);
+        repo.configure_mock_commands(&mut cmd);
         // Override WORKTRUNK_CONFIG_PATH to point to our test config
         cmd.env("WORKTRUNK_CONFIG_PATH", &config_path);
         cmd.arg("config")
             .arg("show")
-            .arg("--doctor")
+            .arg("--full")
             .current_dir(repo.root_path());
         set_temp_home_env(&mut cmd, temp_home.path());
 

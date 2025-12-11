@@ -9,7 +9,6 @@ use tempfile::TempDir;
 #[test]
 fn test_hook_show_with_both_configs() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
     let temp_home = TempDir::new().unwrap();
 
     // Create user config with hooks
@@ -52,7 +51,6 @@ test = "cargo test"
 #[test]
 fn test_hook_show_no_hooks() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
     let temp_home = TempDir::new().unwrap();
 
     // Create user config without hooks
@@ -80,7 +78,6 @@ fn test_hook_show_no_hooks() {
 #[test]
 fn test_hook_show_filter_by_type() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
     let temp_home = TempDir::new().unwrap();
 
     // Create user config without hooks
@@ -126,7 +123,6 @@ deploy = "scripts/deploy.sh"
 #[test]
 fn test_hook_show_approval_status() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
     let temp_home = TempDir::new().unwrap();
 
     // Create user config at XDG path with one approved command
@@ -186,7 +182,7 @@ lint = "pre-commit run"
 
     let mut settings = insta::Settings::clone_current();
     // Replace temp home path with ~ for stable snapshots
-    settings.add_filter(temp_home.path().to_string_lossy().as_ref(), "~");
+    settings.add_filter(&regex::escape(&temp_home.path().to_string_lossy()), "~");
     settings.bind(|| {
         let mut cmd = wt_command();
         cmd.arg("hook").arg("show").current_dir(temp_dir.path());

@@ -321,12 +321,12 @@ and project config (`.config/wt.toml`).
 
 If a config file doesn't exist, shows defaults that would be used.
 
-## Doctor mode
+## Full diagnostics
 
-Use `--doctor` to test commit generation with a synthetic diff:
+Use `--full` to test commit generation with a synthetic diff:
 
 ```console
-wt config show --doctor
+wt config show --full
 ```
 
 This verifies that the LLM command is configured correctly and can generate
@@ -335,7 +335,7 @@ commit messages."#
     Show {
         /// Test commit generation pipeline
         #[arg(long)]
-        doctor: bool,
+        full: bool,
     },
 
     /// Manage caches (CI status, default branch)
@@ -614,6 +614,65 @@ pub enum StepCommand {
         /// Defaults to default branch.
         #[arg(add = crate::completion::branch_value_completer())]
         target: Option<String>,
+    },
+
+    /// \[experimental\] Run command in each worktree
+    #[command(
+        after_long_help = r#"Executes a command sequentially in every worktree with real-time output. Continues on failure and shows a summary at the end.
+
+Context JSON is piped to stdin for scripts that need structured data.
+
+## Template variables
+
+All variables are shell-escaped:
+
+| Variable | Description |
+|----------|-------------|
+| `{{ branch }}` | Branch name (slashes replaced with dashes) |
+| `{{ worktree }}` | Absolute path to the worktree |
+| `{{ worktree_name }}` | Worktree directory name |
+| `{{ repo }}` | Repository name |
+| `{{ repo_root }}` | Absolute path to the main repository root |
+| `{{ commit }}` | Current HEAD commit SHA (full) |
+| `{{ short_commit }}` | Current HEAD commit SHA (7 chars) |
+| `{{ default_branch }}` | Default branch name (e.g., "main") |
+| `{{ remote }}` | Primary remote name (e.g., "origin") |
+| `{{ remote_url }}` | Primary remote URL |
+| `{{ upstream }}` | Upstream tracking branch, if configured |
+
+## Examples
+
+Check status across all worktrees:
+
+```console
+wt step for-each -- git status --short
+```
+
+Run npm install in all worktrees:
+
+```console
+wt step for-each -- npm install
+```
+
+Use branch name in command:
+
+```console
+wt step for-each -- "echo Branch: {{ branch }}"
+```
+
+Pull updates in worktrees with upstreams (skips others):
+
+```console
+wt step for-each -- '[ "$(git rev-parse @{u} 2>/dev/null)" ] || exit 0; git pull --autostash'
+```
+
+Note: This command is experimental and may change in future versions.
+"#
+    )]
+    ForEach {
+        /// Command template (see --help for all variables)
+        #[arg(required = true, last = true, num_args = 1..)]
+        args: Vec<String>,
     },
 }
 
@@ -1038,6 +1097,7 @@ wt step push
 - `squash` — Squash all branch commits into one with [LLM-generated message](@/llm-commits.md)
 - `rebase` — Rebase onto target branch
 - `push` — Push to target branch (default: main)
+- `for-each` — [experimental] Run a command in every worktree
 
 ## See also
 
@@ -1524,7 +1584,7 @@ The Status column has multiple subcolumns. Within each, only the first matching 
 | Main | `^` | Is the main branch |
 | | `✗` | Would conflict if merged to main |
 | | `_` | Same commit as main |
-| | `⊂` | [Content integrated](@/remove.md#branch-cleanup) (`--full` detects additional cases) |
+| | `⊂` | [Content integrated](@/remove.md#branch-cleanup) |
 | | `↕` | Diverged from main |
 | | `↑` | Ahead of main |
 | | `↓` | Behind main |
@@ -1583,6 +1643,10 @@ wt list --format=json | jq '.[] | select(.main_state == "integrated" or .main_st
 - [wt select](@/select.md) — Interactive worktree picker with live preview
 "#
     )]
+    // TODO: `args_conflicts_with_subcommands` causes confusing errors for unknown
+    // subcommands ("cannot be used with --branches") instead of "unknown subcommand".
+    // Could fix with external_subcommand + post-parse validation, but not worth the
+    // code. The `statusline` subcommand may move elsewhere anyway.
     #[command(args_conflicts_with_subcommands = true)]
     List {
         #[command(subcommand)]

@@ -14,8 +14,8 @@ use worktrunk::git::Repository;
 use worktrunk::path::format_path_for_display;
 use worktrunk::shell::Shell;
 use worktrunk::styling::{
-    HINT_EMOJI, error_message, format_with_gutter, info_message, progress_message, success_message,
-    warning_message,
+    error_message, format_with_gutter, hint_message, info_message, progress_message,
+    success_message, warning_message,
 };
 
 /// Format a switch success message with a consistent location phrase
@@ -52,6 +52,42 @@ fn format_switch_success_message(
     }
 }
 
+/// Determine the effective target for integration checks.
+///
+/// If the upstream of the local target (e.g., `origin/main`) is strictly ahead of
+/// the local target (i.e., local is an ancestor of upstream), uses the upstream.
+/// This handles the common case where a branch was merged remotely but the user
+/// hasn't pulled yet.
+///
+/// Returns the effective target ref to check against.
+///
+/// TODO(future): When local and remote have diverged (neither is ancestor),
+/// check integration against both and delete only if integrated into both.
+/// Current behavior: uses only local in diverged state, may miss remote-merged branches.
+fn effective_integration_target(repo: &Repository, local_target: &str) -> String {
+    // Get the upstream ref for the local target (e.g., origin/main for main)
+    let upstream = match repo.upstream_branch(local_target) {
+        Ok(Some(upstream)) => upstream,
+        _ => return local_target.to_string(),
+    };
+
+    // Check if local is strictly behind upstream (local is ancestor of upstream)
+    // This means upstream has commits that local doesn't have
+    // On error, fall back to local target (defensive: don't fail remove due to git errors)
+    if repo.is_ancestor(local_target, &upstream).unwrap_or(false) {
+        return upstream;
+    }
+
+    local_target.to_string()
+}
+
+/// Result of an integration check, including which target was used.
+struct IntegrationResult {
+    reason: Option<IntegrationReason>,
+    /// The target that was actually checked against (may be upstream if ahead of local)
+    effective_target: String,
+}
+
 /// Check if a branch's content has been integrated into the target.
 ///
 /// Returns the reason if the branch is safe to delete (ordered by check cost):
@@ -60,10 +96,24 @@ fn format_switch_success_message(
 /// - `TreesMatch`: The branch's tree SHA matches the target's tree SHA (squash merge/rebase)
 /// - `MergeAddsNothing`: Merge simulation shows branch would add nothing (squash + target advanced)
 ///
-/// Returns None if no condition is met, or if an error occurs (e.g., invalid refs).
+/// Also returns the effective target used (may be upstream if it's ahead of local).
+///
+/// Returns None reason if no condition is met, or if an error occurs (e.g., invalid refs).
 /// This fail-safe default prevents accidental branch deletion when integration cannot
 /// be determined.
-fn get_integration_reason(
+fn get_integration_reason(repo: &Repository, branch_name: &str, target: &str) -> IntegrationResult {
+    let effective_target = effective_integration_target(repo, target);
+
+    let reason = check_integration_against(repo, branch_name, &effective_target);
+
+    IntegrationResult {
+        reason,
+        effective_target,
+    }
+}
+
+/// Check integration against a specific target ref.
+fn check_integration_against(
     repo: &Repository,
     branch_name: &str,
     target: &str,
@@ -104,57 +154,80 @@ fn get_integration_reason(
     None
 }
 
+/// Outcome of a branch deletion attempt.
+enum BranchDeletionOutcome {
+    /// Branch was not deleted (not integrated and not forced)
+    NotDeleted,
+    /// Branch was force-deleted without integration check
+    ForceDeleted,
+    /// Branch was deleted because it was integrated
+    Integrated(IntegrationReason),
+}
+
+/// Result of a branch deletion attempt.
+struct BranchDeletionResult {
+    outcome: BranchDeletionOutcome,
+    /// The target that was actually checked against (may be upstream if ahead of local)
+    effective_target: String,
+}
+
 /// Attempt to delete a branch if it's integrated or force_delete is set.
 ///
-/// Returns:
-/// - `Ok(Some(reason))` if branch was deleted due to integration
-/// - `Ok(Some(None))` if branch was force-deleted (no integration reason)
-/// - `Ok(None)` if branch was not deleted (not integrated and not forced)
-/// - `Err` if git command failed
-///
-/// The outer Option indicates whether deletion occurred; the inner Option
-/// indicates the integration reason (None when force-deleted).
+/// Returns `BranchDeletionResult` with:
+/// - `outcome`: Whether/why deletion occurred
+/// - `effective_target`: The ref checked against (may be upstream if ahead of local)
 fn delete_branch_if_safe(
     repo: &Repository,
     branch_name: &str,
     target: &str,
     force_delete: bool,
-) -> anyhow::Result<Option<Option<IntegrationReason>>> {
-    let reason = get_integration_reason(repo, branch_name, target);
+) -> anyhow::Result<BranchDeletionResult> {
+    let IntegrationResult {
+        reason,
+        effective_target,
+    } = get_integration_reason(repo, branch_name, target);
 
-    // Delete if integrated or force-delete requested
-    if reason.is_none() && !force_delete {
-        return Ok(None); // Not integrated and not forced - don't delete
-    }
+    // Determine outcome based on integration and force flag
+    let outcome = match (reason, force_delete) {
+        (Some(r), _) => {
+            repo.run_command(&["branch", "-D", branch_name])?;
+            BranchDeletionOutcome::Integrated(r)
+        }
+        (None, true) => {
+            repo.run_command(&["branch", "-D", branch_name])?;
+            BranchDeletionOutcome::ForceDeleted
+        }
+        (None, false) => BranchDeletionOutcome::NotDeleted,
+    };
 
-    repo.run_command(&["branch", "-D", branch_name])?;
-    Ok(Some(reason)) // Deleted: Some(Some(reason)) if integrated, Some(None) if forced
+    Ok(BranchDeletionResult {
+        outcome,
+        effective_target,
+    })
 }
 
 /// Handle the result of a branch deletion attempt.
 ///
 /// Shows appropriate messages for non-deleted branches:
-/// - `Ok(None)`: We checked and chose not to delete (not integrated) - show info
+/// - `NotDeleted`: We checked and chose not to delete (not integrated) - show info
 /// - `Err(e)`: Git command failed - show warning with actual error
 ///
-/// Returns:
-/// - `Ok(Some(reason))` if branch was deleted (reason is None if force-deleted)
-/// - `Ok(None)` if branch was not deleted
+/// Returns the `BranchDeletionResult` on success, preserving the effective target.
 fn handle_branch_deletion_result(
-    result: anyhow::Result<Option<Option<IntegrationReason>>>,
+    result: anyhow::Result<BranchDeletionResult>,
     branch_name: &str,
-) -> anyhow::Result<Option<Option<IntegrationReason>>> {
-    match result {
-        Ok(Some(reason)) => Ok(Some(reason)), // Deleted (with or without integration reason)
-        Ok(None) => {
+) -> anyhow::Result<BranchDeletionResult> {
+    match &result {
+        Ok(r) if !matches!(r.outcome, BranchDeletionOutcome::NotDeleted) => result,
+        Ok(_) => {
             // Branch not integrated - we chose not to delete (not a failure)
             super::print(info_message(cformat!(
                 "Branch <bold>{branch_name}</> retained; has unmerged changes"
             )))?;
-            super::print(cformat!(
-                "{HINT_EMOJI} <dim>Use </>wt remove -D<dim> to delete unmerged branches</>"
-            ))?;
-            Ok(None)
+            super::print(hint_message(cformat!(
+                "<bright-black>wt remove -D</> deletes unmerged branches"
+            )))?;
+            result
         }
         Err(e) => {
             // Git command failed - this is an error (we decided to delete but couldn't)
@@ -162,47 +235,44 @@ fn handle_branch_deletion_result(
                 "Failed to delete branch <bold>{branch_name}</>"
             )))?;
             super::gutter(format_with_gutter(&e.to_string(), "", None))?;
-            Err(e)
+            result
         }
     }
 }
 
 /// Get flag acknowledgment note for remove messages
 ///
-/// `deletion_result`: None = not deleted, Some(None) = force-deleted, Some(Some(reason)) = integrated
 /// `target_branch`: The branch we checked integration against (shown in reason)
 fn get_flag_note(
     no_delete_branch: bool,
-    force_delete: bool,
-    deletion_result: Option<Option<IntegrationReason>>,
+    outcome: &BranchDeletionOutcome,
     target_branch: Option<&str>,
 ) -> String {
     if no_delete_branch {
-        " (--no-delete-branch)".to_string()
-    } else if force_delete && deletion_result.is_some() {
-        " (--force-delete)".to_string()
-    } else if let Some(target) = target_branch {
-        // Show integration reason when branch is deleted (both wt merge and wt remove)
-        match deletion_result {
-            Some(Some(IntegrationReason::SameCommit | IntegrationReason::Ancestor)) => {
-                format!(" (already in {target})")
+        return " (--no-delete-branch)".to_string();
+    }
+
+    match outcome {
+        BranchDeletionOutcome::NotDeleted => String::new(),
+        BranchDeletionOutcome::ForceDeleted => " (--force-delete)".to_string(),
+        BranchDeletionOutcome::Integrated(reason) => {
+            let Some(target) = target_branch else {
+                return String::new();
+            };
+            match reason {
+                IntegrationReason::SameCommit | IntegrationReason::Ancestor => {
+                    format!(" (already in {target})")
+                }
+                IntegrationReason::NoAddedChanges => " (no file changes)".to_string(),
+                IntegrationReason::TreesMatch => format!(" (files match {target})"),
+                IntegrationReason::MergeAddsNothing => format!(" (all changes in {target})"),
             }
-            Some(Some(IntegrationReason::NoAddedChanges)) => " (no file changes)".to_string(),
-            Some(Some(IntegrationReason::TreesMatch)) => format!(" (files match {target})"),
-            Some(Some(IntegrationReason::MergeAddsNothing)) => {
-                format!(" (all changes in {target})")
-            }
-            Some(None) | None => String::new(),
         }
-    } else {
-        // No target branch available (e.g., couldn't resolve default branch)
-        String::new()
     }
 }
 
 /// Format message for remove worktree operation (includes emoji and color for consistency)
 ///
-/// `deletion_result`: None = not deleted, Some(None) = force-deleted, Some(Some(reason)) = integrated
 /// `target_branch`: The branch we checked integration against (Some = merge context, None = explicit remove)
 #[allow(clippy::too_many_arguments)]
 fn format_remove_worktree_message(
@@ -211,23 +281,20 @@ fn format_remove_worktree_message(
     branch_name: &str,
     branch: Option<&str>,
     no_delete_branch: bool,
-    force_delete: bool,
-    deletion_result: Option<Option<IntegrationReason>>,
+    outcome: &BranchDeletionOutcome,
     target_branch: Option<&str>,
 ) -> String {
-    // Show flag acknowledgment when applicable
-    let flag_note = get_flag_note(
-        no_delete_branch,
-        force_delete,
-        deletion_result,
-        target_branch,
-    );
+    let flag_note = get_flag_note(no_delete_branch, outcome, target_branch);
 
     let branch_display = branch.or(Some(branch_name));
     let path_display = format_path_for_display(main_path);
 
     // Build message parallel to background format: "Removed {branch} worktree & branch{flag_note}"
-    let action_suffix = if no_delete_branch || deletion_result.is_none() {
+    let branch_deleted = matches!(
+        outcome,
+        BranchDeletionOutcome::ForceDeleted | BranchDeletionOutcome::Integrated(_)
+    );
+    let action_suffix = if no_delete_branch || !branch_deleted {
         "worktree"
     } else {
         "worktree & branch"
@@ -434,14 +501,13 @@ fn handle_branch_only_output(
     let check_target = default_branch.as_deref().unwrap_or("HEAD");
 
     let result = delete_branch_if_safe(&repo, branch_name, check_target, force_delete);
-    let integration_reason = handle_branch_deletion_result(result, branch_name)?;
+    let deletion = handle_branch_deletion_result(result, branch_name)?;
 
-    if integration_reason.is_some() {
+    if !matches!(deletion.outcome, BranchDeletionOutcome::NotDeleted) {
         let flag_note = get_flag_note(
             no_delete_branch,
-            force_delete,
-            integration_reason,
-            default_branch.as_deref(),
+            &deletion.outcome,
+            Some(&deletion.effective_target),
         );
         super::print(success_message(cformat!(
             "Removed branch <bold>{branch_name}</>{flag_note}"
@@ -476,14 +542,13 @@ fn handle_removed_worktree_output(
 
     // Execute pre-remove hooks in the worktree being removed
     // Non-zero exit aborts removal (FailFast strategy)
-    // For detached HEAD, branch expands to empty string in templates
+    // For detached HEAD, {{ branch }} expands to "HEAD" in templates
     if verify && let Ok(config) = WorktrunkConfig::load() {
         let target_repo = Repository::at(worktree_path);
-        let hook_branch = branch_name.unwrap_or("");
         let ctx = CommandContext::new(
             &target_repo,
             &config,
-            hook_branch,
+            branch_name,
             worktree_path,
             main_path,
             false, // force=false for CommandContext (not approval-related)
@@ -529,37 +594,41 @@ fn handle_removed_worktree_output(
     if background {
         // Background mode: spawn detached process
 
-        // Determine if we should delete the branch and why (check once upfront)
-        let (should_delete_branch, integration_reason) = if no_delete_branch {
-            (false, None)
+        // Determine outcome upfront (check once, not in background script)
+        // Only show effective_target in message if we had a meaningful target (not tautological "HEAD" fallback)
+        let (outcome, effective_target) = if no_delete_branch {
+            (
+                BranchDeletionOutcome::NotDeleted,
+                target_branch.map(String::from),
+            )
         } else if force_delete {
-            // Force delete requested - always delete
-            (true, None)
+            (
+                BranchDeletionOutcome::ForceDeleted,
+                target_branch.map(String::from),
+            )
         } else {
-            // Check if branch is integrated (ancestor or matching tree content)
+            // Check if branch is integrated
             let check_target = target_branch.unwrap_or("HEAD");
             let deletion_repo = worktrunk::git::Repository::at(main_path);
-            let reason = get_integration_reason(&deletion_repo, branch_name, check_target);
-            (reason.is_some(), reason)
+            let IntegrationResult {
+                reason,
+                effective_target,
+            } = get_integration_reason(&deletion_repo, branch_name, check_target);
+            // Only use effective_target for display if we had a real target (not "HEAD" fallback)
+            let display_target = target_branch.map(|_| effective_target);
+            let outcome = match reason {
+                Some(r) => BranchDeletionOutcome::Integrated(r),
+                None => BranchDeletionOutcome::NotDeleted,
+            };
+            (outcome, display_target)
         };
 
-        // Build deletion_result in the format expected by get_flag_note
-        let deletion_result: Option<Option<IntegrationReason>> = if should_delete_branch {
-            if force_delete {
-                Some(None) // force-deleted
-            } else {
-                Some(integration_reason) // integrated
-            }
-        } else {
-            None // not deleted
-        };
-
-        let flag_note = get_flag_note(
-            no_delete_branch,
-            force_delete,
-            deletion_result,
-            target_branch,
+        let should_delete_branch = matches!(
+            outcome,
+            BranchDeletionOutcome::ForceDeleted | BranchDeletionOutcome::Integrated(_)
         );
+
+        let flag_note = get_flag_note(no_delete_branch, &outcome, effective_target.as_deref());
 
         // Reason in parentheses: user flags shown explicitly, integration reason for automatic cleanup
         let action = if no_delete_branch {
@@ -579,9 +648,9 @@ fn handle_removed_worktree_output(
 
         // Show hint for unmerged branches (same as synchronous path)
         if !no_delete_branch && !should_delete_branch {
-            super::print(cformat!(
-                "{HINT_EMOJI} <dim>Use </>wt remove -D<dim> to delete unmerged branches</>"
-            ))?;
+            super::print(hint_message(cformat!(
+                "<bright-black>wt remove -D</> deletes unmerged branches"
+            )))?;
         }
 
         // Build command with the decision we already made
@@ -619,14 +688,21 @@ fn handle_removed_worktree_output(
         }
 
         // Delete the branch (unless --no-delete-branch was specified)
-        let integration_reason = if !no_delete_branch {
+        // Only show effective_target in message if we had a meaningful target (not tautological "HEAD" fallback)
+        let (outcome, effective_target) = if !no_delete_branch {
             let deletion_repo = worktrunk::git::Repository::at(main_path);
             let check_target = target_branch.unwrap_or("HEAD");
             let result =
                 delete_branch_if_safe(&deletion_repo, branch_name, check_target, force_delete);
-            handle_branch_deletion_result(result, branch_name)?
+            let deletion = handle_branch_deletion_result(result, branch_name)?;
+            // Only use effective_target for display if we had a real target (not "HEAD" fallback)
+            let display_target = target_branch.map(|_| deletion.effective_target);
+            (deletion.outcome, display_target)
         } else {
-            None
+            (
+                BranchDeletionOutcome::NotDeleted,
+                target_branch.map(String::from),
+            )
         };
 
         // Show success message (includes emoji and color)
@@ -636,9 +712,8 @@ fn handle_removed_worktree_output(
             branch_name,
             branch,
             no_delete_branch,
-            force_delete,
-            integration_reason,
-            target_branch,
+            &outcome,
+            effective_target.as_deref(),
         )))?;
 
         super::flush()?;
@@ -679,7 +754,13 @@ pub(crate) fn execute_streaming(
     redirect_stdout_to_stderr: bool,
     stdin_content: Option<&str>,
 ) -> anyhow::Result<()> {
+    #[cfg(unix)]
+    use nix::sys::signal::{Signal, kill};
+    #[cfg(unix)]
+    use nix::unistd::Pid;
     use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::process::CommandExt;
     use worktrunk::git::WorktrunkError;
     use worktrunk::shell_exec::ShellConfig;
 
@@ -703,6 +784,12 @@ pub(crate) fn execute_streaming(
     };
 
     let mut cmd = shell.command(command);
+
+    // Put child in its own process group so we can forward SIGINT to the entire group.
+    // Uses posix_spawnattr_setpgroup when available; otherwise falls back to fork/exec.
+    #[cfg(unix)]
+    cmd.process_group(0);
+
     let mut child = cmd
         .current_dir(working_dir)
         .stdin(stdin_mode)
@@ -717,6 +804,31 @@ pub(crate) fn execute_streaming(
                 message: format!("Failed to execute command with {}: {}", shell.name, e),
             })
         })?;
+
+    // Child PID equals its PGID since it's the process group leader
+    #[cfg(unix)]
+    let child_pid = Pid::from_raw(child.id() as i32);
+
+    #[cfg(unix)]
+    let (signal_handle, signal_thread) = {
+        use signal_hook::consts::SIGINT;
+        use signal_hook::iterator::Signals;
+
+        let mut signals = Signals::new([SIGINT])
+            .map_err(|e| anyhow::anyhow!("Failed to install SIGINT handler: {e}"))?;
+        let handle = signals.handle();
+
+        let thread = std::thread::spawn(move || {
+            for sig in signals.forever() {
+                if sig == SIGINT {
+                    // Forward Ctrl-C to the entire child process group.
+                    let _ = kill(Pid::from_raw(-child_pid.as_raw()), Signal::SIGINT);
+                }
+            }
+        });
+
+        (handle, thread)
+    };
 
     // Write stdin content if provided (used for hook context JSON)
     // We ignore write errors here because:
@@ -737,6 +849,13 @@ pub(crate) fn execute_streaming(
             message: format!("Failed to wait for command: {}", e),
         })
     })?;
+
+    #[cfg(unix)]
+    {
+        // Stop listening for SIGINT and join the forwarding thread.
+        signal_handle.close();
+        let _ = signal_thread.join();
+    }
 
     // Check if child was killed by a signal (Unix only)
     // This handles Ctrl-C: when SIGINT is sent, the child receives it and terminates,

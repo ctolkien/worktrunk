@@ -1,3 +1,4 @@
+#![cfg(unix)]
 //! TUI snapshot tests for `wt select`
 //!
 //! These tests use PTY execution combined with vt100 terminal emulation to capture
@@ -21,7 +22,7 @@
 use crate::common::TestRepo;
 use insta::assert_snapshot;
 use insta_cmd::get_cargo_bin;
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{CommandBuilder, PtySize};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::mpsc;
@@ -98,7 +99,7 @@ fn exec_in_pty_with_input_expectations(
     env_vars: &[(String, String)],
     inputs: &[(&str, Option<&str>)],
 ) -> (Vec<u8>, i32) {
-    let pty_system = native_pty_system();
+    let pty_system = crate::common::native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
             rows: TERM_ROWS,
@@ -343,7 +344,6 @@ fn normalize_output(output: &str) -> String {
 
 fn test_select_abort_with_escape() {
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     let env_vars = repo.test_env_vars();
     let (raw_output, exit_code) = exec_in_pty_with_input(
@@ -365,7 +365,6 @@ fn test_select_abort_with_escape() {
 
 fn test_select_with_multiple_worktrees() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
     repo.add_worktree("feature-one");
     repo.add_worktree("feature-two");
 
@@ -389,7 +388,6 @@ fn test_select_with_multiple_worktrees() {
 
 fn test_select_with_branches() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
     repo.add_worktree("active-worktree");
     // Create a branch without a worktree
     let output = repo
@@ -419,7 +417,6 @@ fn test_select_with_branches() {
 
 fn test_select_preview_panel_uncommitted() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
     let feature_path = repo.add_worktree("feature");
 
     // First, create and commit a file so we have something to modify
@@ -475,7 +472,6 @@ fn test_select_preview_panel_uncommitted() {
 
 fn test_select_preview_panel_log() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
     let feature_path = repo.add_worktree("feature");
 
     // Make several commits in the feature worktree
@@ -530,7 +526,6 @@ fn test_select_preview_panel_log() {
 
 fn test_select_preview_panel_main_diff() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
     let feature_path = repo.add_worktree("feature");
 
     // Make commits in the feature worktree that differ from main

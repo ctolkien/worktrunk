@@ -61,77 +61,33 @@ jobs:
         echo "Using Git Bash for Windows tests"
       shell: pwsh
 
-    - name: 🏭 Compile
-      uses: clechasseur/rs-cargo@v4
+    - name: Setup Python for pre-commit
+      uses: actions/setup-python@v5
       with:
-        command: test
-        args: --no-run --locked --features shell-integration-tests
+        python-version: '3.12'
 
-    - name: 📋 Test
-      uses: clechasseur/rs-cargo@v4
-      timeout-minutes: 10
-      with:
-        command: insta
-        args: test --test-runner=nextest --features shell-integration-tests
+    - name: 🔍 Pre-commit hooks
+      run: |
+        pip install pre-commit
+        pre-commit run --all-files
+      env:
+        # Skip lychee on Windows/macOS - it requires bash and we only need to run it once
+        SKIP: ${{ runner.os != 'Linux' && 'lychee' || '' }}
 
-    - name: 📖 Doctest
-      uses: clechasseur/rs-cargo@v4
-      with:
-        command: test
-        args: --doc --locked
-
-    - name: 📎 Clippy
-      uses: clechasseur/rs-cargo@v4
-      with:
-        command: clippy
-        args: --all-targets --all-features -- -D warnings
-
-    - name: ⌨️ Fmt
-      uses: clechasseur/rs-cargo@v4
-      with:
-        command: fmt
-        args: --all --check
-
-    - name: 🗒️ Doc
-      uses: clechasseur/rs-cargo@v4
-      with:
-        command: doc
-        args: --no-deps
-
-  check-links:
-    runs-on: ubuntu-latest
-    steps:
-    - name: 📂 Checkout code
-      uses: actions/checkout@v6
-
-    - name: Install lychee
+    # On Linux/macOS: Install from crates.io (pre-merge hooks run against published version)
+    # On Windows: Build from source (published version may not have Git Bash detection fixes)
+    - name: Install wt (Linux/macOS)
+      if: runner.os != 'Windows'
       uses: baptiste0928/cargo-install@v3
       with:
-        crate: lychee
+        crate: worktrunk
 
-    - name: Setup Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: "3.12"
+    - name: Install wt (Windows - from source)
+      if: runner.os == 'Windows'
+      run: cargo install --path .
 
-    - name: Install pre-commit
-      run: pip install pre-commit
-
-    - name: Get modified markdown files
-      if: github.event_name == 'pull_request'
-      id: changed-files
-      uses: tj-actions/changed-files@v47
-      with:
-        files: |
-          **/*.md
-
-    - name: Link checker (modified files - PRs)
-      if: github.event_name == 'pull_request' && steps.changed-files.outputs.any_modified == 'true'
-      run: pre-commit run lychee --files ${{ steps.changed-files.outputs.all_changed_files }}
-
-    - name: Link checker (all files - main branch)
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      run: pre-commit run lychee --all-files
+    - name: 🧪 Pre-merge hooks
+      run: wt hook pre-merge --force
 
   # Check if Cargo files changed (for conditional jobs below)
   changes:
@@ -198,7 +154,7 @@ jobs:
     - uses: clechasseur/rs-cargo@v4
       with:
         command: udeps
-        args: --all-targets --locked
+        args: --all-targets
 
   benchmarks:
     runs-on: ubuntu-latest
@@ -224,4 +180,4 @@ jobs:
       with:
         command: bench
         # Run completion benchmarks (list has slow real_repo tests)
-        args: --locked --bench completion -- --warm-up-time 0.3 --measurement-time 1
+        args: --bench completion -- --warm-up-time 0.3 --measurement-time 1

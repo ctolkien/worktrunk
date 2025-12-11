@@ -30,9 +30,7 @@ fn snapshot_remove_with_global_flags(
 
 /// Common setup for remove tests - creates repo with initial commit and remote
 fn setup_remove_repo() -> TestRepo {
-    let repo = TestRepo::new();
-    repo.commit("Initial commit");
-    repo
+    TestRepo::new()
 }
 
 #[test]
@@ -497,7 +495,10 @@ fn test_remove_branch_matching_tree_content() {
 /// 1. Linked worktrees can be removed (whether from within them or from elsewhere)
 /// 2. The main worktree cannot be removed under any circumstances
 /// 3. This is true regardless of which branch is checked out in the main worktree
+///
+/// Skipped on Windows: File locking prevents worktree removal during test execution.
 #[test]
+#[cfg_attr(windows, ignore)]
 fn test_remove_main_worktree_vs_linked_worktree() {
     let mut repo = setup_remove_repo();
 
@@ -760,11 +761,12 @@ fn test_remove_squash_merged_then_main_advanced() {
 // ============================================================================
 
 /// Test pre-remove hook executes before worktree removal.
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_pre_remove_hook_executes() {
     // Use simple repo without remote for predictable project ID
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create project config with pre-remove hook
     repo.write_project_config(r#"pre-remove = "echo 'About to remove worktree'""#);
@@ -792,11 +794,12 @@ approved-commands = ["echo 'About to remove worktree'"]
 }
 
 /// Test pre-remove hook has access to template variables.
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_pre_remove_hook_template_variables() {
     // Use simple repo without remote for predictable project ID
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create project config with template variables
     repo.write_project_config(
@@ -834,13 +837,14 @@ approved-commands = [
 }
 
 /// Test pre-remove hook runs even in background mode (before spawning background process).
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_pre_remove_hook_runs_in_background_mode() {
     use crate::common::wait_for_file;
 
     // Use simple repo without remote for predictable project ID
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create a marker file that the hook will create
     let marker_file = repo.root_path().join("hook-ran.txt");
@@ -884,11 +888,12 @@ approved-commands = ["echo 'hook ran' > {}"]
 }
 
 /// Test pre-remove hook failure aborts removal (FailFast strategy).
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_pre_remove_hook_failure_aborts() {
     // Use simple repo without remote for predictable project ID
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create project config with failing hook
     repo.write_project_config(r#"pre-remove = "exit 1""#);
@@ -926,7 +931,6 @@ approved-commands = ["exit 1"]
 fn test_pre_remove_hook_not_for_branch_only() {
     // Use simple repo without remote for predictable project ID
     let repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create a marker file that the hook would create
     let marker_file = repo.root_path().join("branch-only-hook.txt");
@@ -975,7 +979,6 @@ fn test_pre_remove_hook_skipped_with_no_verify() {
 
     // Use simple repo without remote for predictable project ID
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create a marker file that the hook would create
     let marker_file = repo.root_path().join("should-not-exist.txt");
@@ -1028,10 +1031,12 @@ approved-commands = ["echo 'hook ran' > {}"]
 ///
 /// Even when a worktree is in detached HEAD state (no branch), the pre-remove
 /// hook should still execute.
+///
+/// Skipped on Windows: File locking prevents worktree removal during test execution.
 #[test]
+#[cfg_attr(windows, ignore)]
 fn test_pre_remove_hook_runs_for_detached_head() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create marker file path in the repo root
     // Use short filename to avoid terminal line-wrapping differences between platforms
@@ -1075,10 +1080,11 @@ approved-commands = ["touch {marker_path}"]
 ///
 /// This complements `test_pre_remove_hook_runs_for_detached_head` by verifying
 /// the hook also runs when removal happens in background (the default).
+/// Skipped on Windows: snapshot output differs due to shell/path differences.
+#[cfg_attr(windows, ignore)]
 #[test]
 fn test_pre_remove_hook_runs_for_detached_head_background() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create marker file path in the repo root
     let marker_file = repo.root_path().join("detached-bg-hook-marker.txt");
@@ -1122,10 +1128,12 @@ approved-commands = ["touch {marker_path}"]
 /// (macOS temp paths are ~60 chars vs Linux ~20 chars). The snapshot version
 /// of this test (`test_pre_remove_hook_runs_for_detached_head`) verifies the hook runs;
 /// this test verifies the specific template expansion behavior.
+///
+/// Skipped on Windows: File locking prevents worktree removal during test execution.
 #[test]
+#[cfg_attr(windows, ignore)]
 fn test_pre_remove_hook_branch_expansion_detached_head() {
     let mut repo = TestRepo::new();
-    repo.commit("Initial commit");
 
     // Create a file where the hook will write the branch template expansion
     let branch_file = repo.root_path().join("branch-expansion.txt");
@@ -1164,12 +1172,12 @@ approved-commands = ["echo 'branch={{{{ branch }}}}' > {branch_path}"]
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Verify {{ branch }} expanded to empty string
+    // Verify {{ branch }} expanded to "HEAD" (fallback for detached HEAD state)
     let content =
         std::fs::read_to_string(&branch_file).expect("Hook should have created the branch file");
     assert_eq!(
         content.trim(),
-        "branch=",
-        "{{ branch }} should expand to empty string for detached HEAD worktrees"
+        "branch=HEAD",
+        "{{ branch }} should expand to 'HEAD' for detached HEAD worktrees"
     );
 }

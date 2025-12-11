@@ -6,14 +6,14 @@ use worktrunk::config::{CommandConfig, ProjectConfig, WorktrunkConfig};
 use worktrunk::git::Repository;
 use worktrunk::path::format_path_for_display;
 use worktrunk::styling::{
-    HINT_EMOJI, INFO_EMOJI, PROMPT_EMOJI, format_bash_with_gutter, format_with_gutter,
-    hint_message, info_message, progress_message, success_message,
+    INFO_EMOJI, PROMPT_EMOJI, format_bash_with_gutter, format_with_gutter, hint_message,
+    info_message, progress_message, success_message,
 };
 
 use super::command_executor::CommandContext;
 use super::commit::{CommitGenerator, CommitOptions};
 use super::context::CommandEnv;
-use super::hooks::HookPipeline;
+use super::hooks::{HookFailureStrategy, HookPipeline, run_hook_with_filter};
 use super::merge::{
     execute_post_merge_commands, execute_pre_remove_commands, run_pre_merge_commands,
 };
@@ -24,11 +24,13 @@ use super::repository_ext::RepositoryCliExt;
 ///
 /// When explicitly invoking hooks, ALL hooks run (both user and project).
 /// There's no skip flag - if you explicitly run hooks, all configured hooks run.
+///
+/// Works in detached HEAD state - `{{ branch }}` template variable will be "HEAD".
 pub fn run_hook(hook_type: HookType, force: bool, name_filter: Option<&str>) -> anyhow::Result<()> {
     use super::command_approval::approve_hooks_filtered;
 
-    // Derive context from current environment
-    let env = CommandEnv::for_action(&format!("run {hook_type} hook"))?;
+    // Derive context from current environment (branch-optional for CI compatibility)
+    let env = CommandEnv::for_action_branchless()?;
     let repo = &env.repo;
     let ctx = env.context(force);
 
@@ -54,35 +56,55 @@ pub fn run_hook(hook_type: HookType, force: bool, name_filter: Option<&str>) -> 
         };
     }
 
+    /// Helper to require at least one hook is configured (for standalone `wt hook` command)
+    fn require_hooks(
+        user: Option<&CommandConfig>,
+        project: Option<&CommandConfig>,
+        hook_type: HookType,
+    ) -> anyhow::Result<()> {
+        if user.is_none() && project.is_none() {
+            return Err(worktrunk::git::GitError::Other {
+                message: format!("No {hook_type} hook configured (neither user nor project)"),
+            }
+            .into());
+        }
+        Ok(())
+    }
+
     // Execute the hook based on type
     match hook_type {
         HookType::PostCreate => {
             let user_config = user_hook!(post_create);
             let project_config = project_config.as_ref().and_then(|c| c.post_create.as_ref());
+            require_hooks(user_config, project_config, hook_type)?;
             run_hook_with_filter(
                 &ctx,
                 user_config,
                 project_config,
                 hook_type,
                 &[],
+                HookFailureStrategy::FailFast,
                 name_filter,
             )
         }
         HookType::PostStart => {
             let user_config = user_hook!(post_start);
             let project_config = project_config.as_ref().and_then(|c| c.post_start.as_ref());
+            require_hooks(user_config, project_config, hook_type)?;
             run_hook_with_filter(
                 &ctx,
                 user_config,
                 project_config,
                 hook_type,
                 &[],
+                HookFailureStrategy::FailFast,
                 name_filter,
             )
         }
         HookType::PreCommit => {
             let user_config = user_hook!(pre_commit);
             let project_config = project_config.as_ref().and_then(|c| c.pre_commit.as_ref());
+            require_hooks(user_config, project_config, hook_type)?;
             // Pre-commit hook can optionally use target branch context
             let target_branch = repo.default_branch().ok();
             let extra_vars: Vec<(&str, &str)> = target_branch
@@ -96,6 +118,7 @@ pub fn run_hook(hook_type: HookType, force: bool, name_filter: Option<&str>) -> 
                 project_config,
                 hook_type,
                 &extra_vars,
+                HookFailureStrategy::FailFast,
                 name_filter,
             )
         }
@@ -104,94 +127,14 @@ pub fn run_hook(hook_type: HookType, force: bool, name_filter: Option<&str>) -> 
             // which already handle user hooks (approval already happened at gate)
             // Use current branch as target (matches approval prompt for wt hook)
             let project_cfg = project_config.unwrap_or_default();
-            run_pre_merge_commands(&project_cfg, &ctx, &env.branch, name_filter)
+            run_pre_merge_commands(&project_cfg, &ctx, ctx.branch_or_head(), name_filter)
         }
         HookType::PostMerge => {
             // Use current branch as target (matches approval prompt for wt hook)
-            execute_post_merge_commands(&ctx, &env.branch, name_filter)
+            execute_post_merge_commands(&ctx, ctx.branch_or_head(), name_filter)
         }
         HookType::PreRemove => execute_pre_remove_commands(&ctx, name_filter),
     }
-}
-
-/// Run user and project hooks with optional name filter (used by standalone hook commands)
-///
-/// Runs user hooks first, then project hooks.
-/// Returns an error if no hooks are configured for this hook type.
-fn run_hook_with_filter(
-    ctx: &super::command_executor::CommandContext,
-    user_config: Option<&worktrunk::config::CommandConfig>,
-    project_config: Option<&worktrunk::config::CommandConfig>,
-    hook_type: HookType,
-    extra_vars: &[(&str, &str)],
-    name_filter: Option<&str>,
-) -> anyhow::Result<()> {
-    use super::hooks::{HookFailureStrategy, HookPipeline, HookSource};
-
-    // Check at least one hook is configured
-    if user_config.is_none() && project_config.is_none() {
-        return Err(worktrunk::git::GitError::Other {
-            message: format!("No {hook_type} hook configured (neither user nor project)"),
-        }
-        .into());
-    }
-
-    let pipeline = HookPipeline::new(*ctx);
-    let mut total_commands_run = 0;
-
-    // Run user hooks first (no approval required)
-    if let Some(config) = user_config {
-        total_commands_run += pipeline.run_sequential(
-            config,
-            hook_type,
-            HookSource::User,
-            extra_vars,
-            HookFailureStrategy::FailFast,
-            name_filter,
-        )?;
-    }
-
-    // Then run project hooks (approval already happened at gate)
-    if let Some(config) = project_config {
-        total_commands_run += pipeline.run_sequential(
-            config,
-            hook_type,
-            HookSource::Project,
-            extra_vars,
-            HookFailureStrategy::FailFast,
-            name_filter,
-        )?;
-    }
-
-    // If name filter was provided but no commands matched, error with available names
-    if let Some(name) = name_filter
-        && total_commands_run == 0
-    {
-        let mut available = Vec::new();
-        if let Some(config) = user_config {
-            available.extend(
-                config
-                    .commands()
-                    .iter()
-                    .filter_map(|c| c.name.as_ref().map(|n| format!("user:{n}"))),
-            );
-        }
-        if let Some(config) = project_config {
-            available.extend(
-                config
-                    .commands()
-                    .iter()
-                    .filter_map(|c| c.name.as_ref().map(|n| format!("project:{n}"))),
-            );
-        }
-        return Err(worktrunk::git::GitError::HookCommandNotFound {
-            name: name.to_string(),
-            available,
-        }
-        .into());
-    }
-
-    Ok(())
 }
 
 /// Handle `wt step commit` command
@@ -259,7 +202,8 @@ pub fn handle_squash(
 
     let env = CommandEnv::for_action("squash")?;
     let repo = &env.repo;
-    let current_branch = env.branch.clone();
+    // Squash requires being on a branch (can't squash in detached HEAD)
+    let current_branch = env.require_branch("squash")?.to_string();
     let ctx = env.context(force);
     let generator = CommitGenerator::new(&env.config.commit_generation);
 
@@ -671,8 +615,9 @@ pub fn handle_hook_show(hook_type_filter: Option<&str>, expanded: bool) -> anyho
 
     // Build context for template expansion (only used if --expanded)
     // Need to keep CommandEnv alive for the lifetime of ctx
+    // Uses branchless mode - template expansion uses "HEAD" in detached HEAD state
     let env = if expanded {
-        Some(CommandEnv::for_action("show hooks")?)
+        Some(CommandEnv::for_action_branchless()?)
     } else {
         None
     };
@@ -750,11 +695,7 @@ fn render_user_hooks(
     }
 
     if !has_any {
-        writeln!(
-            out,
-            "{}",
-            cformat!("{HINT_EMOJI} <dim>(none configured)</>")
-        )?;
+        writeln!(out, "{}", hint_message("(none configured)"))?;
     }
 
     Ok(())
@@ -783,7 +724,7 @@ fn render_project_hooks(
     )?;
 
     let Some(config) = project_config else {
-        writeln!(out, "{}", cformat!("{HINT_EMOJI} <dim>(not found)</>"))?;
+        writeln!(out, "{}", hint_message("(not found)"))?;
         return Ok(());
     };
 
@@ -813,11 +754,7 @@ fn render_project_hooks(
     }
 
     if !has_any {
-        writeln!(
-            out,
-            "{}",
-            cformat!("{HINT_EMOJI} <dim>(none configured)</>")
-        )?;
+        writeln!(out, "{}", hint_message("(none configured)"))?;
     }
 
     Ok(())
@@ -891,24 +828,17 @@ fn expand_command_template(template: &str, ctx: &CommandContext, hook_type: Hook
         }
         HookType::PreMerge | HookType::PostMerge => {
             // Pre-merge and post-merge use current branch as target
-            vec![("target", ctx.branch)]
+            vec![("target", ctx.branch_or_head())]
         }
         _ => Vec::new(),
     };
     let template_ctx = build_hook_context(ctx, &extra_vars);
+    let vars: std::collections::HashMap<&str, &str> = template_ctx
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
 
-    // Use the standard template expansion
-    worktrunk::config::expand_template(
-        template,
-        ctx.repo_root
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown"),
-        ctx.branch,
-        &template_ctx
-            .iter()
-            .map(|(k, v)| (k.as_str(), v.as_str()))
-            .collect(),
-    )
-    .unwrap_or_else(|_| template.to_string())
+    // Use the standard template expansion (shell-escaped)
+    worktrunk::config::expand_template(template, &vars, true)
+        .unwrap_or_else(|_| template.to_string())
 }

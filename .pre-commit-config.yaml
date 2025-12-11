@@ -25,7 +25,7 @@ repos:
     rev: v1.0.1
     hooks:
       - id: clippy
-        args: ["--all-targets", "--", "-D", "warnings"]
+        args: ["--all-targets", "--all-features", "--", "-D", "warnings"]
   - repo: https://github.com/lycheeverse/lychee
     rev: lychee-v0.22.0
     hooks:
@@ -37,6 +37,9 @@ repos:
         types: [markdown]
         args:
           - --config=.config/lychee.toml
+          # Suppress warnings about root-relative paths (e.g., /assets/wt-demo.gif)
+          # These are valid web paths validated by zola, not lychee
+          - -q
       # Comprehensive mode - check all links with full config
       # Run manually: pre-commit run --hook-stage manual lychee-all --all-files
       - id: lychee
@@ -45,8 +48,16 @@ repos:
         stages: [manual]
         args:
           - --config=.config/lychee.toml
+          - -q
   - repo: local
     hooks:
+      - id: cargo-lock
+        name: cargo-lock
+        description: Ensure Cargo.lock is in sync with Cargo.toml
+        language: system
+        entry: cargo check --locked
+        pass_filenames: false
+        files: (Cargo\.toml|Cargo\.lock)$
       - id: no-dbg
         name: no-dbg
         description: We shouldn't merge code with `dbg!` in
@@ -65,5 +76,5 @@ repos:
 ci:
   # pre-commit.ci doesn't have Rust toolchain, so skip Rust-specific hooks.
   # Network access also isn't supported, so skip lychee.
-  skip: [fmt, clippy, lychee]
+  skip: [fmt, clippy, lychee, cargo-lock]
   autoupdate_commit_msg: "chore: pre-commit autoupdate"

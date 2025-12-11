@@ -42,8 +42,8 @@ impl DisplayFields {
         });
 
         let upstream_display = upstream.as_ref().and_then(|u| {
-            u.active().and_then(|(_, upstream_ahead, upstream_behind)| {
-                ColumnKind::Upstream.format_diff_plain(upstream_ahead, upstream_behind)
+            u.active().and_then(|active| {
+                ColumnKind::Upstream.format_diff_plain(active.ahead, active.behind)
             })
         });
 
@@ -164,11 +164,20 @@ pub struct UpstreamStatus {
     pub(super) behind: usize,
 }
 
+/// Active upstream tracking information
+pub struct ActiveUpstream<'a> {
+    pub remote: &'a str,
+    pub ahead: usize,
+    pub behind: usize,
+}
+
 impl UpstreamStatus {
-    pub fn active(&self) -> Option<(&str, usize, usize)> {
-        self.remote
-            .as_deref()
-            .map(|remote| (remote, self.ahead, self.behind))
+    pub fn active(&self) -> Option<ActiveUpstream<'_>> {
+        self.remote.as_deref().map(|remote| ActiveUpstream {
+            remote,
+            ahead: self.ahead,
+            behind: self.behind,
+        })
     }
 
     #[cfg(test)]
@@ -212,7 +221,7 @@ pub struct ListItem {
     pub has_file_changes: Option<bool>,
     /// Whether merging branch into main would add changes (merge simulation).
     /// False when `git merge-tree --write-tree main branch` produces same tree as main.
-    /// Only computed with `--full` flag. Catches squash-merged branches where main advanced.
+    /// Catches squash-merged branches where main advanced.
     #[serde(skip)]
     pub would_merge_add: Option<bool>,
     /// Whether branch HEAD is an ancestor of main (or same commit).
@@ -305,86 +314,39 @@ impl ListItem {
         self.worktree_data().map(|data| &data.path)
     }
 
-    pub fn pr_status(&self) -> Option<Option<&PrStatus>> {
-        self.pr_status.as_ref().map(|opt| opt.as_ref())
-    }
-
     /// Determine if the item contains no unique work and can likely be removed.
     ///
-    /// Returns true when any of these conditions indicate the branch content
-    /// is already integrated into main:
+    /// Returns:
+    /// - `Some(true)` - confirmed removable (branch integrated into main)
+    /// - `Some(false)` - confirmed not removable (has unique work)
+    /// - `None` - data still loading, cannot determine yet
     ///
+    /// Checks (in order):
     /// 1. **Same commit** - branch HEAD is ancestor of main or same commit.
     ///    The branch is already part of main's history.
     /// 2. **No file changes** - three-dot diff (`main...branch`) is empty.
     ///    Catches squash-merged branches where commits exist but add no files.
     /// 3. **Tree matches main** - tree SHA equals main's tree SHA.
     ///    Catches rebased/squash-merged branches with identical content.
-    /// 4. **Merge simulation** (`--full` only) - merging branch into main wouldn't
-    ///    change main's tree. Catches squash-merged branches where main has advanced.
+    /// 4. **Merge simulation** - merging branch into main wouldn't change main's
+    ///    tree. Catches squash-merged branches where main has advanced.
     /// 5. **Working tree matches main** (worktrees only) - uncommitted changes
     ///    don't diverge from main.
-    pub(crate) fn is_potentially_removable(&self) -> bool {
-        if self.is_main() {
-            return false;
-        }
+    pub(crate) fn is_potentially_removable(&self) -> Option<bool> {
+        // Use already-computed status_symbols if available
+        let main_state = self.status_symbols.as_ref()?.main_state;
+        Some(matches!(
+            main_state,
+            MainState::SameCommit | MainState::Integrated(_)
+        ))
+    }
 
-        // Helper: check if working tree is clean
-        let is_working_tree_clean = || {
-            self.worktree_data()
-                .map(|data| {
-                    data.working_tree_diff
-                        .as_ref()
-                        .map(|d| d.is_empty())
-                        .unwrap_or(true)
-                })
-                .unwrap_or(true) // Branches without worktrees are "clean"
-        };
-
-        // Check 1: Branch is ancestor of main (same commit or already merged)
-        if self.is_ancestor == Some(true) && is_working_tree_clean() {
-            return true;
-        }
-
-        // Check 2: No file changes beyond merge-base (three-dot diff empty)
-        // This is the primary integration check - catches most cases including
-        // squash-merged branches where commits exist but don't add file changes.
-        if self.has_file_changes == Some(false) && is_working_tree_clean() {
-            return true;
-        }
-
-        // Check 3: Tree SHA matches main (handles squash merge/rebase)
-        if self.committed_trees_match == Some(true) && is_working_tree_clean() {
-            return true;
-        }
-
-        // Check 4: Merge simulation (--full only)
-        // Merging branch into main wouldn't add changes - content already integrated.
-        // This catches cases where main has advanced past the squash-merge point.
-        if self.would_merge_add == Some(false) && is_working_tree_clean() {
-            return true;
-        }
-
-        let counts = self.counts();
-
-        // Check 5 (worktrees): Working tree matches main
-        if let Some(data) = self.worktree_data() {
-            let no_commits_and_clean = counts.ahead == 0
-                && data
-                    .working_tree_diff
-                    .as_ref()
-                    .map(|d| d.is_empty())
-                    .unwrap_or(true);
-            let matches_main = data
-                .working_tree_diff_with_main
-                .and_then(|opt_diff| opt_diff)
-                .map(|diff| diff.is_empty())
-                .unwrap_or(false);
-            no_commits_and_clean || matches_main
-        } else {
-            // Branch without worktree: fallback to ahead == 0
-            counts.ahead == 0
-        }
+    /// Whether the branch/path text should be dimmed in list output.
+    ///
+    /// Returns true only when we have confirmed the item is removable.
+    /// Returns false when data is still loading (prevents UI flash).
+    pub(crate) fn should_dim(&self) -> bool {
+        self.is_potentially_removable() == Some(true)
     }
 
     /// Format this item as a single-line statusline string.
@@ -435,8 +397,9 @@ impl ListItem {
 
         // 6. Upstream status
         if let Some(ref upstream) = self.upstream
-            && let Some((_, ahead, behind)) = upstream.active()
-            && let Some(formatted) = ColumnKind::Upstream.format_diff_plain(ahead, behind)
+            && let Some(active) = upstream.active()
+            && let Some(formatted) =
+                ColumnKind::Upstream.format_diff_plain(active.ahead, active.behind)
         {
             parts.push(formatted);
         }
@@ -492,7 +455,7 @@ impl ListItem {
         let upstream = self.upstream.as_ref().unwrap_or(&default_upstream);
         let upstream_divergence = match upstream.active() {
             None => Divergence::None,
-            Some((_, ahead, behind)) => Divergence::from_counts_with_remote(ahead, behind),
+            Some(active) => Divergence::from_counts_with_remote(active.ahead, active.behind),
         };
 
         match &self.kind {
@@ -522,7 +485,7 @@ impl ListItem {
                 };
 
                 // Determine integration state (for non-main worktrees)
-                let (same_commit, integration_reason) = determine_integration_state(
+                let integration = determine_integration_state(
                     data.is_main,
                     default_branch,
                     self.is_ancestor,
@@ -538,8 +501,7 @@ impl ListItem {
                 let main_state = MainState::from_integration_and_counts(
                     data.is_main,
                     has_merge_tree_conflicts,
-                    same_commit,
-                    integration_reason,
+                    integration,
                     counts.ahead,
                     counts.behind,
                 );
@@ -557,35 +519,25 @@ impl ListItem {
                 // Simplified status computation for branches
                 // Only compute symbols that apply to branches (no working tree, git operation, or worktree attrs)
 
-                // Determine integration state for branches
-                let (same_commit, integration_reason) = if self.is_ancestor == Some(true) {
-                    if self.counts.as_ref().is_some_and(|c| c.behind == 0) {
-                        (true, None) // Same commit as main
-                    } else {
-                        (false, Some(IntegrationReason::Ancestor)) // Main has moved past
-                    }
-                } else if self.has_file_changes == Some(false) {
-                    (false, Some(IntegrationReason::NoAddedChanges))
-                } else if self.committed_trees_match == Some(true) {
-                    (false, Some(IntegrationReason::TreesMatch))
-                } else if self.would_merge_add == Some(false) {
-                    (false, Some(IntegrationReason::MergeAddsNothing))
-                } else if let Some(ref c) = self.counts {
-                    if c.ahead == 0 && c.behind == 0 {
-                        (true, None) // Same commit as main (fallback)
-                    } else {
-                        (false, None)
-                    }
-                } else {
-                    (false, None)
-                };
+                // Branches don't have working trees, so pass empty diff as "inherently clean"
+                let empty_diff = LineDiff::default();
+                let integration = determine_integration_state(
+                    false, // branches are never main worktree
+                    default_branch,
+                    self.is_ancestor,
+                    self.counts.as_ref().map(|c| c.behind),
+                    self.committed_trees_match.unwrap_or(false),
+                    self.has_file_changes,
+                    self.would_merge_add,
+                    Some(&empty_diff), // branches are always "clean" (no working tree)
+                    &None,             // no working_tree_diff_with_main for branches
+                );
 
                 // Compute main state
                 let main_state = MainState::from_integration_and_counts(
                     false, // not main
                     has_merge_tree_conflicts,
-                    same_commit,
-                    integration_reason,
+                    integration,
                     counts.ahead,
                     counts.behind,
                 );
@@ -603,26 +555,9 @@ impl ListItem {
     }
 }
 
-/// Determine integration state for a worktree.
+/// Determine integration state for a worktree or branch.
 ///
-/// Returns `(same_commit, integration_reason)` indicating whether the branch content
-/// is integrated into main and how.
-///
-/// # Return values
-///
-/// - `(true, None)`: Branch HEAD is exactly the same commit as main (SameCommit)
-/// - `(false, Some(reason))`: Content is integrated via the given reason
-/// - `(false, None)`: Not integrated (normal branch)
-///
-/// # Parameters
-///
-/// - `is_ancestor`: Whether branch HEAD is ancestor of main (None = not computed)
-/// - `behind_main`: Number of commits branch is behind main (None = not computed)
-/// - `committed_trees_match`: Whether committed tree SHAs match (HEAD^{tree} == main^{tree})
-/// - `has_file_changes`: Whether three-dot diff has file changes (None = not computed)
-/// - `would_merge_add`: Whether merge simulation shows changes (None = not computed, `--full` only)
-/// - `working_tree_diff_with_main`: Diff between working tree and main. May be `None` (not
-///   computed) or `Some(None)` (skipped). When unavailable, assumes no match.
+/// Returns `Some(MainState)` if integrated (SameCommit or Integrated), `None` otherwise.
 #[allow(clippy::too_many_arguments)]
 fn determine_integration_state(
     is_main: bool,
@@ -634,31 +569,33 @@ fn determine_integration_state(
     would_merge_add: Option<bool>,
     working_tree_diff: Option<&LineDiff>,
     working_tree_diff_with_main: &Option<Option<LineDiff>>,
-) -> (bool, Option<IntegrationReason>) {
+) -> Option<MainState> {
     if is_main || default_branch.is_none() {
-        return (false, None);
+        return None;
     }
 
-    let is_clean = working_tree_diff.map(|d| d.is_empty()).unwrap_or(true);
+    // Require working_tree_diff to be loaded and empty. Don't assume clean when unknown
+    // to avoid premature integration state (which would cause UI flash during progressive loading).
+    let is_clean = working_tree_diff.is_some_and(|d| d.is_empty());
 
     // Priority 1: Branch is exactly the same commit as main (ancestor with 0 behind)
     if is_ancestor == Some(true) && behind_main == Some(0) && is_clean {
-        return (true, None); // SameCommit
+        return Some(MainState::SameCommit);
     }
 
     // Priority 2: Branch is ancestor of main but main has moved past (already merged)
     if is_ancestor == Some(true) && is_clean {
-        return (false, Some(IntegrationReason::Ancestor));
+        return Some(MainState::Integrated(IntegrationReason::Ancestor));
     }
 
     // Priority 3: No file changes beyond merge-base (squash-merged)
     if has_file_changes == Some(false) && is_clean {
-        return (false, Some(IntegrationReason::NoAddedChanges));
+        return Some(MainState::Integrated(IntegrationReason::NoAddedChanges));
     }
 
     // Priority 4: Tree SHA matches main (squash merge/rebase with identical content)
     if committed_trees_match && is_clean {
-        return (false, Some(IntegrationReason::TreesMatch));
+        return Some(MainState::Integrated(IntegrationReason::TreesMatch));
     }
 
     // Priority 5: Working tree matches main
@@ -668,15 +605,15 @@ fn determine_integration_state(
         .is_some_and(|diff| diff.is_empty());
 
     if working_tree_matches_main {
-        return (false, Some(IntegrationReason::TreesMatch));
+        return Some(MainState::Integrated(IntegrationReason::TreesMatch));
     }
 
-    // Priority 6: Merge simulation shows no changes (--full only)
+    // Priority 6: Merge simulation shows no changes
     if would_merge_add == Some(false) && is_clean {
-        return (false, Some(IntegrationReason::MergeAddsNothing));
+        return Some(MainState::Integrated(IntegrationReason::MergeAddsNothing));
     }
 
-    (false, None)
+    None
 }
 
 /// Upstream divergence state relative to remote tracking branch.
@@ -885,12 +822,11 @@ impl MainState {
 
     /// Compute from divergence counts and integration state.
     ///
-    /// Priority: WouldConflict > SameCommit > Integrated > Diverged > Ahead > Behind
+    /// Priority: WouldConflict > integration > Diverged > Ahead > Behind
     pub fn from_integration_and_counts(
         is_main: bool,
         would_conflict: bool,
-        same_commit: bool,
-        integration_reason: Option<IntegrationReason>,
+        integration: Option<MainState>,
         ahead: usize,
         behind: usize,
     ) -> Self {
@@ -898,10 +834,8 @@ impl MainState {
             Self::IsMain
         } else if would_conflict {
             Self::WouldConflict
-        } else if same_commit {
-            Self::SameCommit
-        } else if let Some(reason) = integration_reason {
-            Self::Integrated(reason)
+        } else if let Some(state) = integration {
+            state
         } else {
             match (ahead, behind) {
                 (0, 0) => Self::None,
@@ -1446,29 +1380,28 @@ mod tests {
     fn test_main_state_from_integration_and_counts() {
         // IsMain takes priority
         assert!(matches!(
-            MainState::from_integration_and_counts(true, false, false, None, 5, 3),
+            MainState::from_integration_and_counts(true, false, None, 5, 3),
             MainState::IsMain
         ));
 
         // WouldConflict next
         assert!(matches!(
-            MainState::from_integration_and_counts(false, true, false, None, 5, 3),
+            MainState::from_integration_and_counts(false, true, None, 5, 3),
             MainState::WouldConflict
         ));
 
-        // SameCommit next
+        // SameCommit (passed as integration state)
         assert!(matches!(
-            MainState::from_integration_and_counts(false, false, true, None, 0, 0),
+            MainState::from_integration_and_counts(false, false, Some(MainState::SameCommit), 0, 0),
             MainState::SameCommit
         ));
 
-        // Integrated next
+        // Integrated (passed as integration state)
         assert!(matches!(
             MainState::from_integration_and_counts(
                 false,
                 false,
-                false,
-                Some(IntegrationReason::Ancestor),
+                Some(MainState::Integrated(IntegrationReason::Ancestor)),
                 0,
                 5
             ),
@@ -1477,25 +1410,25 @@ mod tests {
 
         // Diverged (both ahead and behind)
         assert!(matches!(
-            MainState::from_integration_and_counts(false, false, false, None, 3, 2),
+            MainState::from_integration_and_counts(false, false, None, 3, 2),
             MainState::Diverged
         ));
 
         // Ahead only
         assert!(matches!(
-            MainState::from_integration_and_counts(false, false, false, None, 3, 0),
+            MainState::from_integration_and_counts(false, false, None, 3, 0),
             MainState::Ahead
         ));
 
         // Behind only
         assert!(matches!(
-            MainState::from_integration_and_counts(false, false, false, None, 0, 2),
+            MainState::from_integration_and_counts(false, false, None, 0, 2),
             MainState::Behind
         ));
 
         // None (in sync)
         assert!(matches!(
-            MainState::from_integration_and_counts(false, false, false, None, 0, 0),
+            MainState::from_integration_and_counts(false, false, None, 0, 0),
             MainState::None
         ));
     }

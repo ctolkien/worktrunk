@@ -9,8 +9,8 @@ use worktrunk::git::Repository;
 use worktrunk::path::format_path_for_display;
 use worktrunk::shell::Shell;
 use worktrunk::styling::{
-    ERROR_EMOJI, HINT_EMOJI, INFO_EMOJI, WARNING_EMOJI, format_toml, format_with_gutter,
-    hint_message, info_message, progress_message, success_message, warning_message,
+    error_message, format_toml, format_with_gutter, hint_message, info_message, progress_message,
+    success_message, warning_message,
 };
 
 use super::configure_shell::{ConfigAction, scan_shell_configs};
@@ -116,7 +116,7 @@ fn create_config_file(
 }
 
 /// Handle the config show command
-pub fn handle_config_show(doctor: bool) -> anyhow::Result<()> {
+pub fn handle_config_show(full: bool) -> anyhow::Result<()> {
     // Build the complete output as a string
     let mut show_output = String::new();
 
@@ -130,9 +130,13 @@ pub fn handle_config_show(doctor: bool) -> anyhow::Result<()> {
 
     // Render shell integration status
     render_shell_status(&mut show_output)?;
+    show_output.push('\n');
 
-    // Display through pager (only if not in doctor mode, since doctor adds interactive output)
-    if doctor {
+    // Render binaries status
+    render_binaries_status(&mut show_output)?;
+
+    // Display through pager (only if not in full mode, since full adds interactive output)
+    if full {
         worktrunk::styling::eprintln!("{}", show_output);
     } else if let Err(e) = show_help_in_pager(&show_output) {
         log::debug!("Pager invocation failed: {}", e);
@@ -140,16 +144,16 @@ pub fn handle_config_show(doctor: bool) -> anyhow::Result<()> {
         worktrunk::styling::eprintln!("{}", show_output);
     }
 
-    // Run doctor checks if requested
-    if doctor {
-        run_doctor_checks()?;
+    // Run full diagnostic checks if requested
+    if full {
+        run_full_checks()?;
     }
 
     Ok(())
 }
 
-/// Run diagnostic checks on configuration
-fn run_doctor_checks() -> anyhow::Result<()> {
+/// Run full diagnostic checks (commit generation test)
+fn run_full_checks() -> anyhow::Result<()> {
     output::print(info_message("Running diagnostic checks..."))?;
     output::blank()?;
 
@@ -187,7 +191,7 @@ fn run_doctor_checks() -> anyhow::Result<()> {
             output::gutter(format_with_gutter(&message, "", None))?;
         }
         Err(e) => {
-            output::print(cformat!("{ERROR_EMOJI} <red>Commit generation failed</>"))?;
+            output::print(error_message("Commit generation failed"))?;
             output::gutter(format_with_gutter(&e.to_string(), "", None))?;
             output::blank()?;
             output::print(hint_message(
@@ -216,9 +220,9 @@ fn render_user_config(out: &mut String) -> anyhow::Result<()> {
         writeln!(
             out,
             "{}",
-            cformat!(
-                "{HINT_EMOJI} <dim>Not found (using defaults); run <bright-black>wt config create</> to create</>"
-            )
+            hint_message(cformat!(
+                "Not found (using defaults); <bright-black>wt config create</> creates one"
+            ))
         )?;
         writeln!(out)?;
         let default_config =
@@ -231,11 +235,7 @@ fn render_user_config(out: &mut String) -> anyhow::Result<()> {
     let contents = std::fs::read_to_string(&config_path).context("Failed to read config file")?;
 
     if contents.trim().is_empty() {
-        writeln!(
-            out,
-            "{}",
-            cformat!("{HINT_EMOJI} <dim>Empty file (using defaults)</>")
-        )?;
+        writeln!(out, "{}", hint_message("Empty file (using defaults)"))?;
         return Ok(());
     }
 
@@ -254,7 +254,7 @@ fn warn_unknown_keys(out: &mut String, unknown_keys: &[String]) -> anyhow::Resul
         writeln!(
             out,
             "{}",
-            cformat!("{WARNING_EMOJI} <yellow>Unknown key <bold>{key}</> will be ignored</>")
+            warning_message(cformat!("Unknown key <bold>{key}</> will be ignored"))
         )?;
     }
     Ok(())
@@ -287,7 +287,7 @@ fn render_project_config(out: &mut String) -> anyhow::Result<()> {
 
     // Check if file exists
     if !config_path.exists() {
-        writeln!(out, "{}", cformat!("{HINT_EMOJI} <dim>Not found</>"))?;
+        writeln!(out, "{}", hint_message("Not found"))?;
         return Ok(());
     }
 
@@ -295,7 +295,7 @@ fn render_project_config(out: &mut String) -> anyhow::Result<()> {
     let contents = std::fs::read_to_string(&config_path).context("Failed to read config file")?;
 
     if contents.trim().is_empty() {
-        writeln!(out, "{}", cformat!("{HINT_EMOJI} <dim>Empty file</>"))?;
+        writeln!(out, "{}", hint_message("Empty file"))?;
         return Ok(());
     }
 
@@ -309,6 +309,8 @@ fn render_project_config(out: &mut String) -> anyhow::Result<()> {
 }
 
 fn render_shell_status(out: &mut String) -> anyhow::Result<()> {
+    writeln!(out, "{}", cformat!("<cyan>SHELL INTEGRATION</>"))?;
+
     // Use the same detection logic as `wt config shell install`
     let scan_result = match scan_shell_configs(None, true) {
         Ok(r) => r,
@@ -316,7 +318,7 @@ fn render_shell_status(out: &mut String) -> anyhow::Result<()> {
             writeln!(
                 out,
                 "{}",
-                cformat!("{HINT_EMOJI} <dim>Could not determine shell status: {e}</>")
+                hint_message(format!("Could not determine shell status: {e}"))
             )?;
             return Ok(());
         }
@@ -342,9 +344,9 @@ fn render_shell_status(out: &mut String) -> anyhow::Result<()> {
                 writeln!(
                     out,
                     "{}",
-                    cformat!(
-                        "{INFO_EMOJI} Already configured {what} for <bold>{shell}</> @ {path}"
-                    )
+                    info_message(cformat!(
+                        "Already configured {what} for <bold>{shell}</> @ {path}"
+                    ))
                 )?;
 
                 // Check if zsh has compinit enabled (required for completions)
@@ -352,8 +354,8 @@ fn render_shell_status(out: &mut String) -> anyhow::Result<()> {
                     writeln!(
                         out,
                         "{}",
-                        cformat!(
-                            "{WARNING_EMOJI} <yellow>Completions won't work; add to ~/.zshrc before the wt line:</>"
+                        warning_message(
+                            "Completions won't work; add to ~/.zshrc before the wt line:"
                         )
                     )?;
                     write!(
@@ -372,18 +374,18 @@ fn render_shell_status(out: &mut String) -> anyhow::Result<()> {
                         writeln!(
                             out,
                             "{}",
-                            cformat!(
-                                "{INFO_EMOJI} Already configured completions for <bold>{shell}</> @ {completion_display}"
-                            )
+                            info_message(cformat!(
+                                "Already configured completions for <bold>{shell}</> @ {completion_display}"
+                            ))
                         )?;
                     } else {
                         any_not_configured = true;
                         writeln!(
                             out,
                             "{}",
-                            cformat!(
-                                "{HINT_EMOJI} <dim>Not configured completions for {shell} @ {completion_display}</>"
-                            )
+                            hint_message(format!(
+                                "Not configured completions for {shell} @ {completion_display}"
+                            ))
                         )?;
                     }
                 }
@@ -393,7 +395,7 @@ fn render_shell_status(out: &mut String) -> anyhow::Result<()> {
                 writeln!(
                     out,
                     "{}",
-                    cformat!("{HINT_EMOJI} <dim>Not configured {what} for {shell} @ {path}</>")
+                    hint_message(format!("Not configured {what} for {shell} @ {path}"))
                 )?;
             }
             _ => {} // Added/Created won't appear in dry_run mode
@@ -406,7 +408,7 @@ fn render_shell_status(out: &mut String) -> anyhow::Result<()> {
         writeln!(
             out,
             "{}",
-            cformat!("<dim>⚪ Skipped {shell}; {path} not found</>")
+            info_message(cformat!("<dim>Skipped {shell}; {path} not found</>"))
         )?;
     }
 
@@ -416,9 +418,73 @@ fn render_shell_status(out: &mut String) -> anyhow::Result<()> {
         writeln!(
             out,
             "{}",
-            cformat!(
-                "{HINT_EMOJI} <dim>Run <bright-black>wt config shell install</> to enable shell integration</>"
-            )
+            hint_message(cformat!(
+                "<bright-black>wt config shell install</> enables shell integration"
+            ))
+        )?;
+    }
+
+    Ok(())
+}
+
+fn render_binaries_status(out: &mut String) -> anyhow::Result<()> {
+    use super::list::ci_status::CiToolsStatus;
+
+    writeln!(out, "{}", cformat!("<cyan>BINARIES</>"))?;
+
+    let ci_tools = CiToolsStatus::detect();
+
+    // Check gh (GitHub CLI)
+    if ci_tools.gh_installed {
+        if ci_tools.gh_authenticated {
+            writeln!(
+                out,
+                "{}",
+                info_message(cformat!("<bold>gh</> installed & authenticated"))
+            )?;
+        } else {
+            writeln!(
+                out,
+                "{}",
+                warning_message(cformat!(
+                    "<bold>gh</> installed but not authenticated; run <bright-black>gh auth login</>"
+                ))
+            )?;
+        }
+    } else {
+        writeln!(
+            out,
+            "{}",
+            hint_message(cformat!(
+                "<bold>gh</> not found (GitHub CI status unavailable)"
+            ))
+        )?;
+    }
+
+    // Check glab (GitLab CLI)
+    if ci_tools.glab_installed {
+        if ci_tools.glab_authenticated {
+            writeln!(
+                out,
+                "{}",
+                info_message(cformat!("<bold>glab</> installed & authenticated"))
+            )?;
+        } else {
+            writeln!(
+                out,
+                "{}",
+                warning_message(cformat!(
+                    "<bold>glab</> installed but not authenticated; run <bright-black>glab auth login</>"
+                ))
+            )?;
+        }
+    } else {
+        writeln!(
+            out,
+            "{}",
+            hint_message(cformat!(
+                "<bold>glab</> not found (GitLab CI status unavailable)"
+            ))
         )?;
     }
 
