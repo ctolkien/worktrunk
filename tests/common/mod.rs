@@ -915,6 +915,8 @@ pub fn setup_snapshot_settings(repo: &TestRepo) -> insta::Settings {
     // Windows: the `home` crate uses USERPROFILE for home_dir()
     settings.add_redaction(".env.USERPROFILE", "[TEST_HOME]");
     settings.add_redaction(".env.XDG_CONFIG_HOME", "[TEST_CONFIG_HOME]");
+    // Windows: etcetera uses APPDATA for config_dir()
+    settings.add_redaction(".env.APPDATA", "[TEST_CONFIG_HOME]");
     settings.add_redaction(".env.PATH", "[PATH]");
 
     // Normalize timestamps in log filenames (format: YYYYMMDD-HHMMSS)
